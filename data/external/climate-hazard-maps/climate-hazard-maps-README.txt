@@ -1,0 +1,1 @@
+This folder contains the raster files from https://doi.org/10.1038/s43247-022-00577-5. I believe we want a combined map of hazards, so the next steps would be to normalize the 4 maps (1-10 scores), add them together and take averages for each EEZ.
