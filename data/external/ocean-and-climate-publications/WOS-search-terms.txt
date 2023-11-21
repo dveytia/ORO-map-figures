@@ -1,0 +1,13 @@
+BLOCK 1: POPULATION
+
+TS = (ocean$ OR oceanic OR sea$ OR seawater OR "sea water" OR marine OR maritime OR pelagic OR offshore OR benthic OR "deep sea" OR deep-sea OR seafloor OR coast* OR shore* OR foreshore OR offshore OR "continental shelf" OR ocean-based OR "sea ice" OR sea-ice OR island* OR littor* OR "shallow water" OR benthic OR estuary OR estuaries OR tidal OR tide$ OR estuar* OR "saline wetland$" OR coast* OR "salt marsh*" OR saltmarsh* OR "tidal marsh*" OR "tidal wetland$" OR "tidal swamp$" OR "tidal scrub" OR "tidal shrub" OR "inter tidal" OR "sub tidal" OR mangrove$ OR coral$ OR kelp OR macroalga$ OR seaweed OR "sea weed" OR "canopy forming algae" OR seagrass OR "sea grass" OR "algal mat$" OR "coastal vegetation" OR "sand dune$" OR reef$ OR mudflat$ OR "mussel bed" OR "blue carbon")
+
+-------------------------------------------
+
+BLOCK 2: CLIMATE CHANGE
+
+TS = ("climat* change$" OR ((global OR future OR climate OR ocean) NEAR/1 (change$ OR warming)) OR (climat* NEAR/2 (mitigat* OR adapt* OR resilien*)) OR emission$ OR carbon OR "carbon-dioxide" OR "carbon dioxide" OR CO2 OR carbonate OR carbonic OR "greenhouse gas*" OR "methane" OR "fossil fuel$" OR "net zero" OR "nitrous oxide$" OR "methane" OR flurocarbon$ OR soot OR "black carbon" OR decarbon* OR efficien* OR sustainab* OR alternat* OR electric OR "negative emission$" OR decarboni?e OR "carbon neutral" OR (reduc* NEAR/1 "carbon footprint") OR "climate hazard$" OR (climate NEAR/2 variability) OR "climate extreme$" OR "extreme weather" OR "extreme event$" OR "abrupt event$" OR "coast* erosion" OR heat$stress OR "thermal stress" OR "heat wave$" OR heatwave$ OR warming OR (coral$ NEAR/1 bleaching) OR ((increas* OR ris*) NEAR/1 temperature$) OR acidif* OR "increas* acidity" OR "aragonite saturation" OR pH OR (ris* NEAR/1 "sea level$") OR "coastal flood$" OR "coastal hazard$" OR (("sea water" OR saltwater OR "salt water") NEAR/1 (incursion OR intrusion)) OR salini$ation OR aquifer$ OR (shore* NEAR/1 protect*))
+
+
+BLOCK 3: LANGUAGE
+LA=(English)
