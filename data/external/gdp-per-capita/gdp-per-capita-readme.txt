@@ -1,0 +1,1 @@
+Data source: Our world in data (https://ourworldindata.org/grapher/gdp-per-capita-worldbank?tab=table&time=latest), from the world bank (https://datacatalog.worldbank.org/search/dataset/0037712/World-Development-Indicators)
