@@ -87,4 +87,104 @@ src_dbi(dbcon)
 DBI::dbDisconnect(dbcon)
 ```
 
+# Combine ORO_type predictions into long format
+
+the predictions for the different ORO types are grouped into separate tables based on which branch they are relevant for. So make sure to combine them all, and order them along the x axis so that they are grouped by ORO branch (i.e. Mitigation vs Natural vs Societal) and not alphabetically. To faciliate this, create a new data table and add it to the sqlite database
+
+```{r oro_type_long format}
+# Connect to latest version of the database
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+
+
+# Format the dataframes so they're in long format, 
+# with ID columns for analysis_id and oro_branch and oro_type, prediction boundary, 
+# and value column for prediction
+branchNames <- c("mitigation","nature","societal")
+branchNamesFull <- c("Mitigation","Natural resilience", "Societal adaptation")
+predOROAnyList <- list() # empty list to store results
+
+for(i in 1:length(branchNames)){
+  tempTbl <- tbl(dbcon, paste("pred_oro_any", branchNames[i], sep = "_")) %>%
+    collect()
+  # only look at columns with analysis id and mean predictions
+  #meanCols <- colnames(tempTbl)[grep("mean", colnames(tempTbl))]
+  #tempTbl <- tempTbl[,c("analysis_id", meanCols)]
+  
+  # rename columns 
+  # colNames <- gsub("\\ -.*","",meanCols)
+  # colNames <- gsub("oro_any.","", colNames)
+  # colNames <- gsub("M_","", colNames)
+  # colNames <- gsub("N_","", colNames)
+  # colNames <- gsub("SA_","", colNames)
+  # colnames(tempTbl)[which(colnames(tempTbl) %in% meanCols)] <- colNames
+  colNames <- colnames(tempTbl)
+  colNames[1] <- "analysis_id"
+  colNames <- gsub("oro_any.","",colNames)
+  colNames <- gsub("M_","", colNames)
+  colNames <- gsub("N_","", colNames)
+  colNames <- gsub("SA_","", colNames)
+  colNames <- gsub(" - ","_", colNames)
+  colNames <- gsub("_prediction","", colNames)
+  colNames <- gsub("_pred","", colNames)
+  colnames(tempTbl) <- colNames
+  
+  # Melt and save data frame
+  tempTbl$oro_branch = paste(branchNamesFull[i])
+  predOROAnyList[[i]] <- tempTbl
+  #tempTbl <- reshape2::melt(tempTbl, variable.name = "oro_type", value.name = "mean_prediction", 
+  #                         id.vars = c("analysis_id","oro_branch"))
+  # if(b == 1){
+  #   oro_type_long <- tempTbl
+  # }else{
+  #   oro_type_long <- rbind(oro_type_long, tempTbl)
+  # }
+}
+
+
+## Make a dataframe of the predictions
+for(i in 1:length(predOROAnyList)){
+  temp <- predOROAnyList[[i]]
+  boundaries <- c("upper","mean","lower")
+  for(b in 1:length(boundaries)){
+    temp_b <- cbind(temp[,1], temp$oro_branch, temp[grep(boundaries[b], colnames(temp))])
+    colnames(temp_b)[2]<- "oro_branch"
+    colnames(temp_b) <- gsub(paste0("_",boundaries[b]),"", colnames(temp_b))
+    temp_b <- reshape2::melt(temp_b, variable.name = "oro_type", value.name = boundaries[b], 
+                             id.vars = c("analysis_id","oro_branch"))
+    if(b==1){
+      temp_melt <- temp_b
+    }else{
+      temp_melt <- merge(temp_melt, temp_b, by=c("analysis_id","oro_branch","oro_type"))
+    }
+  }
+  if(i==1)
+    pred_oro_type_long <- temp_melt
+  else
+    pred_oro_type_long <- rbind(pred_oro_type_long, temp_melt)
+}
+rm(predOROAnyList)
+
+
+
+# Format the dataframe by factoring variables
+pred_oro_type_long <- pred_oro_type_long %>%
+  filter(!(oro_type %in% c("Protection", "Restoration"))) %>%
+  mutate(
+    oro_branch = factor(oro_branch, levels = branchNamesFull),
+    oro_type = factor(oro_type,
+                      levels = c("Renewables","Increase_efficiency", "CO2_removal_or_storage",
+                                 "Human_assisted_evolution","Conservation",
+                                 "Built_infrastructure_and_technology","Socioinstitutional"),
+                      labels = c("Marine renewable energy","Increase efficiency", "CO2 removal or storage",
+                                 "Human assisted evolution","Conservation",
+                                 "Built infrastructure & technology","Socio-institutional"))
+  )
+
+
+## Write in to sqlite database
+dbWriteTable(conn=dbcon, name="pred_oro_type_long", value=pred_oro_type_long, append=FALSE, overwrite = FALSE)
+
+
+DBI::dbDisconnect(dbcon)
+```
 
