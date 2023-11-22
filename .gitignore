@@ -1,4 +1,5 @@
 ## Large files
+*.sqlite 
 /data/geoparsing/*.csv
 /data/geoparsing/geoparsed-text/*.csv
 /data/geoparsing.tar.gz
