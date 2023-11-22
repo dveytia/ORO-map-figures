@@ -1,0 +1,90 @@
+---
+title: "0_data-processing-cleaning"
+author: "Devi Veytia"
+date: "2023-11-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load libraries}
+library(dplyr)
+library(dbplyr)
+library(R.utils)
+library(RSQLite)
+
+```
+
+# Add files to sqlite database
+
+```{r Get the latest version of sqlite database}
+
+sqliteDir <- here::here("data/sqlite-databases")
+sqliteFiles <- dir(sqliteDir)
+sqliteVersions <- as.numeric(gsub(".sqlite","",substring(sqliteFiles, regexpr("_v", sqliteFiles) + 2)))
+latestVersion <- sqliteFiles[which.max(sqliteVersions)]
+
+
+```
+
+
+
+## Add geoparsing files
+
+```{r add geoparsing results for all the geoparsed text}
+
+# Connect to latest version of the database
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+
+# Get info about geoparsed text
+geoparsedTextDir <- here::here("data/geoparsing/geoparsed-text")
+geoparsedTextFiles <- dir(geoparsedTextDir)
+tblName <- "geoparsed_text"
+
+# Loop through csv files and write to database
+for(i in 1:length(geoparsedTextFiles)){
+  # Read in the csv file
+  df <- readr::read_csv(file = file.path(geoparsedTextDir, geoparsedTextFiles[i]), show_col_types = FALSE)
+  df <- df %>%
+    rename(analysis_id = id)
+  # If starting the table, don't need to append, if already there, then yes append
+  if(i == 1){
+    appendAction = FALSE
+  }else{
+    appendAction = TRUE
+  }
+  # Write to database
+  dbWriteTable(conn=dbcon,name=tblName, value=df, append=appendAction, overwrite = FALSE)
+}
+
+```
+
+```{r add other geoparsing tables}
+geoparsingDir <- here::here("data/geoparsing")
+geoparsingFiles <- dir(geoparsedTextDir)
+geoparsingFiles <- geoparsingFiles[grep(".csv", geoparsingFiles)]
+geoparsingTableNames <- gsub(".csv","", geoparsingFiles)
+
+## Loop through all the tables and write to the database
+for(i in 1:length(geoparsingFiles)){
+  # Read in file
+  df <- readr::read_csv(file = file.path(geoparsingDir, geoparsingFiles[i]), show_col_types = FALSE)
+  # Have to add this because some column names are duplicates (one is upper, the other is lower case)
+  if(geoparsingFiles[i] == "shp_df_natural-earth-shapes.csv"){
+    colnames(df) <- make.unique(tolower(colnames(df)), sep = "_")
+  }
+  # Write to database
+  dbWriteTable(conn=dbcon, name=geoparsingTableNames[i], value=df, append=FALSE, overwrite = FALSE)
+}
+
+src_dbi(dbcon)
+```
+
+
+```{r disconnect from database}
+DBI::dbDisconnect(dbcon)
+```
+
+
