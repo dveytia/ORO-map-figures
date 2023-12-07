@@ -1,0 +1,246 @@
+id;code;alpha2;alpha3;name_fr;name_en;R5.2;R32
+1;4;AF;AFG;Afghanistan;Afghanistan;ASIA;PAK
+2;8;AL;ALB;Albanie;Albania;OECD;EEU
+3;10;AQ;ATA;Antarctique-;Antarctica-;;
+4;12;DZ;DZA;Alg’©rie;Algeria;MAF;NAF
+5;16;AS;ASM;Samoa Am’©ricaines;American Samoa;;
+6;20;AD;AND;Andorre;Andorra;;
+7;24;AO;AGO;Angola;Angola;MAF;SSA-M
+8;28;AG;ATG;Antigua-et-Barbuda;Antigua and Barbuda;;LAM-M
+9;31;AZ;AZE;Azerba’Àdjan;Azerbaijan;REF;CAS
+10;32;AR;ARG;Argentine;Argentina;LAM;LAM-M
+11;36;AU;AUS;Australie;Australia;OECD;ANUZ
+12;40;AT;AUT;Autriche;Austria;OECD;EU15
+13;44;BS;BHS;Bahamas;Bahamas;LAM;LAM-M
+14;48;BH;BHR;Bahre’Àn;Bahrain;MAF;MEA-H
+15;50;BD;BGD;Bangladesh;Bangladesh;ASIA;OAS-L
+16;51;AM;ARM;Arm’©nie;Armenia;REF;EEU
+17;52;BB;BRB;Barbade;Barbados;LAM;LAM-M
+18;56;BE;BEL;Belgique;Belgium;OECD;EU15
+19;60;BM;BMU;Bermudes;Bermuda;;LAM-M
+20;64;BT;BTN;Bhoutan;Bhutan;ASIA;OAS-M
+21;68;BO;BOL;Bolivie;Bolivia;LAM;LAM-M
+22;70;BA;BIH;Bosnie-Herz’©govine;Bosnia and Herzegovina;OECD;EEU
+23;72;BW;BWA;Botswana;Botswana;MAF;SSA-M
+24;74;BV;BVT;’_le Bouvet;Bouvet Island;;
+25;76;BR;BRA;Br’©sil;Brazil;LAM;BRA
+26;84;BZ;BLZ;Belize;Belize;LAM;LAM-L
+27;86;IO;IOT;Territoire Britannique de l'Oc’©an Indien;British Indian Ocean Territory;;
+28;90;SB;SLB;’_les Salomon;Solomon Islands;ASIA;OAS-L
+29;92;VG;VGB;’_les Vierges Britanniques;British Virgin Islands;;
+30;96;BN;BRN;Brun’©i Darussalam;Brunei Darussalam;ASIA;OAS-M
+31;100;BG;BGR;Bulgarie;Bulgaria;OECD;EU12-M
+32;104;MM;MMR;Myanmar;Myanmar;ASIA;OAS-L
+33;108;BI;BDI;Burundi;Burundi;MAF;SSA-L
+34;112;BY;BLR;B’©larus;Belarus;REF;EEU-FSU
+35;116;KH;KHM;Cambodge;Cambodia;ASIA;OAS-CPA
+36;120;CM;CMR;Cameroun;Cameroon;MAF;SSA-L
+37;124;CA;CAN;Canada;Canada;OECD;CAN
+38;132;CV;CPV;Cap-vert;Cape Verde;MAF;SSA-L
+39;136;KY;CYM;’_les Ca’Àmanes;Cayman Islands;;
+40;140;CF;CAF;R’©publique Centrafricaine;Central African;MAF;SSA-L
+41;144;LK;LKA;Sri Lanka;Sri Lanka;ASIA;OAS-M
+42;148;TD;TCD;Tchad;Tchad;MAF;SSA-L
+43;152;CL;CHL;Chili;Chile;LAM;LAM-M
+44;156;CN;CHN;Chine;China;ASIA;CHN
+45;158;TW;TWN;Ta’Àwan;Taiwan;ASIA;TWN
+46;162;CX;CXR;’_le Christmas;Christmas Island;;
+47;166;CC;CCK;’_les Cocos (Keeling);Cocos (Keeling) Islands;;
+48;170;CO;COL;Colombie;Colombia;LAM;LAM-M
+49;174;KM;COM;Comores;Comoros;MAF;SSA-L
+50;175;YT;MYT;Mayotte;Mayotte;;
+51;178;CG;COG;R’©publique du Congo;Republic of the Congo;MAF;SSA-L
+52;180;CD;COD;R’©publique D’©mocratique du Congo;The Democratic Republic Of The Congo;MAF;SSA-L
+53;184;CK;COK;’_les Cook;Cook Islands;;
+54;188;CR;CRI;Costa Rica;Costa Rica;LAM;LAM-M
+55;191;HR;HRV;Croatie;Croatia;OECD;EEU
+56;192;CU;CUB;Cuba;Cuba;LAM;LAM-M
+57;196;CY;CYP;Chypre;Cyprus;OECD;EU12-H
+58;203;CZ;CZE;R’©publique Tch’åque;Czech Republic;;EU12-H
+59;204;BJ;BEN;B’©nin;Benin;MAF;SSA-L
+60;208;DK;DNK;Danemark;Denmark;OECD;EU15
+61;212;DM;DMA;Dominique;Dominica;;LAM-M
+62;214;DO;DOM;R’©publique Dominicaine;Dominican Republic;LAM;LAM-M
+63;218;EC;ECU;’_quateur;Ecuador;LAM;LAM-M
+64;222;SV;SLV;El Salvador;El Salvador;LAM;LAM-M
+65;226;GQ;GNQ;Guin’©e ’_quatoriale;Equatorial Guinea;MAF;SSA-M
+66;231;ET;ETH;’_thiopie;Ethiopia;MAF;SSA-L
+67;232;ER;ERI;’_rythr’©e;Eritrea;MAF;SSA-L
+68;233;EE;EST;Estonie;Estonia;OECD;EU12-H
+69;234;FO;FRO;’_les F’©ro’©;Faroe Islands;;
+70;238;FK;FLK;’_les (malvinas) Falkland;Falkland Islands;;
+71;239;GS;SGS;G’©orgie du Sud et les ’_les Sandwich du Sud;South Georgia and the South Sandwich Islands;;
+72;242;FJ;FJI;Fidji;Fiji;ASIA;OAS-L
+73;246;FI;FIN;Finlande;Finland;OECD;EU15
+74;248;AX;ALA;’_les ’Äland;’Äland Islands;;
+75;250;FR;FRA;France;France;OECD;EU15
+76;254;GF;GUF;Guyane Fran’_aise;French Guiana;LAM;LAM-M
+77;258;PF;PYF;Polyn’©sie Fran’_aise;French Polynesia;ASIA;OAS-M
+78;260;TF;ATF;Terres Australes Fran’_aises;French Southern Territories;;
+79;262;DJ;DJI;Djibouti;Djibouti;MAF;SSA-L
+80;266;GA;GAB;Gabon;Gabon;MAF;SSA-M
+81;268;GE;GEO;G’©orgie;Georgia;REF;CAS
+82;270;GM;GMB;Gambie;Gambia;MAF;SSA-L
+83;275;PS;PSE;Territoire Palestinien Occup’©;Palestine;MAF;MEA-M
+84;276;DE;DEU;Allemagne;Germany;OECD;EU15
+85;288;GH;GHA;Ghana;Ghana;MAF;SSA-L
+86;292;GI;GIB;Gibraltar;Gibraltar;;
+87;296;KI;KIR;Kiribati;Kiribati;;
+88;300;GR;GRC;Gr’åce;Greece;OECD;EU15
+89;304;GL;GRL;Groenland;Greenland;;
+90;308;GD;GRD;Grenade;Grenada;LAM;LAM-M
+91;312;GP;GLP;Guadeloupe;Guadeloupe;LAM;LAM-M
+92;316;GU;GUM;Guam;Guam;OECD;OAS-M
+93;320;GT;GTM;Guatemala;Guatemala;LAM;LAM-L
+94;324;GN;GIN;Guin’©e;Guinea;MAF;SSA-L
+95;328;GY;GUY;Guyana;Guyana;LAM;LAM-M
+96;332;HT;HTI;Ha’Àti;Haiti;LAM;LAM-L
+97;334;HM;HMD;’_les Heard et Mcdonald;Heard Island and McDonald Islands;;
+98;336;VA;VAT;Saint-Si’åge (’©tat de la Cit’© du Vatican);Vatican City State;;
+99;340;HN;HND;Honduras;Honduras;LAM;LAM-L
+100;344;HK;HKG;Hong-Kong;Hong Kong-;ASIA;CHN
+101;348;HU;HUN;Hongrie;Hungary;OECD;EU12-H
+102;352;IS;ISL;Islande;Iceland;OECD;EFTA
+103;356;IN;IND;Inde;India;ASIA;IND
+104;360;ID;IDN;Indon’©sie;Indonesia;ASIA;IDN
+105;364;IR;IRN;R’©publique Islamique d'Iran;Islamic Republic of Iran;MAF;MEA-M
+106;368;IQ;IRQ;Iraq;Iraq;MAF;MEA-M
+107;372;IE;IRL;Irlande;Ireland;OECD;EU15
+108;376;IL;ISR;Isra’âl;Israel;MAF;MEA-H
+109;380;IT;ITA;Italie;Italy;OECD;EU15
+110;384;CI;CIV;C’‚te d'Ivoire;Cote d'Ivoire;MAF;SSA-L
+111;388;JM;JAM;Jama’Àque;Jamaica;LAM;LAM-M
+112;392;JP;JPN;Japon;Japan;OECD;JPN
+113;398;KZ;KAZ;Kazakhstan;Kazakhstan;REF;CAS
+114;400;JO;JOR;Jordanie;Jordan;MAF;MEA-M
+115;404;KE;KEN;Kenya;Kenya;MAF;SSA-L
+116;408;KP;PRK;R’©publique Populaire D’©mocratique de Cor’©e;Democratic People's Republic of Korea;ASIA;OAS-L
+117;410;KR;KOR;R’©publique de Cor’©e;Republic of Korea;ASIA;KOR
+117;410;KR;KOR;R’©publique de Cor’©e;South Korea;ASIA;KOR
+118;414;KW;KWT;Kowe’Àt;Kuwait;MAF;MEA-H
+119;417;KG;KGZ;Kirghizistan;Kyrgyzstan;REF;CAS
+120;418;LA;LAO;R’©publique D’©mocratique Populaire Lao;Lao People's Democratic Republic;ASIA;OAS-CPA
+121;422;LB;LBN;Liban;Lebanon;MAF;MEA-M
+122;426;LS;LSO;Lesotho;Lesotho;MAF;SSA-L
+123;428;LV;LVA;Lettonie;Latvia;OECD;EU12-M
+124;430;LR;LBR;Lib’©ria;Liberia;MAF;SSA-L
+125;434;LY;LBY;Jamahiriya Arabe Libyenne;Libya;MAF;NAF
+126;438;LI;LIE;Liechtenstein;Liechtenstein;;
+127;440;LT;LTU;Lituanie;Lithuania;OECD;EU12-M
+128;442;LU;LUX;Luxembourg;Luxembourg;OECD;EU15
+129;446;MO;MAC;Macao;Macao;ASIA;CHN
+130;450;MG;MDG;Madagascar;Madagascar;MAF;SSA-L
+131;454;MW;MWI;Malawi;Malawi;MAF;SSA-L
+132;458;MY;MYS;Malaisie;Malaysia;ASIA;OAS-M
+133;462;MV;MDV;Maldives;Maldives;ASIA;OAS-M
+134;466;ML;MLI;Mali;Mali.;MAF;SSA-L
+135;470;MT;MLT;Malte;Malta;OECD;EU12-H
+136;474;MQ;MTQ;Martinique;Martinique;LAM;LAM-M
+137;478;MR;MRT;Mauritanie;Mauritania;MAF;SSA-L
+138;480;MU;MUS;Maurice;Mauritius;MAF;SSA-M
+139;484;MX;MEX;Mexique;Mexico;LAM;MEX
+140;492;MC;MCO;Monaco;Monaco;;
+141;496;MN;MNG;Mongolie;Mongolia;ASIA;OAS-CPA
+142;498;MD;MDA;R’©publique de Moldova;Republic of Moldova;REF;EEU-FSU
+143;500;MS;MSR;Montserrat;Montserrat;;
+144;504;MA;MAR;Maroc;Morocco;MAF;NAF
+145;508;MZ;MOZ;Mozambique;Mozambique;MAF;SSA-L
+146;512;OM;OMN;Oman;Oman;MAF;MEA-H
+147;516;NA;NAM;Namibie;Namibia;MAF;SSA-M
+148;520;NR;NRU;Nauru;Nauru;;
+149;524;NP;NPL;N’©pal;Nepal;ASIA;OAS-L
+150;528;NL;NLD;Pays-Bas;Netherlands;OECD;EU15
+151;530;AN;ANT;Antilles N’©erlandaises;Netherlands Antilles;;LAM-M
+152;533;AW;ABW;Aruba;Aruba;LAM;
+153;540;NC;NCL;Nouvelle-Cal’©donie;New Caledonia;ASIA;OAS-M
+154;548;VU;VUT;Vanuatu;Vanuatu;ASIA;OAS-L
+155;554;NZ;NZL;Nouvelle-Z’©lande;New Zealand;OECD;ANUZ
+156;558;NI;NIC;Nicaragua;Nicaragua;LAM;LAM-L
+157;562;NE;NER;Niger;Niger;MAF;SSA-L
+158;566;NG;NGA;Nig’©ria;Nigeria;MAF;SSA-L
+159;570;NU;NIU;Niu’©;Niue;;
+160;574;NF;NFK;’_le Norfolk;Norfolk Island;;
+161;578;NO;NOR;Norv’åge;Norway;OECD;EFTA
+162;580;MP;MNP;’_les Mariannes du Nord;Northern Mariana Islands;;
+163;581;UM;UMI;’_les Mineures ’_loign’©es des ’_tats-Unis;United States Minor Outlying Islands;;
+164;583;FM;FSM;’_tats F’©d’©r’©s de Micron’©sie;Federated States of Micronesia;ASIA;OAS-L
+165;584;MH;MHL;’_les Marshall;Marshall Islands;;
+166;585;PW;PLW;Palaos;Palau;;
+167;586;PK;PAK;Pakistan;Pakistan;ASIA;PAK
+168;591;PA;PAN;Panama;Panama;LAM;LAM-M
+169;598;PG;PNG;Papouasie-Nouvelle-Guin’©e;Papua New Guinea;ASIA;OAS-L
+170;600;PY;PRY;Paraguay;Paraguay;LAM;LAM-M
+171;604;PE;PER;P’©rou;Peru;LAM;LAM-M
+172;608;PH;PHL;Philippines;Philippines;ASIA;OAS-L
+173;612;PN;PCN;Pitcairn;Pitcairn;;
+174;616;PL;POL;Pologne;Poland;OECD;EU12-H
+175;620;PT;PRT;Portugal;Portugal;OECD;EU15
+176;624;GW;GNB;Guin’©e-Bissau;Guinea-Bissau;MAF;SSA-L
+177;626;TL;TLS;Timor-Leste;Timor-Leste;ASIA;OAS-L
+178;630;PR;PRI;Porto Rico;Puerto Rico;OECD;USA
+179;634;QA;QAT;Qatar;Qatar;MAF;MEA-H
+180;638;RE;REU;Reunion;Reunion;MAF;SSA-M
+181;642;RO;ROU;Roumanie;Romania;OECD;EU12-M
+182;643;RU;RUS;F’©d’©ration de Russie;Russian Federation;REF;RUS
+183;646;RW;RWA;Rwanda;Rwanda;MAF;SSA-L
+184;654;SH;SHN;Sainte-H’©l’åne;Saint Helena;;
+185;659;KN;KNA;Saint-Kitts-et-Nevis;Saint Kitts and Nevis;;LAM-M
+186;660;AI;AIA;Anguilla-;Anguilla-;;
+187;662;LC;LCA;Sainte-Lucie;Saint Lucia;;LAM-M
+188;666;PM;SPM;Saint-Pierre-et-Miquelon;Saint-Pierre and Miquelon;;
+189;670;VC;VCT;Saint-Vincent-et-les Grenadines;Saint Vincent and the Grenadines;;LAM-M
+190;674;SM;SMR;Saint-Marin;San Marino;;
+191;678;ST;STP;Sao Tom’©-et-Principe;Sao Tome and Principe;;SSA-L
+192;682;SA;SAU;Arabie Saoudite;Saudi Arabia;MAF;MEA-H
+193;686;SN;SEN;S’©n’©gal;Senegal;MAF;SSA-L
+194;690;SC;SYC;Seychelles;Seychelles;;SSA-M
+195;694;SL;SLE;Sierra Leone;Sierra Leone;MAF;SSA-L
+196;702;SG;SGP;Singapour;Singapore;ASIA;OAS-M
+197;703;SK;SVK;Slovaquie;Slovakia;OECD;EU12-H
+198;704;VN;VNM;Viet Nam;Vietnam;ASIA;OAS-CPA
+199;705;SI;SVN;Slov’©nie;Slovenia;OECD;EU12-H
+200;706;SO;SOM;Somalie;Somalia;MAF;SSA-L
+201;710;ZA;ZAF;Afrique du Sud;South Africa;MAF;SAF
+202;716;ZW;ZWE;Zimbabwe;Zimbabwe;MAF;SSA-L
+203;724;ES;ESP;Espagne;Spain;OECD;EU15
+204;732;EH;ESH;Sahara Occidental;Western Sahara;;
+205;736;SD;SDN;Soudan;Sudan;MAF;SSA-L
+206;740;SR;SUR;Suriname;Suriname;LAM;LAM-M
+207;744;SJ;SJM;Svalbard et’_le Jan Mayen;Svalbard and Jan Mayen;;
+208;748;SZ;SWZ;Swaziland;Swaziland;MAF;SSA-L
+209;752;SE;SWE;Su’åde;Sweden;OECD;EU15
+210;756;CH;CHE;Suisse;Switzerland;OECD;EFTA
+211;760;SY;SYR;R’©publique Arabe Syrienne;Syrian Arab Republic;MAF;MEA-M
+212;762;TJ;TJK;Tadjikistan;Tajikistan;REF;CAS
+213;764;TH;THA;Tha’Àlande;Thailand;ASIA;OAS-M
+214;768;TG;TGO;Togo;Togo;MAF;SSA-L
+215;772;TK;TKL;Tokelau;Tokelau;;
+216;776;TO;TON;Tonga;Tonga;;OAS-L
+217;780;TT;TTO;Trinit’©-et-Tobago;Trinidad and Tobago;LAM;LAM-M
+218;784;AE;ARE;’_mirats Arabes Unis;United Arab Emirates;MAF;MEA-H
+219;788;TN;TUN;Tunisie;Tunisia;MAF;NAF
+220;792;TR;TUR;Turquie;Turkey;OECD;TUR
+221;795;TM;TKM;Turkm’©nistan;Turkmenistan;REF;CAS
+222;796;TC;TCA;’_les Turks et Ca’Àques;Turks and Caicos Islands;;
+223;798;TV;TUV;Tuvalu;Tuvalu;;
+224;800;UG;UGA;Ouganda;Uganda;MAF;SSA-L
+225;804;UA;UKR;Ukraine;Ukraine;REF;EEU-FSU
+226;807;MK;MKD;L'ex-R’©publique Yougoslave de Mac’©doine;The Former Yugoslav Republic of Macedonia;OECD;EEU
+227;818;EG;EGY;’_gypte;Egypt;MAF;NAF
+228;826;GB;GBR;Royaume-Uni;United Kingdom;OECD;EU15
+229;833;IM;IMN;’_le de Man;Isle of Man;;
+230;834;TZ;TZA;R’©publique-Unie de Tanzanie;United Republic Of Tanzania;MAF;SSA-L
+231;840;US;USA;’_tats-Unis;United States;OECD;USA
+232;850;VI;VIR;’_les Vierges des ’_tats-Unis;U.S. Virgin Islands;LAM;USA
+233;854;BF;BFA;Burkina Faso;Burkina Faso;MAF;SSA-L
+234;858;UY;URY;Uruguay;Uruguay;LAM;LAM-M
+235;860;UZ;UZB;Ouzb’©kistan;Uzbekistan;REF;CAS
+236;862;VE;VEN;Venezuela;Venezuela;LAM;LAM-M
+237;876;WF;WLF;Wallis et Futuna;Wallis and Futuna;;
+238;882;WS;WSM;Samoa;Samoa;ASIA;OAS-L
+239;887;YE;YEM;Y’©men;Yemen;MAF;MEA-M
+240;891;CS;SCG;Serbie-et-Mont’©n’©gro;Serbia and Montenegro;;
+241;894;ZM;ZMB;Zambie;Zambia;MAF;SSA-L
+242;;;SRB;Serbia;Serbia;OECD;EEU
+243;;;MNE;Montenegro;Montenegro;OECD;EEU
+244;;;SSD;South Sudan;South Sudan;MAF;SSA-L
