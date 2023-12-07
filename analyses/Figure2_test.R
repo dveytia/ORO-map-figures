@@ -1,39 +1,62 @@
+#########################################################################################
+#                                                                                       #
+# FIGURE 2                                                                              #
+# Panel A: Map of # ORO publications/# publications on ocean & climate  in each country #  
+# Panel B: Map of ratio of mitigation/adaptation ORO publications                       #
+# Panel C: Scatter plot (1 point = 1 country), # ORO publication = f(total #pub on O&C  #
+#                                                                                       #
+#########################################################################################
+rm(list = ls(), envir = .GlobalEnv) # clean the environment
 
-# load libraries
+
+### ----- LOAD LIBRARIES -----
 library(dplyr)
 library(dbplyr)
 library(R.utils)
 library(RSQLite)
+library(ggplot2)
+library(tidyr)
+library(stringr)
+library(viridis)
+library(rgdal)
+library(broom)
 
-## Panel A - Map of # ORO publications/# publications on ocean & climate  in each country
+### ----- LOAD FUNCTIONS -----
+source(here::here("R", "functions_to_format")) # all functions needed to format data
+source(here::here("R", "functions_to_plot")) # all functions needed to plot data
 
-# Path to latest version of sqlite database
+
+### ----- CONNECTION TO THE LATEST VERSION OF THE SQL DATABASE -----
 sqliteDir <- here::here("data/sqlite-databases")
 sqliteFiles <- dir(sqliteDir)
 sqliteVersions <- as.numeric(gsub(".sqlite","",substring(sqliteFiles, regexpr("_v", sqliteFiles) + 2)))
 latestVersion <- sqliteFiles[which.max(sqliteVersions)]
-
-# Connect to latest version of the database
 dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
-src_dbi(dbcon) # just to explore prints out all the tables
-
-# Number of ORO publications by country
-# Get relevant tables
-uniquerefs <- tbl(dbcon, "uniquerefs") # metadata on the unique references
-pred_relevance <- tbl(dbcon, "pred_relevance") # which articles are relevant to OROs
-
-# Subset to relevant rows and get the affiliation
-oroAffiliations <- pred_relevance %>%
-  filter(0.5 <= relevance_mean) %>%
-  left_join(uniquerefs, by = "analysis_id") %>%
-  select(analysis_id, affiliation) %>%
-  collect()
-
-# Now what you need to do is condense the affiliation to just the country name
-# Countries names
-countries_ls <- read.csv(file = here::here("data", "external", "list_of_countries", "sql-pays.csv"), sep = ";")
 
 
+### ----- PANEL A -----
+
+  ## ---- LOAD DATA
+  uniquerefs <- tbl(dbcon, "uniquerefs") # metadata on the unique references
+  pred_relevance <- tbl(dbcon, "pred_relevance") # which articles are relevant to OROs
+  countries_ls <- read.csv(file = here::here("data", "external", "list_of_countries", "sql-pays.csv"), sep = ";") # Countries names
+  
+  ## ---- FORMAT DATA 
+  
+    # --- Subset to relevant rows and get the affiliation
+    oroAffiliations <- pred_relevance %>%
+      filter(0.5 <= relevance_mean) %>%
+      left_join(uniquerefs, by = "analysis_id") %>%
+      select(analysis_id, affiliation) %>%
+      collect()
+    
+    # --- Extract the country of the first author for each relevant publications
+    
+    
+    # --- Format the data to produce the map
+    data_2_map_panelA <- format_data2map(data = world_bounds,
+                                         PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+#-----
 # Identify the nationality of the 1st author
 NA_affiliation <- filter(oroAffiliations, is.na(affiliation))
 
@@ -268,47 +291,40 @@ world_bounds <- sf::read_sf(here::here("data", "external", "world_shp")) |>
                                                                     "Tanzania"                           = "United Republic Of Tanzania"))) |> 
   dplyr::full_join(ratio_ORO_totPub, by = c("NA2_DESCRI" = "Country")) |> 
   sf::st_transform(crs = PROJ)
-    
+#-----  
+
+  ## ---- PLOT PANEL A
+  panelA <- univariate_map(data_map    = data_map,
+                           color_scale = viridis::magma(6, direction = -1),
+                           legend      = "Ratio (%)",
+                           show.legend = TRUE,
+                           name        = "main/Fig1_panelA")
+
+
+
+
+### ----- PANEL B -----
+
+  ## ---- LOAD DATA
+  uniquerefs <- tbl(dbcon, "uniquerefs") # metadata on the unique references
+  pred_oro_branch <- tbl(dbcon, "pred_oro_branch") # predictions for ORO branch
   
-### Map PANEL A
-library(rgdal)
-library(broom)
+  ## ---- FORMAT DATA 
+    
+    # --- Just simplify and create a column that idenfies with 1 or 0 whether 
+    # --- a publication is relevant for mitiagion or adaptation
+    mitAdaptPubs <- pred_oro_branch %>%
+      mutate(adaptation = ifelse(0.5 <= `oro_branch.Nature - mean_prediction` |
+                                 0.5 <= `oro_branch.Societal - mean_prediction`,
+                                 1, 0),
+             mitigation = ifelse(0.5 <= `oro_branch.Mitigation - mean_prediction`, 1 ,0))%>%
+      select(analysis_id, adaptation, mitigation) %>%
+      left_join(uniquerefs %>% select(analysis_id, affiliation), by = "analysis_id") %>%
+      collect()
+    
+    # --- Extarct country affiliation of the 1st author
 
-
-
-
-data_map <- format_data2map(data = world_bounds,
-                            PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
-
-
-univariate_map(data_map    = data_map,
-               color_scale = viridis::magma(6, direction = -1),
-               legend      = "Ratio (%)",
-               show.legend = TRUE,
-               name        = NULL)
-
-
-## Panel B - Map of ratio of mitigation/adaptation ORO publications
-dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
-src_dbi(dbcon) # just to explore prints out all the tables
-uniquerefs <- tbl(dbcon, "uniquerefs") # metadata on the unique references
-pred_oro_branch <- tbl(dbcon, "pred_oro_branch") # predictions for ORO branch
-
-# Just simplify and create a column that idenfies with 1 or 0 whether a publication is relevant 
-# for mitiagion or adaptation
-mitAdaptPubs <- pred_oro_branch %>%
-  mutate(adaptation = ifelse(0.5 <= `oro_branch.Nature - mean_prediction` |
-                             0.5 <= `oro_branch.Societal - mean_prediction`,
-                             1, 0),
-         mitigation = ifelse(0.5 <= `oro_branch.Mitigation - mean_prediction`, 1 ,0))%>%
-  select(analysis_id, adaptation, mitigation) %>%
-  # Join with affiliation information
-  left_join(uniquerefs %>% select(analysis_id, affiliation), by = "analysis_id") %>%
-  collect()
-
-## IMPORTANT -- when done with the database (i.e. after collect)
-# disconnect
-DBI::dbDisconnect(dbcon)
+# ----
 
 ### Extarct country affiliation of the 1st author
 aff_mitAdaptPubs <- mitAdaptPubs |> 
@@ -468,17 +484,24 @@ aff_mitAdaptPubs_sf <- world_bounds <- sf::read_sf(here::here("data", "external"
                                                                     "Tanzania"                           = "United Republic Of Tanzania"))) |> 
   dplyr::full_join(aff_mitAdaptPubs, by = c("NA2_DESCRI" = "country_aff")) |> 
   sf::st_transform(crs = PROJ)
+
+
+# -----
+
+    # --- Format the data to produce the map
+    data_2_map_panelB <- format_data2map(data = aff_mitAdaptPubs_sf,
+                                         PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+
+  ## ---- PLOT PANEL B
+  univariate_map(data_map    = data_2_map_panelB,
+                 color_scale = viridis::mako(10, direction = 1), # viridis
+                 legend      = "% mit. ORO",
+                 show.legend = TRUE,
+                 name        = "main/Fig1_panelB")
   
-#### MAP PANEL B
-Mit_Adapt_map <- format_data2map(data = aff_mitAdaptPubs_sf,
-                                 PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
 
-
-univariate_map(data_map    = Mit_Adapt_map,
-               color_scale = viridis::mako(10, direction = 1), # viridis
-               legend      = "% mit. ORO",
-               show.legend = TRUE,
-               name        = NULL)
+### ----- DISCONNECT -----
+DBI::dbDisconnect(dbcon)
 
 
 tmp <- dplyr::filter(Mit_Adapt_map$data, is.na(layer)) |> 
