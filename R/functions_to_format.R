@@ -144,7 +144,7 @@ extract_1stA_affiliation <- function(data, countries_ls){
     dplyr::filter(!is.na(country_aff))
   
   ### Papers without affiliation
-  NA_affiliation <- filter(oroAffiliations, is.na(affiliation))
+  NA_affiliation <- filter(data, is.na(affiliation))
   
   
   ### CHECKS
@@ -169,6 +169,108 @@ extract_1stA_affiliation <- function(data, countries_ls){
   
 }
 
+
+#' Format Data Of The Number Of Publications On O&A By Country As Found On WOS
+#'
+#' @param data load the file WOS_ocean-and-climate_by-country_2023-11-21.txt
+#' @param countries_ls load the file sql-pays.csv
+#'
+#' @return
+#' @export
+#'
+#' @examples
+number_OandC_paper_formating <- function(data, countries_ls){
+  
+  output_data <- data |> 
+    dplyr::mutate(Countries.Regions = stringr::str_to_title(Countries.Regions)) |> 
+    dplyr::mutate(Countries.Regions = stringr::str_replace_all(Countries.Regions, c("England"            = "United Kingdom",
+                                                                                    "Scotland"           = "United Kingdom",
+                                                                                    "Falkland Island"    = "United Kingdom",
+                                                                                    "Usa"                = "United States",
+                                                                                    "Russia"             = "Russian Federation",
+                                                                                    "Iran"               = "Islamic Republic of Iran",
+                                                                                    "Wales"              = "United Kingdom",
+                                                                                    "U Arab Emirates"    = "United Arab Emirates",
+                                                                                    "Tanzania"           = "United Republic Of Tanzania",
+                                                                                    "Turkiye"            = "Turkey",
+                                                                                    "Trinidad Tobago"    = "Trinidad and Tobago",
+                                                                                    "Brunei"             = "Brunei Darussalam",
+                                                                                    "Ussr"               = "Russian Federation",
+                                                                                    "Syria"              = "Syrian Arab Republic",
+                                                                                    "Bosnia Herceg"      = "Bosnia and Herzegovina",
+                                                                                    "Antigua Barbu"      = "Antigua and Barbuda",
+                                                                                    "Ascension Isl"      = "United Kingdom",
+                                                                                    "Bonaire"            = "Netherlands",
+                                                                                    "Sint Maarten"       = "Netherlands",
+                                                                                    "Curacao"            = "Netherlands",
+                                                                                    "British Virgin Isl" = "British Virgin Islands",
+                                                                                    "Bundes Republik"    = "Germany",
+                                                                                    "Fed rep Ger"        = "Germany",
+                                                                                    "Cent Afr republ"    = "Central African", 
+                                                                                    "Dem Rep Congo"      = "The Democratic Republic Of The Congo",
+                                                                                    "Eswatini"           = "Swaziland",
+                                                                                    "Iran"               = "Islamic Republic of Iran",
+                                                                                    "Loas"               = "Lao People's Democratic Republic",
+                                                                                    "Macedonia"          = "The Former Yugoslav Republic of Macedonia",
+                                                                                    "North Macedonia"    = "The Former Yugoslav Republic of Macedonia",
+                                                                                    "Yugoslavia"         = "The Former Yugoslav Republic of Macedonia",
+                                                                                    "Rep Congo"          = "Republic of the Congo",
+                                                                                    "Sao Tome Prin"      = "Sao Tome and Principe",
+                                                                                    "St Barthelemy"      = "France",
+                                                                                    "St Martin"          = "France",
+                                                                                    "St Helena"          = "United Kingdom",
+                                                                                    "Tristan Da Cunh"    = "United Kingdom",
+                                                                                    "St Lucia"           = "Saint Lucia",
+                                                                                    "St Vincent"         = "Saint Vincent and the Grenadines",
+                                                                                    "Svalbard"           = "Svalbard and Jan Mayen",
+                                                                                    "Timor Leste"        = "Timor-Leste",
+                                                                                    "Turks Caicos"       = "Turks and Caicos Islands",
+                                                                                    "Ukssr"              = "Ukraine",
+                                                                                    "Vatican"            = "Vatican City State",
+                                                                                    "Anguilla"           = "United Kingdom",
+                                                                                    "Hong Kong"          = "China",
+                                                                                    "South Sudan"        = "Sudan")),
+                  Country           = stringr::str_extract(Countries.Regions, paste(countries_ls$name_en, collapse = "|"))) |> 
+    dplyr::filter(!is.na(Country)) |> 
+    dplyr::group_by(Country) |> 
+    dplyr::summarise(Record.Count = sum(Record.Count, na.rm = T))
+  
+  return(output_data)
+  
+}
+
+
+#' Format The Shape File Of World's Country Boundaries And Bind Data
+#'
+#' @param world_shp load "world_shp"
+#' @param data_to_bind data that you want to map
+#' @param PROJ the wanted projection
+#'
+#' @return
+#' @export
+#'
+#' @examples
+format_shp_of_the_world <- function(world_shp, data_to_bind, PROJ){
+  
+  world_bounds <- world_shp |> 
+    dplyr::select(NA2_DESCRI, NA3_DESCRI, geometry) |> 
+    dplyr::mutate(NA2_DESCRI = stringr::str_replace_all(NA2_DESCRI, c("The Bahamas"                        = "Bahamas",
+                                                                      "Iran"                               = "Islamic Republic of Iran",
+                                                                      "Congo (Democratic Republic of the)" = "The Democratic Republic Of The Congo",
+                                                                      "Congo"                              = "Republic of the Congo",
+                                                                      "Svalbard"                           = "Svalbard and Jan Mayen",
+                                                                      "Vatican City"                       = "Vatican City State",
+                                                                      "Brunei"                             = "Brunei Darussalam",
+                                                                      "Burma"                              = "Myanmar",
+                                                                      "Russia"                             = "Russian Federation",
+                                                                      "Syria"                              = "Syrian Arab Republic",
+                                                                      "Turks and Caicas Islands"           = "Turks and Caicos Islands",
+                                                                      "The Gambia"                         = "Gambia",
+                                                                      "Tanzania"                           = "United Republic Of Tanzania"))) |> 
+    dplyr::full_join(data_to_bind, by = c("NA2_DESCRI" = "Country")) |> 
+    sf::st_transform(crs = PROJ)
+  
+}
 
 
 #' Format Data To Map 
