@@ -3,7 +3,7 @@
 # FIGURE 2                                                                              #
 # Panel A: Map of # ORO publications/# publications on ocean & climate  in each country #  
 # Panel B: Map of ratio of mitigation/adaptation ORO publications                       #
-# Panel C: Scatter plot (1 point = 1 country), # ORO publication = f(total #pub on O&C  #
+# Panel C: Scatter plot (1 point = 1 country), # ORO publication = f(total #pub on O&C) #
 #                                                                                       #
 #########################################################################################
 rm(list = ls(), envir = .GlobalEnv) # clean the environment
@@ -145,7 +145,39 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   
 ### ----- PANEL C -----
   
+  ## ---- FORMAT DATA
   
+    # --- Find the predominant ORO type (adaptation vs. mitigation)
+    # --- And bind all data together
+    data_panelC <- ratio_mitig_adapt |> 
+      mutate(dominant_ORO = forcats::fct_relevel(case_when(layer >  50 ~ "Mitigation",
+                                                           layer == 50 ~ "50/50",
+                                                           layer <  50 ~ "Adaptation"),
+                                                 "Adaptation", "50/50", "Mitigation")) |> 
+      full_join(oceanClimate_byCountry, by = "Country") |> 
+      full_join(ORO_per_country, by = c("Country" = "country_aff"))
+  
+    # --- Remove NA and Data transformation if needed
+    # --- Identify the points that are the farthest from the OLS
+    hist(data_panelC_noNA$Record.Count) # Data skewed to the right => log10 transformation
+    hist(data_panelC_noNA$Count_ORO) # Data skewed to the right => log10 transformation
+  
+    # For some countries (e.g., Greenland), one ref identified in the mit_adap df.
+    # But not selected in the oroAffiliations df because level of relevance too low.
+    
+
+  ## ---- PLOT PANEL C
+  panelC <- biplot_fig2c(data        = data_panelC,
+                         ylab        = "# ORO publication",
+                         xlab        = "# O&C publication",
+                         color_scale = c("#DD7E54", "mediumpurple3", "#20BAA7"),
+                         log.transf  = TRUE,
+                         quant.prob  = 0.85, 
+                         name        = "main/Fig1_panelC") ; panelC  
+
+    
+    
+oceanClimate_byCountry
   
   
   
@@ -154,10 +186,4 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
 ### ----- DISCONNECT -----
 DBI::dbDisconnect(dbcon)
 
-
-tmp <- dplyr::filter(Mit_Adapt_map$data, is.na(layer)) |> 
-  sf::st_drop_geometry()
-
-nrow(NA_affiliation)+nrow(NA_country)+nrow(oroAffiliations_country1stA)
-tmp <- rbind(NA_affiliation, NA_country, oroAffiliations_country1stA[,1:2])
 

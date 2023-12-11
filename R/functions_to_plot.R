@@ -83,3 +83,75 @@ univariate_map <- function(data_map, color_scale, legend, show.legend, name = NU
   
   
 }
+
+
+
+#' Biplot For Figure 2 Panel C
+#'
+#' @param data the data
+#' @param xlab a character vector of the name of the x axis
+#' @param ylab a character vector of the name of the y axis
+#' @param log.transf TRUE/FALSE if log transformation is needed
+#' @param quant.prob numeric between 0 and 1 (i.e., 0.8 generate labels for points in the top 20% highest values of all residuals)
+#' @param name default NULL. If not null, a caracter vector corresponding to the name under which the figure is to be saved.
+#' @param color_scale the color scale (3 colors)
+#'
+#' @return
+#' @export
+#'
+#' @examples
+biplot_fig2c <- function(data, xlab, ylab, color_scale, log.transf, quant.prob, name = NULL){
+  
+  data <- data |> filter(!is.na(dominant_ORO) & !is.na(Count_ORO) & !is.na(Record.Count))
+    
+  ### Log transformation if wanted
+  if(log.transf == TRUE){
+    data <- data |> 
+      mutate(Count_ORO    = log(Count_ORO+1),
+             Record.Count = log(Record.Count+1))
+  }
+  
+  ### Residuals
+  data <- data |> 
+    mutate(residuals = resid(lm(Count_ORO ~ Record.Count, data = cur_data())),
+           labels    = abs(residuals) >= quantile(abs(residuals), prob = quant.prob))
+  
+
+  
+  plot <- ggplot(data    = data, 
+                 mapping = aes(x = Record.Count, 
+                               y = Count_ORO)) +
+    geom_point(mapping = aes(color = dominant_ORO)) +
+    geom_smooth(method  = lm, 
+                col     = "grey10") +
+    
+    ylim(c(0, max(data$Count_ORO))) +
+
+    xlab(label = xlab) +
+    ylab(label = ylab) +
+    geom_text_repel(data        = filter(data, labels == TRUE), 
+                    mapping     = aes(label = Country, color = dominant_ORO), 
+                    show.legend = FALSE,
+                    min.segment.length = 0.1) +
+    scale_color_manual(values = color_scale, 
+                       name   = "ORO branch:",
+                       labels = c("Adaptation", "50/50", "Mitigation")) +
+    theme_bw() +
+    theme(legend.position = c(0.15, 0.85),
+          axis.text.x     = element_text(size = 11),
+          axis.text.y     = element_text(size = 11),
+          axis.title.x    = element_text(size = 13),
+          axis.title.y    = element_text(size = 13),
+          legend.text     = element_text(size = 12),
+          legend.title    = element_text(size = 13))
+  
+  if(! is.null(name)) {
+    
+    ggplot2::ggsave(here::here("figures", paste0(name, ".jpeg")), width = 7, height = 5, device = "jpeg")
+    
+  }
+  
+  return(plot)
+  
+}
+  
