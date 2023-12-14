@@ -3,8 +3,17 @@ tmp <- mitAdaptPubs |>
 
 
 tmp2 = oroAffiliations |> 
-  filter(stringr::str_detect(affiliation, pattern = ", SINGAPORE") == TRUE)
+  filter(stringr::str_detect(affiliation, pattern = "Mali") == TRUE)
 
 
-oroAffiliations_country1stA |> 
-  filter(analysis_id == 228405)
+oroAffiliations |> 
+  filter(analysis_id == 60791)
+
+tmp = mitAdaptPubs |> 
+  filter(analysis_id == 60791) ; tmp$affiliation
+
+tmp2 = test |> 
+  filter(analysis_id == 60791) ; tmp$affiliation
+
+tmp2 = NA_country_ada2 |> 
+  filter(stringr::str_detect(affiliation, pattern = "Korea \\(the Republic of\\)") == TRUE)

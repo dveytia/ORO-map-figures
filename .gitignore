@@ -4,7 +4,7 @@
 /data/geoparsing/geoparsed-text/*.csv
 /data/geoparsing.tar.gz
 /data/geoparsing.tar
-
+/data/external/eez_shp/*
 
 
 # History files
