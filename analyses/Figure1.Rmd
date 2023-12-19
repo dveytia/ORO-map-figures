@@ -1,0 +1,179 @@
+---
+title: "Figure1"
+author: "Devi Veytia"
+date: "2023-12-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Figure description/overview
+
+This figure shows the Distribution of research across OROs and its time evolution
+
+Panel A: Line plot of # articles for each ORO branch and Ocean & climate research by year     
+Panel B: Barplot of # articles for each ORO type, filled by % articles in IPCC report. Perhaps also label at the top of the bar the year of the inflexion point of the exponential relationship    
+
+*Key messages:*
+1. there is exponential increase in research effort / articles on OROs  
+? comparator : total number of articles on climate & Ocean / WoS query)	🡪(Panel a)
+ 
+2. Research effort on OROs is dominated by articles on Renewable energy (50%)  (Panel b). Comparator IPCC ref list – hypothesize there will be very few on renewable energy but much more on NbS
+
+3. Contrasted trends in research effort for the different OROs types (Panel b). 
+
+
+
+# Set up
+
+```{r load libraries}
+library(dplyr)
+library(dbplyr)
+library(R.utils)
+library(RSQLite)
+library(ggplot2)
+```
+
+
+```{r Get the latest version of sqlite database and connect}
+
+sqliteDir <- here::here("data/sqlite-databases")
+sqliteFiles <- dir(sqliteDir)
+sqliteVersions <- as.numeric(gsub(".sqlite","",substring(sqliteFiles, regexpr("_v", sqliteFiles) + 2)))
+latestVersion <- sqliteFiles[which.max(sqliteVersions)]
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+```
+
+
+```{r import common aesthetics}
+factor_aes <- readxl::read_excel(here::here("R/factor_aesthetics.xlsx"))
+
+```
+
+# Panel A: Line plot of # articles for each ORO branch and Ocean & climate research by year
+
+For each year, and for each branch, count the number of lower, mean and upper articles relevant for each branch
+```{r Sum n articles per oro branch per year}
+predRel <- tbl(dbcon, "pred_relevance") 
+pred_oro_branch <- tbl(dbcon, "pred_oro_branch")
+uniquerefs <- tbl(dbcon, "allrefs")
+
+oro_branch_by_year <- pred_oro_branch %>%
+  inner_join(predRel %>% select(analysis_id, relevance_mean), by = "analysis_id")%>%
+  filter(0.5 <= relevance_mean) %>%
+  inner_join(uniquerefs %>% select(analysis_id, year), by = "analysis_id") %>%
+  group_by(year) %>%
+  summarise(
+    Mitigation_mean = sum(0.5 <= `oro_branch.Mitigation - mean_prediction`),
+    Mitigation_lower = sum(0.5 <= `oro_branch.Mitigation - lower_pred`),
+    Mitigation_upper = sum(0.5 <= `oro_branch.Mitigation - upper_pred`),
+    Nature_mean = sum(0.5 <= `oro_branch.Nature - mean_prediction`),
+    Nature_lower = sum(0.5 <= `oro_branch.Nature - lower_pred`),
+    Nature_upper = sum(0.5 <= `oro_branch.Nature - upper_pred`),
+    Societal_mean = sum(0.5 <= `oro_branch.Societal - mean_prediction`),
+    Societal_lower = sum(0.5 <= `oro_branch.Societal - lower_pred`),
+    Societal_upper = sum(0.5 <= `oro_branch.Societal - upper_pred`)
+  ) %>% 
+  collect()
+
+# Melt and reformat so each line is a yearxbranch, and then columns for mean, lower and upper
+variables <- c("Mitigation","Nature","Societal")
+
+for(v in 1:length(variables)){
+  sub <- oro_branch_by_year[,c(1,grep(variables[v], colnames(oro_branch_by_year)))]
+  colnames(sub) <- gsub(paste0(variables[v],"_"),"", colnames(sub))
+  # sub <- reshape2::melt(sub, id.vars = "year", variable.name = "prediction_boundary", 
+  #                       value.name = "n_articles")
+  sub$ORO_branch <- paste(variables[v])
+  if(v==1){
+    oro_branch_by_year_sums <- sub
+  }else{
+    oro_branch_by_year_sums <- rbind(oro_branch_by_year_sums, sub)
+  }
+}
+
+
+# Factor and format
+oro_branch_by_year_sums <- oro_branch_by_year_sums%>%
+  na.omit() %>%
+  mutate(year = as.Date(paste0(year, "-01-01")),
+         ORO_branch = factor(ORO_branch, levels = variables))
+
+varAES <- factor_aes[which(factor_aes$variable == "ORO_branch"),]
+varAES <- varAES[order(varAES$order),]
+oro_branch_by_year_sums$ORO_branch <- factor(
+  oro_branch_by_year_sums$ORO_branch,
+  levels = varAES$level, labels = varAES$label
+)
+
+summary(oro_branch_by_year_sums)
+
+
+# use the max year to set the x limits
+xmax = max(oro_branch_by_year_sums$year)
+xmin = min(oro_branch_by_year_sums$year)
+```
+
+```{r get number of articles from citation indexed databases}
+
+## Web of Science
+wos_by_year <- read.delim2(
+  here::here("data/external/ocean-and-climate-publications/WOS_ocean-and-climate_by-year_2023-11-21.txt"))
+
+wos_by_year <- wos_by_year %>%
+  rename(year = Publication.Years, n_articles = Record.Count)%>%
+  select(year, n_articles)%>%
+  mutate(year = as.Date(paste0(year, "-01-01"))) %>%
+  filter(xmin <= year & year <= xmax) %>%
+  na.omit()
+
+
+## Scopus
+scopus_by_year <- read.csv(
+  here::here("data/external/ocean-and-climate-publications/SCOPUS_ocean-and-climate_by-year_2023-11-21.csv"))
+
+scopus_by_year <- scopus_by_year %>%
+  mutate(year = as.Date(paste0(year, "-01-01"))) %>%
+  filter(xmin <= year & year <= xmax)%>%
+  na.omit()
+
+
+```
+
+```{r PLOT PANEL A}
+fig1_A_ggp <- ggplot()+
+  geom_ribbon(data = oro_branch_by_year_sums, 
+              aes(x=year, ymin = log(lower), ymax=log(upper), fill = ORO_branch), alpha = 0.5)+
+  geom_line(data = oro_branch_by_year_sums, aes(x=year, y=log(mean), col=ORO_branch), linewidth = 1)+
+  geom_line(data = wos_by_year, aes(x=year, y=log(n_articles)), col="black", linewidth = 1)+
+  scale_color_manual(values = varAES$colour, 
+                     name = "Predicted relevance")+
+  scale_fill_manual(values = c(as.vector(branchPal)), guide = FALSE)+
+  labs(x="Year", y="log(N articles)")+
+  scale_x_date(limits = c(as.Date("1980-01-01"),xmax))+
+  scale_y_continuous(sec.axis = sec_axis(trans = exp, name = "N articles"),
+                     breaks = seq(0,90000, by= 30000))+
+  theme_classic()+
+  theme(legend.position = "bottom")
+
+fig1_A_ggp
+```
+
+
+
+
+ggsave(here::here("figures/main/annual-trends.pdf"),plot=annualTrend_ggp,
+       width = 7, height=4.5, units="in")
+
+
+
+
+
+
+
+
+
+
+
