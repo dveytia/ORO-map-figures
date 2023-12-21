@@ -173,53 +173,165 @@ fig1_A_ggp
 ```{r load predictions for ORO type}
 predRel <- tbl(dbcon, "pred_relevance") 
 predType <- tbl(dbcon, "pred_oro_type_long") 
-uniquerefs <- tbl(dbcon, "allrefs")
+uniquerefs <- tbl(dbcon, "uniquerefs")
 
-oro_branch_by_year <- pred_oro_branch %>%
-  inner_join(predRel %>% select(analysis_id, relevance_mean), by = "analysis_id")%>%
+## Format and collect needed data
+predTypeDf <- predRel %>%
   filter(0.5 <= relevance_mean) %>%
-  inner_join(uniquerefs %>% select(analysis_id, year), by = "analysis_id") %>%
+  select(analysis_id) %>%
+  inner_join(predType, by ="analysis_id") %>%
+  collect()
+
+predTypeRefs <- predType %>%
+  left_join(uniquerefs %>% select(analysis_id, year, title, doi), by="analysis_id")%>%
+  collect()
+
+uniquerefs <- uniquerefs %>% collect()
 ```
+
 
 ```{r Sum number of relevant articles for each oro type and boundary}
 #factor_aes <- readxl::read_excel(here::here("R/factor_aesthetics.xlsx"))
 
-oroTypeSums <- predType %>%
+oroTypeSums <- predTypeDf %>%
   group_by(oro_type) %>%
   summarise(
     n_mean = sum(0.5 <= mean),
     n_lower = sum(0.5 <= lower),
     n_upper = sum(0.5 <= upper)
-  ) %>%
-  collect()
+  ) 
 
 
+## Format data for plotting by factoring using common aesthetics
 
+# Read in the aethetics for oro_type -- determines order of x axis
 typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
 typeAES <- typeAES[order(typeAES$order),]
+# Use to factor oro_type column
 oroTypeSums$oro_type <- factor(
   oroTypeSums$oro_type, 
   levels = typeAES$level, labels = typeAES$label
 )
 
-
+# Join in with aesthetics for ORO branch -- determines colour of bar by oro_branch
 branchAES <- factor_aes[which(factor_aes$variable == "ORO_branch"),]
-typeAES <- merge(typeAES, branchAES[,c("label","colour")] %>%
-                       rename(oro_branch = label), by = "colour")
+typeAES <- merge(typeAES, branchAES[,c("label","colour")] %>%rename(oro_branch = label), 
+                 by = "colour") %>%
+  rename(oro_type = label)
+# Merge sums with plotting order, colour and corresponding branch 
+oroTypeSums <- merge(oroTypeSums,typeAES[,c("oro_type","order","colour","oro_branch")])
+oroTypeSums$oro_branch <- factor(oroTypeSums$oro_branch,
+                                 levels = branchAES$label[branchAES$order])
+oroTypeSums$order <- factor(oroTypeSums$order,
+                            levels = oroTypeSums$order[order(oroTypeSums$order)])
 
-oroTypeSums <- cbind(oroTypeSums, typeAES[,c("order","colour","oro_branch")])
+```
+
+NB the analysis below is long so comment out
+```{r read in IPCC AR6 bibliographies, eval = FALSE}
+# # Read in files as data frames
+# bibDir <- here::here("data/external/IPCC-AR6-bibtex-files")
+# ipccBib <- rbibtools::read_bib(bibDir, tags = c("year","title","doi"))
+# 
+# # deduplicate based on year, and defaults to doi followed by title when match_variable is blank
+# unique_id = revtools::find_duplicates(data = ipccBib,
+#                             group_variables = "year",
+#                             match_function = "stringdist", 
+#                             method = "osa", threshold = 5,
+#                             remove_punctuation = TRUE, to_lower = TRUE)
+# length(unique_id) # number of articles = 82438
+# sum(duplicated(unique_id)) # number of duplicates = 52445
+# # therefore 64 % of articles are duplicates
+# 
+# ipccBibUnique <- revtools::extract_unique_references(
+#   ipccBib, unique_id
+# )
+# 
+# # Assign a bib ID to each unique article
+# ipccBibUnique$ipccRef_id <- paste0("ipcc_",seq(1, nrow(ipccBibUnique)))
+# 
+# # Save
+# save(ipccBibUnique,file = file.path(bibDir, "IPCC_AR6_uniquerefs.RData"))
+
+```
+
+```{r identify matches between ipcc refs and our database}
+# analagous to the find_duplicates function, group by year and look for doi matches
+# and then if none, fuzzy title matching
+
+# Source functions for analysis
+source(here::here("R/utils.R"))
+source(here::here("R/clean_string.R"))
+
+# Load the unique ipcc references
+load(here::here("data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs.RData"))
+
+# subset the ipcc to the temporal range of our database
+years <- as.numeric(uniquerefs$year) 
+#years <- years[!is.na(years)]
+years <- unique(years)
+years <- years[order(years)]
+
+ipccBibUnique$year <- as.numeric(ipccBibUnique$year)
+#ipccBibUnique <- ipccBibUnique[!is.na(ipccBibUnique$year),]
+ipccBibUnique <- ipccBibUnique[which((min(years, na.rm=T) <= ipccBibUnique$year) | 
+                                       is.na(ipccBibUnique$year)),]
+nrow(ipccBibUnique) # 29963
+
+
+# For each year in my dataset, calculate if there is a match
+ipccMatchesList <- vector("list", length(years))
+
+for(y in 1:length(years)){
+  # subset data to that year
+  if(is.na(years[y])){
+    tempDf <- predTypeRefs[which(is.na(uniquerefs$year)),]
+    if(sum(is.na(ipccBibUnique$year)) == 0){next} # if no matches, skip year
+    ipccTempDf <- ipccBibUnique[which(is.na(ipccBibUnique$year)),]
+  }else{
+    tempDf <- predTypeRefs[which(uniquerefs$year == as.character(years[y])),] 
+    if(length(which(ipccBibUnique$year == years[y])) == 0){next} # if no matches, skip year
+    ipccTempDf <- ipccBibUnique[which(ipccBibUnique$year == years[y]),]
+  }
+  
+  # first look for doi matches
+  tempDf <- merge(tempDf, ipccTempDf[,c("doi","ipccRef_id")],
+                       all.x = TRUE, all.y = FALSE, by = "doi")
+  
+  # if there are still NA values in ipccRef_id column, go to fuzzy title
+  myTitles <- tempDf$title[!is.na(tempDf$title)]
+  ipccTitles <- ipccTempDf$title[!is.na(ipccTempDf$title)]
+  if(length(myTitles) == 0 | length(ipccTitles) == 0){next}
+  
+  if(0 < sum(is.na(tempDf$ipccRef_id))){
+    titleMatches <- stringdist::amatch(
+      x = clean_string(myTitles), table = clean_string(ipccTitles),
+      method = "osa", maxDist = 5
+    )
+    # fill in any NA values from title Matching
+    tempDf$ipccRef_id[is.na(tempDf$ipccRef_id)] = titleMatches[is.na(tempDf$ipccRef_id)]
+  }
+  
+  # save in list object
+  ipccMatchesList[[y]] <- tempDf
+}
+
+# Bind all together into a data frame
+ipccMatches <- do.call(rbind.data.frame, ipccMatchesList)
+save(ipccMatchesList,
+     file = here::here("data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs_matches.RData"))
 ```
 
 
-```{r}
+```{r plot panel B}
 fig1_B_ggp <- ggplot(oroTypeSums, aes(x=order, y=n_mean, fill = oro_branch))+
   geom_col()+
   geom_errorbar(aes(ymin = n_lower, ymax = n_upper), width=.2)+
   geom_text(aes(label = n_mean), nudge_y = 1000, size=3, col="red")+ #nudge_x=0.2,
   scale_fill_manual(name = "ORO branch", 
-                    values = as.vector(branchAES$colour[order(branchAES$order)]))+
-  scale_x_discrete(limits = factor(oroTypeSums$order), 
-                    labels = oroTypeSums$oro_type[order(oroTypeSums$order)])+
+                    values = as.vector(branchAES$colour))+
+  scale_x_discrete(limits = levels(oroTypeSums$order), 
+                    labels = levels(oroTypeSums$oro_type))+
   #ylim(c(0, max(temp$n_upper)+2000))+
   labs(y="N articles")+
   theme(
@@ -228,6 +340,7 @@ fig1_B_ggp <- ggplot(oroTypeSums, aes(x=order, y=n_mean, fill = oro_branch))+
     axis.text.x = element_text(angle=45, hjust=1),
     axis.title.x = element_blank()
   )
+
 fig1_B_ggp
 ```
 
