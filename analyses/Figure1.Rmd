@@ -227,7 +227,7 @@ oroTypeSums$order <- factor(oroTypeSums$order,
 
 ```
 
-NB the analysis below is long so comment out
+NB the chunk below takes long to run so comment out and load output in next chunk
 ```{r read in IPCC AR6 bibliographies, eval = FALSE}
 # # Read in files as data frames
 # bibDir <- here::here("data/external/IPCC-AR6-bibtex-files")
@@ -258,78 +258,29 @@ NB the analysis below is long so comment out
 NEXT STEP: identify matches between ipcc refs and our database.
 
 See file 'Figure1_ipccTitleMatching_rossi.R' as this was run on the server. Results file is located at the following relative path: 'data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs_matches.RData'
+```{r clean dataframe on ipcc matches}
+## Filter to only records where there is a match for an analysis_id
+# load(here::here('data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs_matches.RData'))
+# ipccMatches <- ipccMatches[!is.na(ipccMatches$ipccRef_id) & !is.na(ipccMatches$analysis_id),]
+# save(ipccMatches, file = here::here('data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs_matches_clean.RData'))
 
-
-```{r identify matches between ipcc refs and our database, eval=FALSE}
-# analagous to the find_duplicates function, group by year and look for doi matches
-# and then if none, fuzzy title matching
-
-# Source functions for analysis
-source(here::here("R/utils.R"))
-source(here::here("R/clean_string.R"))
-
-# Load the unique ipcc references
+## Load and check data
+load(here::here('data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs_matches_clean.RData'))
 load(here::here("data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs.RData"))
-
-# subset the ipcc to the temporal range of our database
-years <- as.numeric(uniquerefs$year)
-#years <- years[!is.na(years)]
-years <- unique(years)
-years <- years[order(years)]
-
-ipccBibUnique$year <- as.numeric(ipccBibUnique$year)
-ipccBibUnique <- ipccBibUnique[(ipccBibUnique$year %in% years),]
-nrow(ipccBibUnique) # 29952
+checkDat <- data.frame(
+  databaseTitle = ipccMatches$title[1:10],
+  ipccTitle = ipccBibUnique$title[which(ipccMatches$ipccRef_id[1:10] %in% ipccBibUnique$ipccRef_id)],
+  ipccRef_id = ipccMatches$ipccRef_id[1:10]
+)
+print(checkDat)
 
 
-# For each year in my dataset, calculate if there is a match
-ipccMatchesList <- vector("list", length(years))
-
-for(y in 1:length(years)){
-  # subset data to that year
-  if(is.na(years[y])){
-    tempDf <- predTypeRefs[which(is.na(uniquerefs$year)),]
-    if(sum(is.na(ipccBibUnique$year)) == 0){next} # if no matches, skip year
-    ipccTempDf <- ipccBibUnique[which(is.na(ipccBibUnique$year)),]
-  }else{
-    tempDf <- predTypeRefs[which(uniquerefs$year == as.character(years[y])),]
-    if(length(which(ipccBibUnique$year == years[y])) == 0){next} # if no matches, skip year
-    ipccTempDf <- ipccBibUnique[which(ipccBibUnique$year == years[y]),]
-  }
-
-  # first look for doi matches
-  tempDf <- merge(tempDf, ipccTempDf[,c("doi","ipccRef_id")],
-                       all.x = TRUE, all.y = FALSE, by = "doi")
-
-  # if there are still NA values in ipccRef_id column, go to fuzzy title
-  myTitles <- tempDf$title[!is.na(tempDf$title)]
-  ipccTitles <- ipccTempDf$title[!is.na(ipccTempDf$title)]
-  if(length(myTitles) == 0 | length(ipccTitles) == 0){next}
-
-  if(0 < sum(is.na(tempDf$ipccRef_id))){
-    titleMatches <- stringdist::amatch(
-      x = clean_string(myTitles), table = clean_string(ipccTitles),
-      method = "osa", maxDist = 5
-    )
-    # fill in any NA values from title Matching
-    tempDf$ipccRef_id[is.na(tempDf$ipccRef_id)] = titleMatches[is.na(tempDf$ipccRef_id)]
-  }
-
-  # save in list object
-  ipccMatchesList[[y]] <- tempDf
-}
-
-# Bind all together into a data frame
-ipccMatches <- do.call(rbind.data.frame, ipccMatchesList)
-save(ipccMatchesList,
-     file = here::here("data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs_matches.RData"))
 ```
-
 
 ```{r using the title matches sum the number and percentage of matches found in ipcc}
 
 # Load data on whether the reference had a match in the IPCC
-load(here::here('data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs_matches.RData'))
+
 
 # For each ORO, sum the number of matches to the ipcc
 oroMatchesSums <- predTypeDf %>%
