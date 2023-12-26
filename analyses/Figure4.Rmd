@@ -1,0 +1,148 @@
+---
+title: "Figure4"
+author: "Devi Veytia"
+date: "2023-12-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Figure description/overview
+
+This figures shows the distribution of ORO types across coastal and marine systems
+
+3 panels 	
+a). Infographic of coastal land & built waterfronts (?) / coastal ocean / open ocean 		
+b). ORO types vs. CIDs per system
+c). ORO types vs. ecosystem types for coastal ocean only
+
+*Key messages:*
+1. Shift of ORO types across systems : Coastal land w. Societal adapatation, Coastal ocean w. Renewable energy (& Conservation), Open Ocean w. Mitigation
+
+2. Shift of ecosystem types across OROs: Mangroves for CO2 removal, Coral reef for Conservation / Adapt:Nature, Mangrove / Seagrass for Conservation Adapt:Humans. 
+
+# Set up
+
+```{r load libraries}
+library(dplyr)
+library(dbplyr)
+library(R.utils)
+library(RSQLite)
+library(ggplot2)
+library(cowplot)
+```
+
+
+```{r Get the latest version of sqlite database and connect}
+
+sqliteDir <- here::here("data/sqlite-databases")
+sqliteFiles <- dir(sqliteDir)
+sqliteVersions <- as.numeric(gsub(".sqlite","",substring(sqliteFiles, regexpr("_v", sqliteFiles) + 2)))
+latestVersion <- sqliteFiles[which.max(sqliteVersions)]
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+```
+
+
+```{r import common aesthetics}
+factor_aes <- readxl::read_excel(here::here("R/factor_aesthetics.xlsx"))
+
+```
+
+
+# Panel A: Infographic of coastal land & built waterfronts (?) / coastal ocean / open ocean
+
+```{r read in svg image of infographic created in inkscape}
+## Read in the infographic of the marine systems
+fig4_A_ggp <- magick::image_read(here::here("figures/inkscape/marineSystems.svg"))
+```
+
+# Panel B: Heatmap of ORO types vs. CIDs per system
+
+# Panel C: Heatmap of ORO types vs. ecosystem types for coastal ocean only
+
+# Old code
+
+
+```{r Barchart of ORO types split by marine system clustered by climate threat}
+library(cowplot)
+
+## Read in the infographic of the marine systems
+marineSysImg <- magick::image_read(here::here("figures/inkscape/marineSystems.svg"))
+
+## Read in data for plots (cluster by climate threat)
+# ORO Type
+predOROAny <- readOROAnyPredictions(boundaries = "mean")
+predOROAny$oro_branch <- factor(predOROAny$oro_branch,
+                                levels = c("mitigation","nature","societal"),
+                                labels = c("Mitigation",
+                                           "Natural resilience",
+                                           "Societal adaptation"))
+predOROAny <- predOROAny %>% 
+  filter(!(oro_any %in% c("Protection","Restoration"))) %>%
+  mutate(oro_any = droplevels(oro_any)) %>%
+  mutate(oro_any = recode_factor(
+    oro_any, Renewables = "Renewable energy", Increase_efficiency = "Increase efficiency",
+    CO2_removal_or_storage="CO2 removal or storage", 
+    Human_assisted_evolution="Human-assisted evolution", Conservation="Conservation",
+    Built_infrastructure_and_technology="Built infrastructure & technology",
+    Socioinstitutional="Socio-institutional"
+  ))
+# Marine system
+predMarine <- readPredictions(boundaries = "mean", variable = "marine_system")
+predMarine <- predMarine %>%
+  mutate(marine_system = recode_factor(marine_system, 
+                                       land = "Coastal land", 
+                                       `coastal ocean` = "Coastal ocean",
+                                       `open-ocean` = "Open-ocean"))
+# Climate threat
+predThreat <- readPredictions(boundaries = "mean", variable = "climate_threat")
+predThreat <- predThreat %>%
+  filter(climate_threat %in% c("Temperature","SLR","Extreme_weather")) %>%
+  mutate(climate_threat = droplevels(climate_threat))
+  
+
+
+## DATA CALCULATIONS 
+
+temp <- predMarine %>% filter(0.5 <= mean) %>% select(analysis_id, marine_system) %>%
+  inner_join(predOROAny %>% filter(0.5 <= mean) %>% select(analysis_id, oro_any)) %>%
+  left_join(predThreat %>% filter(0.5 <= mean) %>% select(analysis_id, climate_threat)) %>%
+  mutate(climate_threat = factor(climate_threat, 
+                                 levels = c("Temperature","SLR","Extreme_weather", NA), 
+                                 labels = c("Temperature","Sea-level rise","Extreme weather", "Other"), 
+                                 exclude = NULL))
+
+
+
+## PLOTTING
+
+marineSysOROThreat_ggp <- ggplot(temp, aes(x = oro_any, fill = climate_threat))+
+  facet_wrap(vars(marine_system), ncol=1, scales = "free")+
+  geom_bar(position = "stack")+
+  labs(fill = "Climate threat", y = "Number of articles", x="ORO type")+ #
+  scale_fill_brewer(palette = "Paired")+ # only one that's colourblind safe
+  scale_x_discrete(limits = rev)+
+  coord_flip()+
+  theme_bw()+
+  theme(
+    #axis.text.x = element_text(angle = 45, hjust=1, vjust=1)
+    legend.position = "right",
+    axis.title.y = element_blank()
+  )
+
+
+# Plot of the svg infographic -- odd that the vecotor images of the icons don't show up
+marineSysImg_ggp <- ggdraw()+draw_image(marineSysImg, scale = 1)
+
+
+
+## Save file
+pdf(file = here::here("figures/main/marineSystem-ORO-climateThreat_barplot.pdf"),
+    width = 10, height = 5)
+plot_grid(marineSysImg_ggp, marineSysOROThreat_ggp, rel_widths = c(1,1.5))
+while (!is.null(dev.list())) dev.off()
+
+```
+
