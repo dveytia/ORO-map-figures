@@ -55,10 +55,274 @@ factor_aes <- readxl::read_excel(here::here("R/factor_aesthetics.xlsx"))
 
 ```{r read in svg image of infographic created in inkscape}
 ## Read in the infographic of the marine systems
-fig4_A_ggp <- magick::image_read(here::here("figures/inkscape/marineSystems.svg"))
+fig4_A_Img <- magick::image_read(here::here("figures/inkscape/marineSystems.svg"))
+
+# Plot of the svg infographic 
+fig4_A_ggp <- ggdraw()+draw_image(fig4_A_Img, scale = 1)
+
 ```
 
 # Panel B: Heatmap of ORO types vs. CIDs per system
+
+```{r read in data for the plot - use only mean predictions}
+
+## Access relevant tables
+
+predRel <- tbl(dbcon, "pred_relevance") %>%
+  filter(0.5 <= relevance_mean) %>%
+  select(analysis_id)
+
+predType <- tbl(dbcon, "pred_oro_type_long") %>%
+  filter(0.5 <= mean) %>%
+  select(analysis_id, oro_branch, oro_type) 
+
+predMarSys <- tbl(dbcon, "pred_marine_system") %>%
+  select(analysis_id, 
+         `marine_system.land - mean_prediction`,
+         `marine_system.coastal ocean - mean_prediction`,
+         `marine_system.open-ocean - mean_prediction`) %>% 
+  rename(land = `marine_system.land - mean_prediction`,
+         coastal_ocean = `marine_system.coastal ocean - mean_prediction`,
+         open_ocean = `marine_system.open-ocean - mean_prediction`) %>%
+  collect()%>%
+  reshape2::melt(id.vars = c("analysis_id"), variable.name = "marine_system", value.name = 'mean') %>%
+  filter(0.5 <= mean) %>%
+  select(-c(mean))
+
+predThreat <- tbl(dbcon, "pred_climate_threat") %>%
+  select(analysis_id,
+         `climate_threat.Temperature - mean_prediction`,
+         `climate_threat.SLR - mean_prediction`,
+         `climate_threat.Extreme_weather - mean_prediction`) %>%
+  rename(Temperature = `climate_threat.Temperature - mean_prediction`,
+         SLR = `climate_threat.SLR - mean_prediction`,
+         Extreme_weather = `climate_threat.Extreme_weather - mean_prediction`) %>%
+  collect() %>%
+  reshape2::melt(id.vars = c("analysis_id"), variable.name = "climate_threat", value.name = 'mean') %>%
+  filter(0.5 <= mean) %>%
+  select(-c(mean))
+  
+
+
+## Data joining and calculations
+# Format into data frame where each row is a publication (unique analysis_id)
+
+# Include only articles that have a prediction for ORO type AND marine system
+marSysTypeThreatDf <- predRel %>%
+  inner_join(predType, by="analysis_id") %>%
+  collect() %>%
+  inner_join(predMarSys, by="analysis_id")
+
+# predictions for climate threat can be optional, because NA value will be classified as 'other'
+# so use left_join to add in threats
+marSysTypeThreatDf <- marSysTypeThreatDf %>%
+  left_join(predThreat, by="analysis_id")
+
+# Tabulate counts for the intersection of the different factors
+marSysTypeThreatSums <- marSysTypeThreatDf %>%
+  group_by(oro_branch, oro_type, marine_system, climate_threat) %>%
+  summarise(n_articles = n())
+
+
+
+## Factoring variables for plotting
+
+# retrieve aesthetics for relevant factoring variables
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+marSysAES <- factor_aes[which(factor_aes$variable == "marine_system"),]
+marSysAES <- marSysAES[order(marSysAES$order),]
+threatAES <- factor_aes[which(factor_aes$variable == "climate_threat"),]
+threatAES <- threatAES[order(threatAES$order),]
+threatAES$level[which(threatAES$level == "NA")] <- NA
+
+# use aesthetics to factor variables
+marSysTypeThreatSums <- marSysTypeThreatSums %>%
+  mutate(
+    oro_type = factor(oro_type, levels = typeAES$level, labels = typeAES$label),
+    marine_system = factor(marine_system, levels = marSysAES$level, labels = marSysAES$label),
+    climate_threat = factor(climate_threat, levels = threatAES$level, labels = threatAES$label, exclude = NULL)
+  )
+
+```
+
+```{r plot panel B breaks based on quantile}
+nDat <- marSysTypeThreatSums
+nDat$n_articles[which(nDat$climate_threat == "Unidentified")] <- NA
+naDat <- marSysTypeThreatSums %>%
+            filter(climate_threat == "Unidentified") %>%
+            rename(na_articles = n_articles)
+
+
+breaksFill <- quantile(marSysTypeThreatSums$n_articles[marSysTypeThreatSums$climate_threat != "Unidentified"], na.rm=T)
+breaksFill <- signif(breaksFill, digits = 2)
+breaksFill <- unique(breaksFill)
+breaksFill[1] <- 0
+
+breaksNA <- quantile(naDat$na_articles[marSysTypeThreatSums$climate_threat != "Unidentified"], na.rm=T)
+breaksNA <- signif(breaksNA, digits = 2)
+breaksNA <- unique(breaksNA)
+breaksNA[1] <- 0
+
+fig4_B_ggp <- ggplot(nDat, aes(x = climate_threat, y=oro_type))+
+  facet_grid(vars(marine_system))+
+  # Fill for all articles
+  geom_tile(aes(fill = n_articles))+
+  scale_fill_stepsn(name = "N articles", 
+                    breaks = breaksFill,
+                    #n.breaks = n_breaks, nice.breaks = TRUE,
+                    labels = function(x) ifelse(1000 <= x, paste(x/1000, "k"), paste(x)),
+                    colors = viridis::viridis(length(breaksFill)-1),
+                    values = seq(0,1, by=0.25),
+                    #colours = c("#31688EFF","#35B779FF", "#FDE725FF"),
+                    show.limits = TRUE, limits = breaksFill[c(1, length(breaksFill))],
+                    na.value = "transparent")+ 
+  
+  # new fill scale
+  new_scale_fill()+
+  geom_tile(data = naDat,
+            aes(fill = na_articles))+
+  scale_fill_stepsn(name = "N articles", 
+                    breaks=breaksNA,
+                    labels = function(x) ifelse(1000 <= x, paste(x/1000, "k"), paste(x)),
+                    colours = gray.colors(length(breaksNA)-1),
+                    show.limits = TRUE, limits = breaksNA[c(1, length(breaksNA))],
+                    na.value = "transparent")+
+  
+  # other aesthetics
+  labs(x="Climate impact driver")+ 
+  
+  scale_y_discrete(limits = rev)+
+  #coord_flip()+
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(angle = 30, hjust=1, vjust=1),
+    legend.position = "top",
+    axis.title.y = element_blank(),
+    legend.key.width = unit(1, 'cm'),
+    legend.key.height = unit(0.4, 'cm')
+  )
+
+fig4_B_ggp
+```
+
+
+
+```{r plot panel B breaks based on even breaks}
+nDat <- marSysTypeThreatSums
+nDat$n_articles[which(nDat$climate_threat == "Unidentified")] <- NA
+naDat <- marSysTypeThreatSums %>%
+            filter(climate_threat == "Unidentified") %>%
+            rename(na_articles = n_articles)
+
+
+n_breaksFill <- 5
+n_breaksNA <- 4
+
+fig4_B_ggp <- ggplot(nDat, aes(x = climate_threat, y=oro_type))+
+  facet_grid(vars(marine_system))+
+  # Fill for all articles
+  geom_tile(aes(fill = n_articles))+
+  scale_fill_stepsn(name = "N articles", 
+                    n.breaks = n_breaksFill, nice.breaks = TRUE,
+                    labels = function(x) ifelse(1000 <= x, paste(signif(x/1000, digits=2), "k"), paste(x)),
+                    colors = viridis::viridis(n_breaksFill),
+                    values = seq(0,1, by=0.25),
+                    show.limits = TRUE, limits = c(0, max(nDat$n_articles, na.rm = T)),
+                    na.value = "transparent")+ 
+  
+  # new fill scale
+  new_scale_fill()+
+  geom_tile(data = naDat,
+            aes(fill = na_articles))+
+  scale_fill_stepsn(name = "N unidentified", 
+                    n.breaks = n_breaksNA, nice.breaks = TRUE,
+                    labels = function(x) ifelse(1000 <= x, paste(signif(x/1000, digits=2), "k"), paste(x)),
+                    colours = gray.colors(n_breaksNA),
+                    show.limits = TRUE, limits = c(0, max(naDat$na_articles)),
+                    na.value = "transparent")+
+  
+  # other aesthetics
+  labs(x="Climate impact driver")+ 
+  
+  scale_y_discrete(limits = rev)+
+  #coord_flip()+
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(angle = 30, hjust=1, vjust=1),
+    legend.position = "top",
+    axis.title.y = element_blank(),
+    legend.key.width = unit(1, 'cm'),
+    legend.key.height = unit(0.4, 'cm')
+  )
+
+fig4_B_ggp
+```
+
+I feel like because the scales are so different between the panels, I will have to normalize by the number of articles in each panel?
+
+
+```{r plot panel B normalizing by panel to make a percentage}
+paneltotals <- marSysTypeThreatSums %>%
+  group_by(marine_system) %>%
+  summarise(mstotal = sum(n_articles))
+
+marSysTypeThreatSumsNorm <- marSysTypeThreatSums %>%
+  left_join(paneltotals) %>%
+  mutate(percent_articles = n_articles/mstotal*100)
+
+nDat <- marSysTypeThreatSumsNorm
+nDat$percent_articles[which(nDat$climate_threat == "Unidentified")] <- NA
+naDat <- marSysTypeThreatSumsNorm %>%
+            filter(climate_threat == "Unidentified") %>%
+            rename(na_articles = percent_articles)
+
+
+n_breaksFill <- 5
+n_breaksNA <- 4
+
+fig4_B_ggp <- ggplot(nDat, aes(x = climate_threat, y=oro_type))+
+  facet_grid(vars(marine_system))+
+  # Fill for all articles
+  geom_tile(aes(fill = percent_articles))+
+  scale_fill_stepsn(name = "% articles", 
+                    n.breaks = n_breaksFill, nice.breaks = TRUE,
+                    labels = function(x){paste(x,"%")},
+                    colors = viridis::viridis(n_breaksFill),
+                    show.limits = TRUE, limits = c(0, max(nDat$percent_articles, na.rm = T)),
+                    na.value = "transparent")+ 
+  
+  # new fill scale
+  new_scale_fill()+
+  geom_tile(data = naDat,
+            aes(fill = na_articles))+
+  scale_fill_stepsn(name = "% unidentified", 
+                    n.breaks = n_breaksNA, nice.breaks = TRUE,
+                    labels = function(x){paste(x,"%")},
+                    colours = gray.colors(n_breaksNA),
+                    show.limits = TRUE, limits = c(0, max(naDat$na_articles)),
+                    na.value = "transparent")+
+  
+  # other aesthetics
+  labs(x="Climate impact driver")+ 
+  
+  scale_y_discrete(limits = rev)+
+  #coord_flip()+
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(angle = 30, hjust=1, vjust=1),
+    legend.position = "top",
+    axis.title.y = element_blank(),
+    legend.key.width = unit(1, 'cm'),
+    legend.key.height = unit(0.4, 'cm')
+  )
+
+fig4_B_ggp
+```
+
+
+Still loses the idea of the gradient of changes in oro types across marine systems, so keep with the stacked bar plot
+
 
 # Panel C: Heatmap of ORO types vs. ecosystem types for coastal ocean only
 
