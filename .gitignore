@@ -6,7 +6,7 @@
 /data/geoparsing.tar
 /data/external/eez_shp/*
 /data/external/IPCC-AR6-bibtex-files/oro_uniquerefs.RData
-
+/data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs_matches.RData
 
 # History files
 .Rhistory
