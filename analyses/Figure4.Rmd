@@ -407,8 +407,228 @@ fig4_B_barplot_ggp
 ```
 
 
-# Panel C: Heatmap of ORO types vs. ecosystem types for coastal ocean only
+# Panel C: Heatmap of ORO types vs. ecosystem types and outcome for coastal ocean only
 
+```{r get phylopics for ecosystem type}
+pics <- dir(here::here("figures/phylopics/"))
+
+# get mangrove
+if(!("mangrove.svg" %in% pics)){
+  mangrove_uuid <- rphylopic::get_uuid(name = "Rhizophora mangle", n=5)
+  mangrove_img <- rphylopic::pick_phylopic(name = "Rhizophora mangle", n = 1)
+  mangrove_img <- rphylopic::get_phylopic("bacc6a59-80d2-461c-92d4-83cabc91cc39")
+  rphylopic::save_phylopic(img=mangrove_img,
+                path = here::here("figures/phylopics/mangrove.svg"))
+}
+
+
+# Get coral
+if(!("coral.svg" %in% pics)){
+  coral_img <- rphylopic::get_phylopic("32eeaa29-2e90-40b5-92fb-eb8d7fcab9ab")
+  rphylopic::save_phylopic(img = coral_img,
+              path = here::here("figures/phylopics/coral.svg"))
+}
+
+
+# Get macroalgae
+if(!("macroalgae.svg" %in% pics)){
+  macro_img <- rphylopic::get_phylopic("9acf11fa-89dd-4a56-b3da-8665c406c6f5")
+  rphylopic::save_phylopic(img = macro_img,
+              path = here::here("figures/phylopics/macroalgae.svg"))
+}
+
+
+# get seagrass -- for some reason I had to download this directly from the website
+#seagrass_img <- rphylopic::get_phylopic("2534e10f-ea8e-436e-a8c8-13ac045eb867")
+#rphylopic::save_phylopic(img = seagrass_img,
+#              path = here::here("figures/phylopics/seagrass.svg"))
+
+
+library(magick)
+marsh_ras <- as.raster(image_fill(image_read(here::here("figures/phylopics/saltmarsh.jpg")),'none'))
+mangrove_ras <- as.raster(image_fill(image_read_svg(here::here("figures/phylopics/mangrove.svg")),'none'))
+coral_ras <- as.raster(image_fill(image_read_svg(here::here("figures/phylopics/coral.svg")),'none'))
+macro_ras <- as.raster(image_fill(image_read_svg(here::here("figures/phylopics/macroalgae.svg")),'none'))
+seagrass_ras <- as.raster(image_fill(image_read_svg(here::here("figures/phylopics/seagrass.svg")),'none'))
+
+```
+
+
+
+```{r read in data for the plot - use only mean predictions}
+
+## Access relevant tables
+predRel <- tbl(dbcon, "pred_relevance") %>%
+  filter(0.5 <= relevance_mean) %>%
+  select(analysis_id)
+
+predType <- tbl(dbcon, "pred_oro_type_long") %>%
+  filter(0.5 <= mean) %>%
+  select(analysis_id, oro_branch, oro_type) 
+
+predMarSys <- tbl(dbcon, "pred_marine_system") %>%
+  select(analysis_id, 
+         `marine_system.land - mean_prediction`,
+         `marine_system.coastal ocean - mean_prediction`,
+         `marine_system.open-ocean - mean_prediction`) %>% 
+  rename(land = `marine_system.land - mean_prediction`,
+         coastal_ocean = `marine_system.coastal ocean - mean_prediction`,
+         open_ocean = `marine_system.open-ocean - mean_prediction`) %>%
+  collect()%>%
+  reshape2::melt(id.vars = c("analysis_id"), variable.name = "marine_system", value.name = 'mean') %>%
+  filter(0.5 <= mean) %>%
+  select(-c(mean))
+
+predEcoType <- tbl(dbcon, "pred_ecosystem_type") %>%
+  select(analysis_id,
+         `ecosystem_type.Salt_marsh - mean_prediction`,
+         `ecosystem_type.Mangrove - mean_prediction`,
+         `ecosystem_type.Coral_reef - mean_prediction`,
+         `ecosystem_type.Seagrass - mean_prediction`) %>%
+  rename(Salt_marsh = `ecosystem_type.Salt_marsh - mean_prediction`,
+         Mangrove = `ecosystem_type.Mangrove - mean_prediction`,
+         Coral_reef = `ecosystem_type.Coral_reef - mean_prediction`,
+         Seagrass = `ecosystem_type.Seagrass - mean_prediction`) %>%
+  collect() %>%
+  reshape2::melt(id.vars = c("analysis_id"), variable.name = "ecosystem_type", value.name = 'mean') %>%
+  filter(0.5 <= mean) %>%
+  select(-c(mean))
+
+# Outcomes
+predMit <- tbl(dbcon, "pred_climate_mitigation") %>%
+  select(analysis_id, `0 - relevance - mean_prediction`) %>%
+  rename(climate_mitigation = `0 - relevance - mean_prediction`) %>%
+  filter(0.5 <= climate_mitigation) %>%
+  collect()
+
+predAdapt <- tbl(dbcon, "pred_adapt_to_threat") %>%
+  select(analysis_id,
+         `adapt_to_threat.Human - mean_prediction`,
+         `adapt_to_threat.Natural - mean_prediction`) %>%
+  rename(Human = `adapt_to_threat.Human - mean_prediction`,
+         Natural = `adapt_to_threat.Natural - mean_prediction`) %>%
+  collect() 
+  #reshape2::melt(id.vars = c("analysis_id"), variable.name = "adapt_to_threat", value.name = 'mean') %>%
+  #filter(0.5 <= mean) 
+  
+
+
+## Data joining
+
+# Format into data frame where each row is a publication (unique analysis_id)
+
+# Include only articles that have a prediction for ORO type AND coastal marine system and ecosystem type
+coastEcoTypeDf <- predRel %>%
+  inner_join(predType, by="analysis_id") %>%
+  collect() %>%
+  inner_join(predMarSys, by="analysis_id") %>%
+  filter(marine_system == "coastal_ocean") %>%
+  inner_join(predEcoType, by="analysis_id")
+
+# Use left_join to add outcomes
+coastEcoTypeDf <- coastEcoTypeDf %>%
+  left_join(predMit, by="analysis_id") %>%
+  left_join(predAdapt, by="analysis_id")
+
+
+## Factoring variables for plotting
+
+# retrieve aesthetics for relevant factoring variables
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+ecoTypeAES <- factor_aes[which(factor_aes$variable == "ecosystem_type"),]
+ecoTypeAES <- ecoTypeAES[order(ecoTypeAES$order),]
+adaptAES <- factor_aes[which(factor_aes$variable == "adapt_to_threat"),]
+adaptAES <- adaptAES[order(adaptAES$order),]
+
+
+# use aesthetics to factor variables
+coastEcoTypeDf <- coastEcoTypeDf %>%
+  mutate(
+    oro_type = factor(oro_type, levels = typeAES$level, labels = typeAES$label),
+    ecosystem_type = factor(ecosystem_type, levels = ecoTypeAES$level, labels = ecoTypeAES$label)
+  )
+
+
+
+# Tabulate counts for the intersection of the different factors
+library(tidyr)
+mitigationSums <- coastEcoTypeDf %>%
+  group_by(oro_branch, oro_type, ecosystem_type) %>%
+  summarise(n_articles = sum(0.5 <= climate_mitigation, na.rm=T)) %>%
+  complete(ecosystem_type, fill = list(n_articles = 0))
+
+adaptationSums <- coastEcoTypeDf %>%
+  group_by(oro_branch, oro_type, ecosystem_type) %>%
+  summarise(Human = sum(0.5 <= Human, na.rm=T),
+            Natural = sum(0.5 <= Natural, na.rm=T)) %>%
+  complete(ecosystem_type, fill = list(n_articles = 0)) %>%
+  reshape2::melt(measure.vars = c("Human","Natural"), 
+                 variable.name = "adapt_to_threat", value.name = "n_articles") %>%
+  mutate(adapt_to_threat = factor(adapt_to_threat, levels = adaptAES$level, labels = adaptAES$label))
+
+
+# Normalise by number of articles per ORO to get a percent
+# calculate number of unique articles per oro type
+oroTotalsDF <- coastEcoTypeDf %>%
+  filter(0.5 <= climate_mitigation |
+           0.5 <= Human | 0.5 <= Natural) %>%
+  group_by(oro_type) %>%
+  summarise(total = n_distinct(analysis_id))
+
+# divide sums by these totals to get a percent
+mitigationSums <- mitigationSums %>%
+  left_join(oroTotalsDF, by = "oro_type") %>%
+  mutate(percent_articles = n_articles/total*100)
+
+adaptationSums <- adaptationSums %>%
+  left_join(oroTotalsDF, by = "oro_type") %>%
+  mutate(percent_articles = n_articles/total*100)
+
+```
+
+Note that the totals for each oro type are:
+```{r print oro totals for reference}
+print(oroTotalsDF)
+```
+
+
+```{r plot panel C.i - Mitigation}
+fig4_C_i <- ggplot(mitigationSums, aes(y=oro_type, x=ecosystem_type))+
+  geom_tile(aes(fill = percent_articles))+
+  scale_fill_gradient2(mid="white",high="#3182bd", midpoint = 0, guide = guide_coloursteps())+
+  scale_y_discrete(limits=rev)+
+  geom_hline(yintercept = c(0.5,2.5,4.5), col="black", linewidth=0.5)+
+  annotation_raster(marsh_ras, 0.5, 1.5, -2, -0)+
+  annotation_raster(mangrove_ras, 1.5, 2.5, -2, -0)+
+  annotation_raster(seagrass_ras, 2.5, 3.5, -2, -0)+
+  annotation_raster(coral_ras, 3.5, 4.5, -2, -0)+
+  #annotation_raster(macro_ras, 3.5, 4.5, -2, -0)+
+  coord_cartesian(ylim = c(-1.5, length(levels(mitigationSums$oro_type))), clip = 'off')+
+  labs(
+    x = "Ecosystem type", #y = "ORO type", 
+    fill = "% articles",
+    title = "i. Mitigation"
+  )+
+  theme_bw()+
+  theme(
+    #plot.margin = unit(c(0,0,0,0), "cm"),
+    axis.title.y = element_blank(),
+    panel.grid = element_blank(),
+    legend.position = "bottom",
+    axis.text.x = element_text(angle=45, vjust=1, hjust=1)
+    #axis.title.x = element_text(vjust = -8)
+  )
+
+fig4_C_i
+
+```
+
+
+Notes 
+- what marine system is predicted for salt marshes, because none in coastal subset
+- Why are there a high number of coral reef papers and marine renewable energy predicted? Try all marine systems
+- Change colours from viridis to greens and blues
 
 
 
