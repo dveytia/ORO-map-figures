@@ -60,6 +60,7 @@ fig4_A_Img <- magick::image_read(here::here("figures/inkscape/marineSystems.svg"
 # Plot of the svg infographic 
 fig4_A_ggp <- ggdraw()+draw_image(fig4_A_Img, scale = 1)
 
+fig4_A_ggp
 ```
 
 # Panel B: Heatmap of ORO types vs. CIDs per system
@@ -146,6 +147,8 @@ marSysTypeThreatSums <- marSysTypeThreatSums %>%
 
 ```
 
+Plot panel B with the breaks based on quantile
+
 ```{r plot panel B breaks based on quantile}
 nDat <- marSysTypeThreatSums
 nDat$n_articles[which(nDat$climate_threat == "Unidentified")] <- NA
@@ -153,62 +156,74 @@ naDat <- marSysTypeThreatSums %>%
             filter(climate_threat == "Unidentified") %>%
             rename(na_articles = n_articles)
 
+# function to scale breaks between 0-1 for inputting values in scale fill stepsn function
+range01 <- function(x){(x-min(x))/(max(x)-min(x))} 
 
-breaksFill <- quantile(marSysTypeThreatSums$n_articles[marSysTypeThreatSums$climate_threat != "Unidentified"], na.rm=T)
-breaksFill <- signif(breaksFill, digits = 2)
-breaksFill <- unique(breaksFill)
-breaksFill[1] <- 0
+# get quantile for climate threat and unidentified datasets separately to get breaks
+# because they will be plotted on two different colour scales
+breaksFill <- quantile(marSysTypeThreatSums$n_articles[marSysTypeThreatSums$climate_threat != "Unidentified"], na.rm=T) # get the quantile values
+breaksFill <- signif(breaksFill, digits = 2) # cap at 2 signif
+breaksFill <- round((breaksFill/10))*10 # round to the nearest 10
+breaksFill <- unique(breaksFill) # if two quantiles are the same value remove
+breaksFill[1] <- 0 # set min to 0
 
 breaksNA <- quantile(naDat$na_articles[marSysTypeThreatSums$climate_threat != "Unidentified"], na.rm=T)
-breaksNA <- signif(breaksNA, digits = 2)
+breaksNA <- signif(breaksNA, digits = 2) 
+breaksNA <- round((breaksNA/10))*10 
 breaksNA <- unique(breaksNA)
 breaksNA[1] <- 0
 
-fig4_B_ggp <- ggplot(nDat, aes(x = climate_threat, y=oro_type))+
+# Plot
+fig4_B_quantile_ggp <- ggplot(nDat, aes(x = climate_threat, y=oro_type))+
   facet_grid(vars(marine_system))+
   # Fill for all articles
   geom_tile(aes(fill = n_articles))+
-  scale_fill_stepsn(name = "N articles", 
-                    breaks = breaksFill,
-                    #n.breaks = n_breaks, nice.breaks = TRUE,
-                    labels = function(x) ifelse(1000 <= x, paste(x/1000, "k"), paste(x)),
-                    colors = viridis::viridis(length(breaksFill)-1),
-                    values = seq(0,1, by=0.25),
-                    #colours = c("#31688EFF","#35B779FF", "#FDE725FF"),
-                    show.limits = TRUE, limits = breaksFill[c(1, length(breaksFill))],
-                    na.value = "transparent")+ 
+  scale_fill_binned(name = "N articles", 
+               type = "viridis",
+               breaks = breaksFill, nice.breaks = FALSE,
+               labels = function(x) ifelse(1000 <= x, paste(x/1000, "k"), paste(x)),
+               rescaler = scales::rescale,
+               #values = range01(breaksFill),
+               show.limits = TRUE, 
+               limits = breaksFill[c(1, length(breaksFill))], 
+               oob= scales::squish,
+               na.value = "transparent",
+               guide = guide_coloursteps(order = 1),
+               position = "top")+ 
   
-  # new fill scale
+  # new fill scale for unidentified climate threats
   new_scale_fill()+
   geom_tile(data = naDat,
             aes(fill = na_articles))+
-  scale_fill_stepsn(name = "N articles", 
+  scale_fill_stepsn(name = "N unidentified", 
                     breaks=breaksNA,
                     labels = function(x) ifelse(1000 <= x, paste(x/1000, "k"), paste(x)),
-                    colours = gray.colors(length(breaksNA)-1),
+                    colours = gray.colors(length(breaksNA)),
+                    values = range01(breaksNA),
                     show.limits = TRUE, limits = breaksNA[c(1, length(breaksNA))],
-                    na.value = "transparent")+
+                    na.value = "transparent", 
+                    guide = guide_coloursteps(order = 2),
+                    position = "bottom")+
   
   # other aesthetics
   labs(x="Climate impact driver")+ 
-  
   scale_y_discrete(limits = rev)+
-  #coord_flip()+
+
   theme_bw()+
   theme(
     axis.text.x = element_text(angle = 30, hjust=1, vjust=1),
-    legend.position = "top",
+    legend.position = "left",
     axis.title.y = element_blank(),
     legend.key.width = unit(1, 'cm'),
     legend.key.height = unit(0.4, 'cm')
   )
 
-fig4_B_ggp
+fig4_B_quantile_ggp
 ```
 
 
-
-```{r plot panel B breaks based on even breaks}
+plot panel B breaks based on even breaks - does not look great because data are not distributed evenly
+```{r plot panel B breaks based on even breaks - does not look great, eval=FALSE}
 nDat <- marSysTypeThreatSums
 nDat$n_articles[which(nDat$climate_threat == "Unidentified")] <- NA
 naDat <- marSysTypeThreatSums %>%
@@ -216,31 +231,57 @@ naDat <- marSysTypeThreatSums %>%
             rename(na_articles = n_articles)
 
 
-n_breaksFill <- 5
-n_breaksNA <- 4
 
-fig4_B_ggp <- ggplot(nDat, aes(x = climate_threat, y=oro_type))+
+# get even but pretty breaks for each of the datasets
+breaksFill <- seq(0, max(marSysTypeThreatSums$n_articles[marSysTypeThreatSums$climate_threat != "Unidentified"], na.rm=T), length.out = 5) # get the quantile values
+breaksFill <- signif(breaksFill, digits = 2) # cap at 2 signif
+breaksFill <- round((breaksFill/500))*500 # round to the nearest 100
+breaksFill <- unique(breaksFill) # if two quantiles are the same value remove
+
+breaksNA <- seq(0, max(naDat$na_articles[marSysTypeThreatSums$climate_threat != "Unidentified"], na.rm=T), length.out = 5)
+breaksNA <- signif(breaksNA, digits = 2) 
+breaksNA <- round((breaksNA/5000))*5000
+breaksNA <- unique(breaksNA)
+
+
+## Plot
+fig4_B_even_ggp <- ggplot(nDat, aes(x = climate_threat, y=oro_type))+
   facet_grid(vars(marine_system))+
   # Fill for all articles
   geom_tile(aes(fill = n_articles))+
-  scale_fill_stepsn(name = "N articles", 
-                    n.breaks = n_breaksFill, nice.breaks = TRUE,
-                    labels = function(x) ifelse(1000 <= x, paste(signif(x/1000, digits=2), "k"), paste(x)),
-                    colors = viridis::viridis(n_breaksFill),
-                    values = seq(0,1, by=0.25),
-                    show.limits = TRUE, limits = c(0, max(nDat$n_articles, na.rm = T)),
-                    na.value = "transparent")+ 
+  # scale_fill_stepsn(name = "N articles", 
+  #                   n.breaks = n_breaksFill, nice.breaks = TRUE,
+  #                   labels = function(x) ifelse(1000 <= x, paste(signif(x/1000, digits=2), "k"), paste(x)),
+  #                   colors = viridis::viridis(n_breaksFill),
+  #                   values = seq(0,1, by=0.25),
+  #                   show.limits = TRUE, limits = c(0, max(nDat$n_articles, na.rm = T)),
+  #                   na.value = "transparent")+ 
+  scale_fill_binned(name = "N articles", 
+               type = "viridis",
+               breaks = breaksFill, nice.breaks = FALSE,
+               labels = function(x) ifelse(1000 <= x, paste(x/1000, "k"), paste(x)),
+               rescaler = scales::rescale,
+               #values = range01(breaksFill),
+               show.limits = TRUE, 
+               limits = breaksFill[c(1, length(breaksFill))], 
+               oob= scales::squish,
+               na.value = "transparent",
+               guide = guide_coloursteps(order = 1),
+               position = "top")+ 
   
   # new fill scale
   new_scale_fill()+
   geom_tile(data = naDat,
             aes(fill = na_articles))+
   scale_fill_stepsn(name = "N unidentified", 
-                    n.breaks = n_breaksNA, nice.breaks = TRUE,
-                    labels = function(x) ifelse(1000 <= x, paste(signif(x/1000, digits=2), "k"), paste(x)),
-                    colours = gray.colors(n_breaksNA),
-                    show.limits = TRUE, limits = c(0, max(naDat$na_articles)),
-                    na.value = "transparent")+
+                    breaks=breaksNA,
+                    labels = function(x) ifelse(1000 <= x, paste(x/1000, "k"), paste(x)),
+                    colours = gray.colors(length(breaksNA)),
+                    values = range01(breaksNA),
+                    show.limits = TRUE, limits = breaksNA[c(1, length(breaksNA))],
+                    na.value = "transparent", 
+                    guide = guide_coloursteps(order = 2),
+                    position = "bottom")+
   
   # other aesthetics
   labs(x="Climate impact driver")+ 
@@ -250,26 +291,25 @@ fig4_B_ggp <- ggplot(nDat, aes(x = climate_threat, y=oro_type))+
   theme_bw()+
   theme(
     axis.text.x = element_text(angle = 30, hjust=1, vjust=1),
-    legend.position = "top",
+    legend.position = "left",
     axis.title.y = element_blank(),
     legend.key.width = unit(1, 'cm'),
     legend.key.height = unit(0.4, 'cm')
   )
 
-fig4_B_ggp
+fig4_B_even_ggp
 ```
 
-I feel like because the scales are so different between the panels, I will have to normalize by the number of articles in each panel?
+I feel like because the scales are so different between the panels, I will have to normalize by the number of articles in each oro type? Therfore to get 100%, need to sum up the values for that row across all the panels.
 
-
-```{r plot panel B normalizing by panel to make a percentage}
+```{r plot panel B normalizing by oro type ie by row to make a percentage}
 paneltotals <- marSysTypeThreatSums %>%
-  group_by(marine_system) %>%
-  summarise(mstotal = sum(n_articles))
+  group_by(oro_type) %>%
+  summarise(total = sum(n_articles))
 
 marSysTypeThreatSumsNorm <- marSysTypeThreatSums %>%
   left_join(paneltotals) %>%
-  mutate(percent_articles = n_articles/mstotal*100)
+  mutate(percent_articles = n_articles/total*100)
 
 nDat <- marSysTypeThreatSumsNorm
 nDat$percent_articles[which(nDat$climate_threat == "Unidentified")] <- NA
@@ -278,30 +318,55 @@ naDat <- marSysTypeThreatSumsNorm %>%
             rename(na_articles = percent_articles)
 
 
-n_breaksFill <- 5
-n_breaksNA <- 4
+# get even but pretty breaks for each of the datasets
+breaksFill <- seq(0, max(marSysTypeThreatSumsNorm$percent_articles[marSysTypeThreatSumsNorm$climate_threat != "Unidentified"], na.rm=T), length.out = 10) # sequence even values across range
+breaksFill <- signif(breaksFill, digits = 2) # cap at 2 signif
+breaksFill <- round((breaksFill/5))*5 # round 
+breaksFill <- unique(breaksFill) # if two quantiles are the same value remove
 
-fig4_B_ggp <- ggplot(nDat, aes(x = climate_threat, y=oro_type))+
+breaksNA <- seq(0, max(naDat$na_articles[marSysTypeThreatSums$climate_threat != "Unidentified"], na.rm=T), length.out = 5)
+breaksNA <- signif(breaksNA, digits = 2) 
+breaksNA <- round((breaksNA/5))*5
+breaksNA <- unique(breaksNA)
+
+
+## plot
+fig4_B_percent_ggp <- ggplot(nDat, aes(x = climate_threat, y=oro_type))+
   facet_grid(vars(marine_system))+
   # Fill for all articles
   geom_tile(aes(fill = percent_articles))+
-  scale_fill_stepsn(name = "% articles", 
-                    n.breaks = n_breaksFill, nice.breaks = TRUE,
-                    labels = function(x){paste(x,"%")},
-                    colors = viridis::viridis(n_breaksFill),
-                    show.limits = TRUE, limits = c(0, max(nDat$percent_articles, na.rm = T)),
-                    na.value = "transparent")+ 
+  # scale_fill_stepsn(name = "% articles", 
+  #                   n.breaks = n_breaksFill, nice.breaks = TRUE,
+  #                   labels = function(x){paste(x,"%")},
+  #                   colors = viridis::viridis(n_breaksFill),
+  #                   show.limits = TRUE, limits = c(0, max(nDat$percent_articles, na.rm = T)),
+  #                   na.value = "transparent")+ 
+  scale_fill_binned(name = "% articles/ORO", 
+               type = "viridis",
+               breaks = breaksFill, nice.breaks = FALSE,
+               labels = function(x) ifelse(1000 <= x, paste(x/1000, "k"), paste(x)),
+               rescaler = scales::rescale,
+               #values = range01(breaksFill),
+               show.limits = TRUE, 
+               limits = breaksFill[c(1, length(breaksFill))], 
+               oob= scales::squish,
+               na.value = "transparent",
+               guide = guide_coloursteps(order = 1),
+               position = "top")+ 
   
   # new fill scale
   new_scale_fill()+
   geom_tile(data = naDat,
             aes(fill = na_articles))+
-  scale_fill_stepsn(name = "% unidentified", 
-                    n.breaks = n_breaksNA, nice.breaks = TRUE,
-                    labels = function(x){paste(x,"%")},
-                    colours = gray.colors(n_breaksNA),
-                    show.limits = TRUE, limits = c(0, max(naDat$na_articles)),
-                    na.value = "transparent")+
+  scale_fill_stepsn(name = "% unidentified/ORO", 
+                    breaks=breaksNA,
+                    labels = function(x) ifelse(1000 <= x, paste(x/1000, "k"), paste(x)),
+                    colours = gray.colors(length(breaksNA)),
+                    values = range01(breaksNA),
+                    show.limits = TRUE, limits = breaksNA[c(1, length(breaksNA))],
+                    na.value = "transparent", 
+                    guide = guide_coloursteps(order = 2),
+                    position = "bottom")+
   
   # other aesthetics
   labs(x="Climate impact driver")+ 
@@ -311,96 +376,45 @@ fig4_B_ggp <- ggplot(nDat, aes(x = climate_threat, y=oro_type))+
   theme_bw()+
   theme(
     axis.text.x = element_text(angle = 30, hjust=1, vjust=1),
-    legend.position = "top",
+    legend.position = "left",
     axis.title.y = element_blank(),
     legend.key.width = unit(1, 'cm'),
     legend.key.height = unit(0.4, 'cm')
   )
 
-fig4_B_ggp
+fig4_B_percent_ggp
 ```
 
 
-Still loses the idea of the gradient of changes in oro types across marine systems, so keep with the stacked bar plot
+Still loses the idea of the gradient of changes in oro types across marine systems, so keep with the stacked bar plot? Include code here just in case
+```{r old stacked bar plot version}
+fig4_B_barplot_ggp <- ggplot(marSysTypeThreatSums, aes(y = oro_type, x=n_articles, fill = climate_threat))+
+  facet_wrap(vars(marine_system), ncol=1, scales = "free")+
+  geom_col(position = "stack")+
+  labs(fill = "Climate impact\ndriver", x = "N articles")+ 
+  # colour palette derived from the IBM design library colour blind safe palette
+  # https://davidmathlogic.com/colorblind/#%23648FFF-%23785EF0-%23DC267F-%23FE6100-%23FFB000-%235E5C5E
+  scale_fill_manual(values = threatAES$colour, breaks = threatAES$label, na.value = "transparent")+ 
+  scale_y_discrete(limits = rev)+
+  theme_bw()+
+  theme(
+    #axis.text.x = element_text(angle = 45, hjust=1, vjust=1)
+    legend.position = "left",
+    axis.title.y = element_blank()
+  )
+
+fig4_B_barplot_ggp
+```
 
 
 # Panel C: Heatmap of ORO types vs. ecosystem types for coastal ocean only
 
-# Old code
-
-
-```{r Barchart of ORO types split by marine system clustered by climate threat}
-library(cowplot)
-
-## Read in the infographic of the marine systems
-marineSysImg <- magick::image_read(here::here("figures/inkscape/marineSystems.svg"))
-
-## Read in data for plots (cluster by climate threat)
-# ORO Type
-predOROAny <- readOROAnyPredictions(boundaries = "mean")
-predOROAny$oro_branch <- factor(predOROAny$oro_branch,
-                                levels = c("mitigation","nature","societal"),
-                                labels = c("Mitigation",
-                                           "Natural resilience",
-                                           "Societal adaptation"))
-predOROAny <- predOROAny %>% 
-  filter(!(oro_any %in% c("Protection","Restoration"))) %>%
-  mutate(oro_any = droplevels(oro_any)) %>%
-  mutate(oro_any = recode_factor(
-    oro_any, Renewables = "Renewable energy", Increase_efficiency = "Increase efficiency",
-    CO2_removal_or_storage="CO2 removal or storage", 
-    Human_assisted_evolution="Human-assisted evolution", Conservation="Conservation",
-    Built_infrastructure_and_technology="Built infrastructure & technology",
-    Socioinstitutional="Socio-institutional"
-  ))
-# Marine system
-predMarine <- readPredictions(boundaries = "mean", variable = "marine_system")
-predMarine <- predMarine %>%
-  mutate(marine_system = recode_factor(marine_system, 
-                                       land = "Coastal land", 
-                                       `coastal ocean` = "Coastal ocean",
-                                       `open-ocean` = "Open-ocean"))
-# Climate threat
-predThreat <- readPredictions(boundaries = "mean", variable = "climate_threat")
-predThreat <- predThreat %>%
-  filter(climate_threat %in% c("Temperature","SLR","Extreme_weather")) %>%
-  mutate(climate_threat = droplevels(climate_threat))
-  
-
-
-## DATA CALCULATIONS 
-
-temp <- predMarine %>% filter(0.5 <= mean) %>% select(analysis_id, marine_system) %>%
-  inner_join(predOROAny %>% filter(0.5 <= mean) %>% select(analysis_id, oro_any)) %>%
-  left_join(predThreat %>% filter(0.5 <= mean) %>% select(analysis_id, climate_threat)) %>%
-  mutate(climate_threat = factor(climate_threat, 
-                                 levels = c("Temperature","SLR","Extreme_weather", NA), 
-                                 labels = c("Temperature","Sea-level rise","Extreme weather", "Other"), 
-                                 exclude = NULL))
 
 
 
-## PLOTTING
+# Write figure
 
-marineSysOROThreat_ggp <- ggplot(temp, aes(x = oro_any, fill = climate_threat))+
-  facet_wrap(vars(marine_system), ncol=1, scales = "free")+
-  geom_bar(position = "stack")+
-  labs(fill = "Climate threat", y = "Number of articles", x="ORO type")+ #
-  scale_fill_brewer(palette = "Paired")+ # only one that's colourblind safe
-  scale_x_discrete(limits = rev)+
-  coord_flip()+
-  theme_bw()+
-  theme(
-    #axis.text.x = element_text(angle = 45, hjust=1, vjust=1)
-    legend.position = "right",
-    axis.title.y = element_blank()
-  )
-
-
-# Plot of the svg infographic -- odd that the vecotor images of the icons don't show up
-marineSysImg_ggp <- ggdraw()+draw_image(marineSysImg, scale = 1)
-
-
+```{r Write figure to pdf}
 
 ## Save file
 pdf(file = here::here("figures/main/marineSystem-ORO-climateThreat_barplot.pdf"),
