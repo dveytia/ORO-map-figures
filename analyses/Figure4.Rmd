@@ -65,6 +65,8 @@ fig4_A_ggp
 
 # Panel B: Heatmap of ORO types vs. CIDs per system
 
+
+
 ```{r read in data for the plot - use only mean predictions}
 
 ## Access relevant tables
@@ -341,7 +343,7 @@ fig4_B_percent_ggp <- ggplot(nDat, aes(x = climate_threat, y=oro_type))+
   #                   colors = viridis::viridis(n_breaksFill),
   #                   show.limits = TRUE, limits = c(0, max(nDat$percent_articles, na.rm = T)),
   #                   na.value = "transparent")+ 
-  scale_fill_binned(name = "% articles/ORO", 
+  scale_fill_binned(name = "% articles", 
                type = "viridis",
                breaks = breaksFill, nice.breaks = FALSE,
                labels = function(x) ifelse(1000 <= x, paste(x/1000, "k"), paste(x)),
@@ -351,35 +353,36 @@ fig4_B_percent_ggp <- ggplot(nDat, aes(x = climate_threat, y=oro_type))+
                limits = breaksFill[c(1, length(breaksFill))], 
                oob= scales::squish,
                na.value = "transparent",
-               guide = guide_coloursteps(order = 1),
+               guide = guide_coloursteps(order = 1, barwidth = unit(4, 'cm')), 
                position = "top")+ 
   
   # new fill scale
   new_scale_fill()+
   geom_tile(data = naDat,
             aes(fill = na_articles))+
-  scale_fill_stepsn(name = "% unidentified/ORO", 
+  scale_fill_stepsn(name = "% unidentified", 
                     breaks=breaksNA,
                     labels = function(x) ifelse(1000 <= x, paste(x/1000, "k"), paste(x)),
                     colours = gray.colors(length(breaksNA)),
                     values = range01(breaksNA),
                     show.limits = TRUE, limits = breaksNA[c(1, length(breaksNA))],
                     na.value = "transparent", 
-                    guide = guide_coloursteps(order = 2),
+                    guide = guide_coloursteps(order = 2, barwidth = unit(3, 'cm')),
                     position = "bottom")+
   
   # other aesthetics
   labs(x="Climate impact driver")+ 
   
-  scale_y_discrete(limits = rev)+
+  #scale_y_discrete(limits = rev)+
   #coord_flip()+
   theme_bw()+
   theme(
     axis.text.x = element_text(angle = 30, hjust=1, vjust=1),
-    legend.position = "left",
+    legend.position = "top",
     axis.title.y = element_blank(),
-    legend.key.width = unit(1, 'cm'),
-    legend.key.height = unit(0.4, 'cm')
+    #legend.key.width = unit(0.4, 'cm'),
+    legend.key.height = unit(0.2, 'cm'),
+    legend.box = "vertical"
   )
 
 fig4_B_percent_ggp
@@ -455,7 +458,80 @@ seagrass_ras <- as.raster(image_fill(image_read_svg(here::here("figures/phylopic
 
 
 
-```{r read in data for the plot - use only mean predictions}
+```{r Changing salt marsh prediction threshold}
+## Access relevant tables
+predMarSys <- tbl(dbcon, "pred_marine_system") %>%
+  select(analysis_id, 
+         `marine_system.land - mean_prediction`,
+         `marine_system.coastal ocean - mean_prediction`,
+         `marine_system.open-ocean - mean_prediction`) %>% 
+  rename(land = `marine_system.land - mean_prediction`,
+         coastal_ocean = `marine_system.coastal ocean - mean_prediction`,
+         open_ocean = `marine_system.open-ocean - mean_prediction`) %>%
+  collect()%>%
+  reshape2::melt(id.vars = c("analysis_id"), variable.name = "marine_system", value.name = 'mean') %>%
+  filter(0.5 <= mean) %>%
+  select(-c(mean))
+
+saltMarshDf <- tbl(dbcon, "pred_ecosystem_type") %>%
+  select(analysis_id,`ecosystem_type.Salt_marsh - mean_prediction`, 
+         `ecosystem_type.Salt_marsh - upper_pred`) %>%
+  rename(mean = `ecosystem_type.Salt_marsh - mean_prediction`,
+         upper = `ecosystem_type.Salt_marsh - upper_pred`) %>%
+  collect() %>%
+  reshape2::melt(id.vars = "analysis_id", variable.name = "Prediction_boundary", value.name = "Prediction")
+
+# Aesthetics for plotting
+marSysAES <- factor_aes[which(factor_aes$variable == "marine_system"),]
+marSysAES <- marSysAES[order(marSysAES$order),]
+
+
+
+## Plot supplementary figure
+saltMarshPredictions_ggp <- ggplot(saltMarshDf, aes(x=Prediction, fill = Prediction_boundary))+
+  geom_histogram(alpha = 0.25, col = "black")+
+  geom_vline(xintercept = quantile(saltMarshDf$Prediction[saltMarshDf$Prediction_boundary == "upper"], probs=0.5)) +
+  #annotation_raster(marsh_ras, 0.6, 0.9, 29000, 45000)+
+  labs(y = "N articles", x = "Prediction", fill = "Prediction boundary",
+    caption = paste("Vertical line at 50% quantile for upper prediction =",
+                  signif(quantile(saltMarshDf$Prediction[saltMarshDf$Prediction_boundary == "upper"],
+                                  probs=0.5), digits=2)))+
+  theme_classic()+
+  theme(
+    legend.position = "bottom"
+  )
+
+
+
+saltMarshMarSys_ggp <- saltMarshDf %>%
+  filter(Prediction_boundary == "upper" & 
+           0.4 <= Prediction) %>%
+  left_join(predMarSys, by="analysis_id") %>% 
+  mutate(marine_system = factor(marine_system, levels = marSysAES$level, marSysAES$label, exclude=FALSE)) %>%
+  ggplot(aes(x=marine_system)) +
+  geom_bar()+
+  annotation_raster(marsh_ras, 3, 4.5, 25000, 40000)+
+  labs(y="N articles", x="Marine system",
+       caption = "Using a threshold of 0.4 for relevance")+
+  theme_classic()+
+  theme(
+    axis.text.x = element_text(angle=45, vjust=1, hjust=1)
+  )
+
+## Save figure
+pdf(here::here("figures/supplemental/saltMarshPredictionsHistogramAndMarineSystem.pdf"),
+    width = 7, height=4.5)
+egg::ggarrange(saltMarshPredictions_ggp, saltMarshMarSys_ggp,
+          nrow=1, ncol=2, newpage = FALSE, labels = c("a.","b."))
+dev.off()
+
+```
+
+
+Notes for changes in analysis - No predictions for salt marsh at mean prediction b/c low recall so use upper prediction limit instead. Choose value a little less than the median so that I can cut the distribution at the mode
+
+
+```{r read in data for the plot}
 
 ## Access relevant tables
 predRel <- tbl(dbcon, "pred_relevance") %>%
@@ -479,26 +555,30 @@ predMarSys <- tbl(dbcon, "pred_marine_system") %>%
   filter(0.5 <= mean) %>%
   select(-c(mean))
 
+# NB here I change the filtering so salt marsh is included if 0.4 <= upper pred 
 predEcoType <- tbl(dbcon, "pred_ecosystem_type") %>%
   select(analysis_id,
-         `ecosystem_type.Salt_marsh - mean_prediction`,
+         `ecosystem_type.Salt_marsh - upper_pred`, ## ** `ecosystem_type.Salt_marsh - mean_prediction`
          `ecosystem_type.Mangrove - mean_prediction`,
          `ecosystem_type.Coral_reef - mean_prediction`,
          `ecosystem_type.Seagrass - mean_prediction`) %>%
-  rename(Salt_marsh = `ecosystem_type.Salt_marsh - mean_prediction`,
+  rename(Salt_marsh = `ecosystem_type.Salt_marsh - upper_pred`,
          Mangrove = `ecosystem_type.Mangrove - mean_prediction`,
          Coral_reef = `ecosystem_type.Coral_reef - mean_prediction`,
          Seagrass = `ecosystem_type.Seagrass - mean_prediction`) %>%
   collect() %>%
-  reshape2::melt(id.vars = c("analysis_id"), variable.name = "ecosystem_type", value.name = 'mean') %>%
-  filter(0.5 <= mean) %>%
-  select(-c(mean))
+  reshape2::melt(id.vars = c("analysis_id"), variable.name = "ecosystem_type", value.name = 'prediction') %>%
+  #filter(0.5 <= mean) %>%
+  mutate(relevant = ifelse((ecosystem_type == "Salt_marsh" & 0.5 <= prediction) |
+                             (ecosystem_type != "Salt_marsh" & 0.5 <= prediction), 1,0)) %>%
+  filter(relevant == 1) %>%
+  select(-c(prediction, relevant))
 
 # Outcomes
 predMit <- tbl(dbcon, "pred_climate_mitigation") %>%
   select(analysis_id, `0 - relevance - mean_prediction`) %>%
   rename(climate_mitigation = `0 - relevance - mean_prediction`) %>%
-  filter(0.5 <= climate_mitigation) %>%
+  #filter(0.5 <= climate_mitigation) %>%
   collect()
 
 predAdapt <- tbl(dbcon, "pred_adapt_to_threat") %>%
@@ -510,9 +590,46 @@ predAdapt <- tbl(dbcon, "pred_adapt_to_threat") %>%
   collect() 
   #reshape2::melt(id.vars = c("analysis_id"), variable.name = "adapt_to_threat", value.name = 'mean') %>%
   #filter(0.5 <= mean) 
-  
 
 
+
+## Retrieve aesthetics for relevant factoring variables
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+ecoTypeAES <- factor_aes[which(factor_aes$variable == "ecosystem_type"),]
+ecoTypeAES <- ecoTypeAES[order(ecoTypeAES$order),]
+adaptAES <- factor_aes[which(factor_aes$variable == "adapt_to_threat"),]
+adaptAES <- adaptAES[order(adaptAES$order),]
+```
+
+
+Why are there a high number of coral reef papers and marine renewable energy predicted?
+```{r Investigate the ecosystem x outcome for MRE}
+MRE_Df <- predRel %>%
+  inner_join(predType, by="analysis_id") %>%
+  filter(oro_type == "Marine renewable energy" ) %>%
+  collect() %>%
+  inner_join(predMarSys, by="analysis_id") %>%
+  #filter(marine_system == "coastal_ocean") %>%
+  inner_join(predEcoType, by="analysis_id") %>%
+  # Use left_join to add outcomes
+  left_join(predMit, by="analysis_id") %>%
+  left_join(predAdapt, by="analysis_id") %>%
+  reshape2::melt(measure.vars = c("climate_mitigation","Human","Natural"), variable.name = "Outcome",
+                 value.name = "Prediction") %>% 
+  group_by(marine_system, ecosystem_type, Outcome) %>%
+  summarise(n_articles = sum(0.5 <= Prediction))
+
+MRE_ggp <- ggplot(MRE_Df, aes(x=ecosystem_type, y=Outcome, fill=n_articles))+
+  facet_wrap(vars(marine_system))+
+  geom_tile()
+
+MRE_ggp
+```
+
+
+
+```{r Format dataframes and calculate sums for heatmaps}
 ## Data joining
 
 # Format into data frame where each row is a publication (unique analysis_id)
@@ -531,16 +648,13 @@ coastEcoTypeDf <- coastEcoTypeDf %>%
   left_join(predAdapt, by="analysis_id")
 
 
+# coastEcoTypeDf %>%
+#   group_by(oro_type, ecosystem_type) %>%
+#   summarise(climate_mitigation = sum(0.5 <= climate_mitigation))
+# ggplot(
+#          , aes(x=ecosystem_type, y=climate_mitigation))
+
 ## Factoring variables for plotting
-
-# retrieve aesthetics for relevant factoring variables
-typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
-typeAES <- typeAES[order(typeAES$order),]
-ecoTypeAES <- factor_aes[which(factor_aes$variable == "ecosystem_type"),]
-ecoTypeAES <- ecoTypeAES[order(ecoTypeAES$order),]
-adaptAES <- factor_aes[which(factor_aes$variable == "adapt_to_threat"),]
-adaptAES <- adaptAES[order(adaptAES$order),]
-
 
 # use aesthetics to factor variables
 coastEcoTypeDf <- coastEcoTypeDf %>%
@@ -555,45 +669,218 @@ coastEcoTypeDf <- coastEcoTypeDf %>%
 library(tidyr)
 mitigationSums <- coastEcoTypeDf %>%
   group_by(oro_branch, oro_type, ecosystem_type) %>%
-  summarise(n_articles = sum(0.5 <= climate_mitigation, na.rm=T)) %>%
+  summarise(n_articles = sum(0.5 <= climate_mitigation)) %>% #, na.rm=TRUE
   complete(ecosystem_type, fill = list(n_articles = 0))
 
 adaptationSums <- coastEcoTypeDf %>%
   group_by(oro_branch, oro_type, ecosystem_type) %>%
-  summarise(Human = sum(0.5 <= Human, na.rm=T),
-            Natural = sum(0.5 <= Natural, na.rm=T)) %>%
-  complete(ecosystem_type, fill = list(n_articles = 0)) %>%
+  summarise(Human = sum(0.5 <= Human),
+            Natural = sum(0.5 <= Natural)) %>%
   reshape2::melt(measure.vars = c("Human","Natural"), 
                  variable.name = "adapt_to_threat", value.name = "n_articles") %>%
-  mutate(adapt_to_threat = factor(adapt_to_threat, levels = adaptAES$level, labels = adaptAES$label))
+  mutate(adapt_to_threat = factor(adapt_to_threat, levels = adaptAES$level, labels = adaptAES$label),
+         n_articles = ifelse(is.na(n_articles),0, n_articles))
 
 
 # Normalise by number of articles per ORO to get a percent
+
 # calculate number of unique articles per oro type
+# divide sums by these totals to get a percent of all coastal ecosystems
 oroTotalsDF <- coastEcoTypeDf %>%
   filter(0.5 <= climate_mitigation |
            0.5 <= Human | 0.5 <= Natural) %>%
   group_by(oro_type) %>%
-  summarise(total = n_distinct(analysis_id))
+  summarise(total_coastEco = n_distinct(analysis_id))
 
-# divide sums by these totals to get a percent
 mitigationSums <- mitigationSums %>%
   left_join(oroTotalsDF, by = "oro_type") %>%
-  mutate(percent_articles = n_articles/total*100)
+  mutate(percent_articles = n_articles/total_coastEco*100)
 
 adaptationSums <- adaptationSums %>%
   left_join(oroTotalsDF, by = "oro_type") %>%
-  mutate(percent_articles = n_articles/total*100)
+  mutate(percent_articles = n_articles/total_coastEco*100)
 
+# But also the percent may be low in comparison to all the articles out there for that ORO
+# So also show the percentage that coastal ecosystem articles compose of total articles (coastEcoFraction)
+oroTotalsDF_All <- predRel %>%
+  inner_join(predType, by="analysis_id") %>%
+  group_by(oro_type) %>%
+  summarise(total_All = n_distinct(analysis_id))%>%
+  collect() %>%
+  mutate(oro_type = factor(oro_type, levels = typeAES$level, labels = typeAES$label)) 
+
+mitigationSums <- mitigationSums %>%
+  left_join(oroTotalsDF_All%>% select(oro_type, total_All), by = "oro_type") %>%
+  mutate(percent_All = n_articles/total_All*100)
+mitigationSums$coastEcoFraction = mitigationSums$total_coastEco/mitigationSums$total_All
+
+adaptationSums <- adaptationSums %>%
+  left_join(oroTotalsDF_All%>% select(oro_type, total_All), by = "oro_type") %>%
+  mutate(percent_All = n_articles/total_All*100)
+adaptationSums$coastEcoFraction = adaptationSums$total_coastEco/adaptationSums$total_All
+
+
+
+## Format for a bivariate fill legend
+
+library(biscale)
+
+# Make my own bivariate palette
+biPal5 <- c("#ffffff", "#d8f2f2", "#b0e5e5", "#86d7d7", "#5ac8c8", "#efd9ea", "#cacede", "#a5c3d2", "#7eb7c5", "#54aab8", "#dfb2d6", "#bda9cb", "#9aa0c0", "#7596b4", "#4f8ca8", "#cf8cc1", "#af85b7", "#8f7ead", "#6d76a3", "#496e97", "#be64ac", "#a15fa3", "#835a9a", "#645491", "#434e87")
+palNames <- expand.grid(as.character(1:5), as.character(seq(1,5)))
+palNames <- paste(palNames$Var1, palNames$Var2, sep="-")
+names(biPal5) <- palNames
+bi_pal(pal = biPal5, dim = 5) # Preview palette
+
+# Make my own breaks 
+library(classInt)
+brks1 <- classIntervals(c(mitigationSums$percent_articles, adaptationSums$percent_articles),n=5, style = "kmeans")$brks
+brks2 <- classIntervals(c(mitigationSums$coastEcoFraction, adaptationSums$coastEcoFraction), n=5,
+                        style = "quantile")$brks
+# cut data
+mitigationSums$percent_articles_cut <- cut(mitigationSums$percent_articles, breaks = brks1, include.lowest = T)
+adaptationSums$percent_articles_cut <- cut(adaptationSums$percent_articles, breaks = brks1, include.lowest = T)
+mitigationSums$coastEcoFraction_cut <- cut(mitigationSums$coastEcoFraction, breaks = brks2, include.lowest = T)
+adaptationSums$coastEcoFraction_cut <- cut(adaptationSums$coastEcoFraction, breaks = brks2, include.lowest = T)
+
+# Format data frames for bivariate plotting
+mitigationSums <- bi_class(mitigationSums, x=percent_articles_cut, y=coastEcoFraction_cut, dim=5, style = "equal")
+adaptationSums <- bi_class(adaptationSums, x=percent_articles_cut, y=coastEcoFraction_cut, dim=5, style = "equal")
+
+# calculate labels
+labs <- bi_class_breaks(mitigationSums, x=percent_articles_cut, y = coastEcoFraction, style = "equal",
+                dim = 5, dig_lab = 1, split = TRUE)
+
+
+
+## For the adaptation plot, want to display two variables in triangles
+# so format data for plotting
+source(here::here("R/getTiles.R"))
+
+humanDf <- getTiles(df = adaptationSums, filterVar = "adapt_to_threat", filterVal = "Human", 
+                    orderVars = c(y="oro_type",x="ecosystem_type"),
+                    tileLoc = "bottomright")
+natureDf <- getTiles(df = adaptationSums, filterVar = "adapt_to_threat", filterVal = "Nature", 
+                    orderVars = c(y="oro_type",x="ecosystem_type"),
+                    tileLoc = "topleft"
+                    )
+cii_text <- data.frame(
+  x=c(0.75,1.25),y=c(nrow(typeAES)+0.5,nrow(typeAES)-0.5),labs = c("Nature", "Human")
+)
+cii_text
 ```
 
-Note that the totals for each oro type are:
-```{r print oro totals for reference}
-print(oroTotalsDF)
+
+```{r export sums to csv for reference}
+write.csv(mitigationSums, here::here("outputs/coastalEcosystemsMitigationSums.csv"))
+write.csv(adaptationSums, here::here("outputs/coastalEcosystemsAdaptationSums.csv"))
 ```
 
 
-```{r plot panel C.i - Mitigation}
+```{r plot panel C.i - Mitigation as a bivariate map}
+fig4_C_i <- ggplot(mitigationSums, aes(y=oro_type, x=ecosystem_type))+
+  geom_tile(aes(fill = bi_class), show.legend = FALSE)+
+  bi_scale_fill(pal = biPal5, dim=5, na.value = "white")+
+  #scale_fill_gradient2(mid="white",high="#3182bd", midpoint = 0, guide = guide_coloursteps())+
+  #scale_y_discrete(limits=rev)+
+  geom_hline(yintercept = c(0.5,2.5,4.5), col="black", linewidth=0.5)+
+  # annotation_raster(marsh_ras, 0.5, 1.5, -2, -0)+
+  # annotation_raster(mangrove_ras, 1.5, 2.5, -2, -0)+
+  # annotation_raster(seagrass_ras, 2.5, 3.5, -2, -0)+
+  # annotation_raster(coral_ras, 3.5, 4.5, -2, -0)+
+  # coord_cartesian(ylim = c(-1.5, length(levels(mitigationSums$oro_type))), clip = 'off')+
+  labs(
+    #x = "Ecosystem type", #y = "ORO type", 
+    title = "i. Mitigation"
+  )+
+  theme_bw()+
+  theme(
+    axis.title.y = element_blank(),
+    panel.grid = element_blank(),
+    legend.position = "bottom",
+    #axis.text.x = element_text(angle=45, vjust=1, hjust=1)
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+
+
+finalPlot <- ggdraw() +
+  draw_plot(fig4_C_i, 0, 0, 1, 1) 
+  #draw_plot(biLegend, 0, 0, 0.4, 0.4)
+
+
+finalPlot
+```
+
+
+```{r plot panel C.ii - Adaptation as a bivariate map}
+
+fig4_C_ii <- ggplot()+
+  geom_polygon(data = humanDf, aes(x,y,group=id, fill = bi_class), show.legend = FALSE)+
+  geom_polygon(data = natureDf, aes(x,y,group=id, fill = bi_class), show.legend = FALSE)+
+  geom_text(data=cii_text, aes(x, y, label = labs), size=2)+
+  
+  bi_scale_fill(pal = biPal5, dim=5, na.value = "white")+
+  
+  geom_hline(yintercept = c(0.5,2.5,4.5), col="black", linewidth=0.5)+
+  annotation_raster(marsh_ras, 0.5, 1.5, -2, -0)+
+  annotation_raster(mangrove_ras, 1.5, 2.5, -2, -0)+
+  annotation_raster(seagrass_ras, 2.5, 3.5, -2, -0)+
+  annotation_raster(coral_ras, 3.5, 4.5, -2, -0)+
+  
+  # Format axes
+  scale_x_continuous(breaks = 1:nrow(ecoTypeAES),labels = ecoTypeAES$label)+
+  #scale_y_continuous(breaks = 1:nrow(typeAES),labels = typeAES$label)+
+  scale_y_binned(breaks = 1:nrow(typeAES),labels = typeAES$label)+
+  
+  coord_cartesian(ylim = c(-1.5, nrow(typeAES)), clip = 'off')+
+  labs(
+    x = "Ecosystem type", #y = "ORO type", 
+    title = "ii. Adaptation"
+  )+
+  theme_bw()+
+  theme(
+    #plot.margin = unit(c(0,0,0,0), "cm"),
+    axis.title.y = element_blank(),
+    panel.grid = element_blank(),
+    legend.position = "bottom",
+    axis.text.x = element_text(angle=45, vjust=1, hjust=1)
+    #axis.title.x = element_text(vjust = -8)
+  )
+
+
+finalPlot2 <- ggdraw() +
+  draw_plot(fig4_C_ii, 0, 0, 1, 1) 
+  #draw_plot(biLegend, 0, 0, 0.4, 0.4)
+
+
+finalPlot2
+```
+
+
+```{r plot of legend}
+labs2 <- labs
+labs2$bi_x <- round(labs2$bi_x)
+biLegend <- bi_legend(pal = biPal5,
+                    dim = 5,
+                    xlab = "% coastal ecosystem",
+                    ylab = "% of all",
+                    breaks = labs2,
+                    arrows=FALSE,
+                    size = 6)
+biLegend
+```
+
+```{r combine two panel C subplots together}
+fig4_C <- plot_grid(finalPlot, 
+                    finalPlot2+draw_plot(biLegend, x=0, y=0, width=0.4, height=0.4),
+                    nrow=2, rel_heights = c(0.7,1))
+fig4_C
+```
+
+```{r old plot panel C.i - Mitigation}
 fig4_C_i <- ggplot(mitigationSums, aes(y=oro_type, x=ecosystem_type))+
   geom_tile(aes(fill = percent_articles))+
   scale_fill_gradient2(mid="white",high="#3182bd", midpoint = 0, guide = guide_coloursteps())+
@@ -607,7 +894,7 @@ fig4_C_i <- ggplot(mitigationSums, aes(y=oro_type, x=ecosystem_type))+
   coord_cartesian(ylim = c(-1.5, length(levels(mitigationSums$oro_type))), clip = 'off')+
   labs(
     x = "Ecosystem type", #y = "ORO type", 
-    fill = "% articles",
+    fill = "%\ncoastal ecosystem\narticles",
     title = "i. Mitigation"
   )+
   theme_bw()+
@@ -625,22 +912,44 @@ fig4_C_i
 ```
 
 
-Notes 
-- what marine system is predicted for salt marshes, because none in coastal subset
-- Why are there a high number of coral reef papers and marine renewable energy predicted? Try all marine systems
-- Change colours from viridis to greens and blues
-
 
 
 # Write figure
 
 ```{r Write figure to pdf}
-
-## Save file
-pdf(file = here::here("figures/main/marineSystem-ORO-climateThreat_barplot.pdf"),
-    width = 10, height = 5)
-plot_grid(marineSysImg_ggp, marineSysOROThreat_ggp, rel_widths = c(1,1.5))
+pdf(file = here::here("figures/main/Fig4.pdf"),
+    width = 15, height = 7)
+plot_grid(fig4_A_ggp,fig4_B_percent_ggp, fig4_C +theme(plot.margin = unit(c(2,0,0,0), "cm")), 
+          rel_widths = c(1,1,1), ncol=3, labels = list("a.","b.","c."), label_size = 17)
 while (!is.null(dev.list())) dev.off()
 
 ```
+
+# Interpretation 
+## Panel C
+
+For socio-institutional and Built infrastructure and tech:
+- salt marshes are associated with human and natural adaptation outcomes, but this signal is weak because they form a very small percentage of articles overall.
+
+For conservation:
+- small % of coastal ecosystem articles have mitigation outcomes, largest of these is found in mangroves (7%)
+- Salt marshes and mangroves are most studied for human and natural adaptation outcomes, and coral reefs for natural adaptation but not human.
+
+For HA Evolution:
+- negligible numbers of articles with mitigation outcomes
+- Most articles are focused on natural adaptation outcomes, with a high proportion for coral reefs. The latter also forms a high percent of all articles (68%)
+
+Increase efficiency
+- barely associated with coastal ecosystems 
+
+For CO2 removal and storage:
+- high proportion of articles with mitigation and natural adaptation outcomes are found in salt marsh, mangrove and (to a lesser extent) seagress ecosystems. These articles also form a high proportion of articles overall. 
+
+
+Marine renewable energy:
+- small proportion of articles associated with coastal ecosystems, but of these most are associated with salt marshes. This could just be an artefact of similar terms bewteen mitigation objectives?
+
+
+
+
 
