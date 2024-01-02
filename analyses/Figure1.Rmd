@@ -148,15 +148,19 @@ scopus_by_year <- scopus_by_year %>%
 fig1_A_ggp <- ggplot()+
   geom_ribbon(data = oro_branch_by_year_sums, 
               aes(x=year, ymin = log(lower), ymax=log(upper), fill = ORO_branch), alpha = 0.5)+
-  geom_line(data = oro_branch_by_year_sums, aes(x=year, y=log(mean), col=ORO_branch), linewidth = 1)+
+  geom_line(data = oro_branch_by_year_sums, aes(x=year, y=log(mean), col=ORO_branch), linewidth = 1,
+            na.rm=T)+
   geom_line(data = wos_by_year, 
-            aes(x=year, y=log(n_articles), linetype = "WOS"), col="black", linewidth = 1)+
+            aes(x=year, y=log(n_articles), linetype = "WOS"), col="black", linewidth = 1,
+            na.rm=T)+
   geom_line(data = scopus_by_year, 
-            aes(x=year, y=log(n_articles), linetype = "Scopus"), col="black", linewidth = 1)+
+            aes(x=year, y=log(n_articles), linetype = "Scopus"), col="black", linewidth = 1,
+            na.rm=T)+
   scale_color_manual(values = varAES$colour, 
-                     name = "ORO branch")+
-  scale_fill_manual(values = c(as.vector(branchPal)), guide = FALSE)+
-  scale_linetype_manual(values = c("solid","dotted"), name = "Database")+
+                     name = "ORO branch", guide=guide_legend(order=1))+
+  scale_fill_manual(values = factor_aes$colour[which(factor_aes$variable == "ORO_branch")], guide = "none")+
+  scale_linetype_manual(values = c("solid","dotted"), name = "Oceans & climate\nliterature from\ndatabase:",
+                        guide=guide_legend(order=2))+
   labs(x="Year", y="log(N articles)")+
   scale_x_date(limits = c(as.Date("1980-01-01"),xmax))+
   scale_y_continuous(sec.axis = sec_axis(trans = exp, name = "N articles"),
@@ -260,19 +264,20 @@ NEXT STEP: identify matches between ipcc refs and our database.
 See file 'Figure1_ipccTitleMatching_rossi.R' as this was run on the server. Results file is located at the following relative path: 'data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs_matches.RData'
 ```{r clean dataframe on ipcc matches}
 ## Filter to only records where there is a match for an analysis_id
-# load(here::here('data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs_matches.RData'))
-# ipccMatches <- ipccMatches[!is.na(ipccMatches$ipccRef_id) & !is.na(ipccMatches$analysis_id),]
-# save(ipccMatches, file = here::here('data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs_matches_clean.RData'))
+load(here::here('data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs_matches.RData'))
+ipccMatches <- ipccMatches[!is.na(ipccMatches$ipccRef_id) & !is.na(ipccMatches$analysis_id),]
+
+# keep to only one duplicate id in case there are multiple matches in the ipcc database?
+ipccMatches <- ipccMatches[-duplicated(ipccMatches$duplicate_id),]
 
 ## Load and check data
-load(here::here('data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs_matches_clean.RData'))
 load(here::here("data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs.RData"))
 checkDat <- data.frame(
   databaseTitle = ipccMatches$title[1:10],
   ipccTitle = ipccBibUnique$title[which(ipccMatches$ipccRef_id[1:10] %in% ipccBibUnique$ipccRef_id)],
   ipccRef_id = ipccMatches$ipccRef_id[1:10]
 )
-print(checkDat)
+View(checkDat)
 
 
 ```
@@ -284,7 +289,7 @@ print(checkDat)
 
 # For each ORO, sum the number of matches to the ipcc
 oroMatchesSums <- predTypeDf %>%
-  inner_join(ipccMatches %>% filter(!is.na(ipccRef_id)), by="analysis_id")
+  inner_join(ipccMatches %>% filter(!is.na(ipccRef_id)), by="analysis_id") %>%
   group_by(oro_type) %>%
   summarise(
     n_mean = sum(0.5 <= mean),

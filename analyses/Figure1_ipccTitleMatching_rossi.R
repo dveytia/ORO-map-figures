@@ -23,7 +23,7 @@ years <- c(as.character(years), NA)
 
 
 ## For each year, calculate if there is a match
-results = parallel::mclapply(1:length(years), function(y) {
+results = parallel::mclapply(1:length(years), function(y) { 
   
   # subset data to that year
   if(is.na(years[y])){
@@ -35,20 +35,23 @@ results = parallel::mclapply(1:length(years), function(y) {
   }
   
   # quick check
-  # tempDf <- tempDf[c(54,133),]# test for when y=65, these two should be matched with ref IDs ipcc_3856 and ipcc_5065
+  #tempDf <- tempDf[c(54,133),]# test for when y=65, these two should be matched with ref IDs ipcc_3856 and ipcc_5065
   
   # first look for doi matches
-  tempDf <- tempDf %>% left_join(ipccTempDf[,c("doi","ipccRef_id")], by = "doi")
+  tempDf <- tempDf %>% left_join(ipccTempDf[,c("doi","ipccRef_id")], by = "doi", na_matches = "never")
  
   
   # if there are still NA values in ipccRef_id column, go to fuzzy title
   if(0 < sum(!is.na(tempDf$title)) & 0 < sum(!is.na(ipccTempDf$title))){ # if both have valid titles
     if(0 < sum(is.na(tempDf$ipccRef_id))){ # if there are still matches to be found
+      
       # match titles using fuzzy matching
       ipccTitles <- clean_string(ipccTempDf$title[!is.na(ipccTempDf$title)])
       ipccTitlesIDs <- ipccTempDf$ipccRef_id[!is.na(ipccTempDf$title)]
+      
+      # Parallelize the process
       titleMatches <- parallel::mclapply(1:length(tempDf$title), function(i){
-        myTitle <- tempDf$title[i]
+        myTitle <- tempDf$title[i] # title to match
         if(!is.na(myTitle)){
           myMatch <- stringdist::amatch(x = clean_string(myTitle), table = ipccTitles,method = "osa", maxDist = 5)
           if(1 < length(myMatch)){
