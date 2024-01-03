@@ -2,6 +2,9 @@
 # Code written to run on rossi server
 
 ## Set up
+# load libraries
+library(dplyr)
+
 # Source functions for analysis
 source("utils.R")
 source("clean_string.R")
@@ -20,38 +23,46 @@ years <- c(as.character(years), NA)
 
 
 ## For each year, calculate if there is a match
-results = parallel::mclapply(1:length(years), function(y) {
+results = parallel::mclapply(1:length(years), function(y) { 
   
   # subset data to that year
   if(is.na(years[y])){
-    tempDf <- uniquerefs[is.na(uniquerefs$year),]
-    ipccTempDf <- ipccBibUnique[is.na(ipccBibUnique$year),]
+    tempDf <- uniquerefs %>% filter(is.na(year))
+    ipccTempDf <- ipccBibUnique %>% filter(is.na(year))
   }else{
-    tempDf <- uniquerefs[uniquerefs$year == years[y],] 
-    ipccTempDf <- ipccBibUnique[ipccBibUnique$year == years[y],]
+    tempDf <- uniquerefs %>% filter(year == years[y])
+    ipccTempDf <- ipccBibUnique %>% filter(year == years[y])
   }
   
+  # quick check
+  #tempDf <- tempDf[c(54,133),]# test for when y=65, these two should be matched with ref IDs ipcc_3856 and ipcc_5065
+  
   # first look for doi matches
-  tempDf <- merge(tempDf, ipccTempDf[,c("doi","ipccRef_id")],
-                  all.x = TRUE, all.y = FALSE, by = "doi")
+  tempDf <- tempDf %>% left_join(ipccTempDf[,c("doi","ipccRef_id")], by = "doi", na_matches = "never")
+ 
   
   # if there are still NA values in ipccRef_id column, go to fuzzy title
   if(0 < sum(!is.na(tempDf$title)) & 0 < sum(!is.na(ipccTempDf$title))){ # if both have valid titles
     if(0 < sum(is.na(tempDf$ipccRef_id))){ # if there are still matches to be found
+      
       # match titles using fuzzy matching
       ipccTitles <- clean_string(ipccTempDf$title[!is.na(ipccTempDf$title)])
+      ipccTitlesIDs <- ipccTempDf$ipccRef_id[!is.na(ipccTempDf$title)]
+      
+      # Parallelize the process
       titleMatches <- parallel::mclapply(1:length(tempDf$title), function(i){
-        myTitle <- tempDf$title[i]
+        myTitle <- tempDf$title[i] # title to match
         if(!is.na(myTitle)){
           myMatch <- stringdist::amatch(x = clean_string(myTitle), table = ipccTitles,method = "osa", maxDist = 5)
           if(1 < length(myMatch)){
             myMatch <- myMatch[1]
           }
-          return(myMatch)
+          myMatchID <- ipccTitlesIDs[myMatch] # lookup corresponding ipccRef_id of the match
+          return(myMatchID)
         }else{
           return(NA)
         }
-      }, mc.cores = 4)
+      }, mc.cores = 5)
       titleMatches <- do.call(c, titleMatches)
       
       # titleMatches <- stringdist::amatch(
@@ -66,7 +77,7 @@ results = parallel::mclapply(1:length(years), function(y) {
   # return result
   return(tempDf)
 
-}, mc.cores = 4)
+}, mc.cores = 5)
 
 ipccMatches <- do.call(rbind.data.frame, results)
 
