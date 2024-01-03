@@ -89,7 +89,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                            color_scale = viridis::magma(6, direction = -1),
                            legend      = "Ratio (%)",
                            show.legend = TRUE,
-                           name        = "main/Fig1_panelA")
+                           name        = "main/Fig2_panelA")
 ### -----
 
 ### ----- PANEL B -----
@@ -139,7 +139,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                            color_scale = viridis::mako(10, direction = 1),
                            legend      = "% mit. ORO",
                            show.legend = TRUE,
-                           name        = "main/Fig1_panelB")
+                           name        = "main/Fig2_panelB")
   
 ### -----
   
@@ -173,7 +173,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                          color_scale = c("#DD7E54", "mediumpurple3", "#20BAA7"),
                          log.transf  = TRUE,
                          quant.prob  = 0.85, 
-                         name        = "main/Fig1_panelC") ; panelC  
+                         name        = "main/Fig2_panelC") ; panelC  
 
   
 ### -----
