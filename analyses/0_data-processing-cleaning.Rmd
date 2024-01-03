@@ -188,3 +188,35 @@ dbWriteTable(conn=dbcon, name="pred_oro_type_long", value=pred_oro_type_long, ap
 DBI::dbDisconnect(dbcon)
 ```
 
+
+# Write test list after coding (n=86)
+
+```{r write test list}
+# From analysis file: 08
+# data load
+# get screen results after coding
+# Connect to latest version of the database
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+
+seen_screen <- tbl(dbcon, "seen_screen")
+dedups <- tbl(dbcon, "uniquerefs")
+
+test_list_final <- seen_screen %>%
+  filter(sample_screen == "test list"& include_screen == 1) %>%
+  left_join(dedups %>% select(analysis_id, year, author, doi), by= "analysis_id") %>%
+  select(analysis_id, title, abstract, keywords, year, author, doi) %>%
+  collect()
+
+nrow(test_list_final) # 86
+
+dbDisconnect(dbcon)
+
+
+
+writexl::write_xlsx(test_list_final, here::here("outputs/test_list.xlsx"))
+
+
+```
+
+
+
