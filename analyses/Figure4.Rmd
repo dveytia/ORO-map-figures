@@ -917,7 +917,7 @@ fig4_C_i
 # Write figure
 
 ```{r Write figure to pdf}
-pdf(file = here::here("figures/main/Fig4.pdf"),
+pdf(file = here::here("figures/main/marineSystemsAndClimateImpactDrivers.pdf"),
     width = 15, height = 7)
 plot_grid(fig4_A_ggp,fig4_B_percent_ggp, fig4_C +theme(plot.margin = unit(c(2,0,0,0), "cm")), 
           rel_widths = c(1,1,1), ncol=3, labels = list("a.","b.","c."), label_size = 17)
