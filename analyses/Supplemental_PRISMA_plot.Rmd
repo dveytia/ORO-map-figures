@@ -1,0 +1,96 @@
+---
+title: "Supplemental_PRISMA_plot"
+author: "Devi Veytia"
+date: "2024-01-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r set up}
+
+## Load libraries
+library(dplyr)
+library(dbplyr)
+library(R.utils)
+library(RSQLite)
+library(ggplot2)
+library(metagear)
+```
+
+
+# PRISMA flow chart
+
+
+```{r Get the latest version of sqlite database and connect}
+
+sqliteDir <- here::here("data/sqlite-databases")
+sqliteFiles <- dir(sqliteDir)
+sqliteVersions <- as.numeric(gsub(".sqlite","",substring(sqliteFiles, regexpr("_v", sqliteFiles) + 2)))
+latestVersion <- sqliteFiles[which.max(sqliteVersions)]
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+```
+
+
+```{r summarise corpus}
+
+# Connect to databases and get tables
+allrefs <- tbl(dbcon,"allrefs") # all merged references in the corpus
+
+dedups <- tbl(dbcon, "uniquerefs")  # unique references 
+
+predRel <- tbl(dbcon, "pred_relevance")  # relevance predictions
+
+# Summarise counts
+databaseNum <- allrefs%>%
+  group_by(source_database)%>% 
+  summarise(n=n()) %>% 
+  as.data.frame() # number from each source
+naAbstracts <- allrefs%>%
+  filter(is.na(abstract))%>% 
+  summarise(n=n()) %>% 
+  as.data.frame() # number of na Abstracts
+nUnique <- as.data.frame(summarise(dedups, n=n())) # number of unique references
+ndups <- sum(databaseNum$n)-naAbstracts-nUnique # number of duplicates removed
+nInclude <- predRel %>% 
+  summarise(
+    lower = sum(0.5 <= relevance_lower),
+    mean = sum(0.5 <= relevance_mean),
+    upper = sum(0.5 <= relevance_upper)) %>%
+  as.data.frame() # the number of articles predicted to be relevant
+
+# disconnect  
+dbDisconnect(dbcon)
+```
+
+```{r make prisma flow chart and write to figure}
+
+PRISMAFlow <- c(
+  paste("START_PHASE:", 
+        format(databaseNum$n[databaseNum$source_database == "Web Of Science"], format = "d", big.mark=","),
+        "articles from WOS"),
+  paste("START_PHASE:", format(databaseNum$n[databaseNum$source_database == "Scopus"], 
+                               format = "d", big.mark=","),
+        "articles from Scopus"),
+  paste(format(sum(databaseNum$n), format = "d", big.mark=","),"articles in total"),
+  paste("EXCLUDE_PHASE:", format(naAbstracts, format = "d", big.mark=","),"abstracts removed as NA"),
+  paste(format(sum(databaseNum$n)-naAbstracts, format = "d", big.mark=","),"eligible articles"),
+  paste("EXCLUDE_PHASE:",
+        format(sum(databaseNum$n)-naAbstracts-nUnique, format = "d", big.mark=","),"duplicates removed"),
+  paste(format(nUnique, format = "d", big.mark=","),"unique articles"),
+  paste("EXCLUDE_PHASE:", format(nUnique-nInclude["mean"], format = "d", big.mark=","),"articles excluded"),
+  paste0(format(nInclude["mean"], format = "d", big.mark=",")," articles predicted relevant (+/- ", format(nInclude["mean"]-nInclude["lower"], format="d", big.mark=","),")")
+)
+
+w <- 12
+h <- w*0.7
+
+pdf(here::here("figures/supplemental/PRISMA_diagram.pdf"), width = w, height = h)
+PRISMAFlowChart <- metagear::plot_PRISMA(PRISMAFlow, 
+                                         design = c(E = "lightcoral", flatArrow = TRUE),
+                                         excludeDistance = 0.8, colWidth = 50)
+dev.off()
+
+```
