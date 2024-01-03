@@ -1,0 +1,217 @@
+---
+title: "Figure3"
+author: "Devi Veytia"
+date: "2023-12-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Figure description/overview
+
+This figure shows the methods development stages across the different OROs using a barplot (fill, ORO type, x axis, method type)
+
+
+# Set up
+
+```{r load libraries}
+library(dplyr)
+library(dbplyr)
+library(R.utils)
+library(RSQLite)
+library(ggplot2)
+```
+
+
+```{r Get the latest version of sqlite database and connect}
+
+sqliteDir <- here::here("data/sqlite-databases")
+sqliteFiles <- dir(sqliteDir)
+sqliteVersions <- as.numeric(gsub(".sqlite","",substring(sqliteFiles, regexpr("_v", sqliteFiles) + 2)))
+latestVersion <- sqliteFiles[which.max(sqliteVersions)]
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+```
+
+
+```{r import common aesthetics}
+factor_aes <- readxl::read_excel(here::here("R/factor_aesthetics.xlsx"))
+
+```
+
+# Format data for figure
+
+```{r}
+predRel <- tbl(dbcon, "pred_relevance") %>%
+  filter(0.5 <= relevance_mean) %>%
+  select(analysis_id)
+predType <- tbl(dbcon, "pred_oro_type_long") %>%
+  filter(0.5 <= mean) %>%
+  select(analysis_id, oro_branch, oro_type)
+predMethod <- tbl(dbcon, "pred_method_type") %>%
+  select(analysis_id, 
+         `method_type.Mathematical_predictionsimulation - mean_prediction`,
+         `method_type.Social_primary - mean_prediction`,
+         `method_type.Empirical - mean_prediction`)
+
+## Calculations for plotting
+
+# Join datasets for relevance, orotype and method predictions
+typeMethodDf <- predRel %>%
+  inner_join(predType, by ="analysis_id") %>%
+  inner_join(predMethod, by = "analysis_id") %>%
+  # For each ORO type, sum the number of predictions for each method type
+  group_by(oro_branch, oro_type) %>%
+  summarise(
+    Mathematical_predictionsimulation = sum(0.5 <= `method_type.Mathematical_predictionsimulation - mean_prediction`),
+    Social_primary = sum(0.5 <= `method_type.Social_primary - mean_prediction`),
+    Empirical = sum(0.5 <= `method_type.Empirical - mean_prediction`)
+  ) %>%
+  collect()
+
+# Melt dataframe
+typeMethodDf <- reshape2::melt(typeMethodDf, 
+                               id.vars = c("oro_branch","oro_type"),
+                               variable.name = "method_type", 
+                               value.name = "method_sum")
+
+# Calculate totals for each oro to plot sums as a proportion
+oroTotals <- predRel %>%
+  inner_join(predType, by ="analysis_id") %>%
+  inner_join(predMethod, by = "analysis_id") %>%
+  # For each ORO type, sum the number of predictions for each method type
+  group_by(oro_type) %>%
+  summarise(oroTotal = n()) %>%
+  collect()
+typeMethodDf <- merge(typeMethodDf, oroTotals, by = "oro_type")
+
+# Use oroTotals to calculate the number of "other" methods
+otherMethods <- typeMethodDf %>%
+  group_by(oro_type, oro_branch, oroTotal) %>%
+  summarise(
+    sum_allMethods = sum(method_sum) 
+  ) %>%
+  mutate(method_sum = oroTotal-sum_allMethods,
+         method_type = "Other") 
+otherMethods <- otherMethods[,colnames(typeMethodDf)]
+typeMethodDf <- rbind(typeMethodDf, otherMethods)
+
+# Calculate method sums as a percent of total
+typeMethodDf$method_percent <- round(typeMethodDf$method_sum/typeMethodDf$oroTotal*100)
+
+
+
+
+## Format aesthetics for plotting
+# Read in the aethetics for oro_type -- determines order of x axis
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+# Use to factor oro_type columns
+typeMethodDf$oro_type <- factor(
+  typeMethodDf$oro_type, 
+  levels = typeAES$level, labels = typeAES$label
+)
+oroTotals$oro_type <- factor(
+  oroTotals$oro_type,
+  levels = typeAES$level, labels = typeAES$label
+)
+oroTotals <- typeAES %>%
+  rename(oro_type = label) %>%
+  select(oro_type, order) %>%
+  merge(oroTotals) %>%
+  mutate(order = factor(order, levels = typeAES$order[order(typeAES$order)]))
+
+
+# Join in with aesthetics for ORO branch -- determines colour of bar by oro_branch
+branchAES <- factor_aes[which(factor_aes$variable == "ORO_branch"),]
+typeAES <- merge(typeAES, branchAES[,c("label","colour")] %>%rename(oro_branch = label), 
+                 by = "colour") %>%
+  rename(oro_type = label)
+
+# Merge sums with plotting order, colour and corresponding branch 
+typeMethodDf <- merge(typeMethodDf,typeAES[,c("oro_type","order","colour","oro_branch")])
+typeMethodDf$oro_branch <- factor(typeMethodDf$oro_branch,
+                                 levels = branchAES$label[branchAES$order])
+typeMethodDf$order <- factor(typeMethodDf$order,
+                            levels = typeAES$order[order(typeAES$order)])
+
+
+# Factor Method type
+methodAES <- factor_aes[which(factor_aes$variable == "method_type"),]
+methodAES <- methodAES[order(methodAES$order,decreasing = TRUE),]
+# Use to factor method_type column
+typeMethodDf$method_type <- factor(
+  typeMethodDf$method_type, 
+  levels = methodAES$level, labels = methodAES$label
+)
+# change colours from oro_type to method_type
+methodAES$method_type <- methodAES$label
+typeMethodDf <- merge(typeMethodDf %>%
+                        select(-c("colour")), 
+                      methodAES[,c("method_type","colour")],
+                      by = "method_type")
+summary(typeMethodDf)
+
+
+
+```
+
+# Write figure
+
+```{r plot total numbers of predictions per method}
+fig3_ggp <- ggplot(typeMethodDf, aes(y=order, x=method_sum, fill = method_type))+
+  # plot bars number of model predictions
+  geom_col(position = "stack")+
+  
+  # Format scales
+  scale_fill_brewer(name = "Method type",type = "qual", palette = "Dark2")+
+  scale_y_discrete(limits = rev(levels(typeMethodDf$order)), 
+                    labels = rev(levels(typeMethodDf$oro_type)))+
+  
+  labs(x="N articles")+
+  theme(
+    panel.background = element_rect(fill="white",colour = "black"),
+    panel.grid.major = element_line(colour = "grey"),
+    axis.text.x = element_text(angle=45, hjust=1),
+    axis.title.x = element_blank()
+  )
+
+fig3_ggp
+
+```
+
+
+```{r plot as a proportion of total studies}
+fig3_ggp <- ggplot(typeMethodDf, aes(x=order, y=method_percent))+
+  # plot bars number of model predictions
+  geom_col(position = "stack", aes(fill = method_type))+
+  geom_text(data = oroTotals, aes(x=order,label = oroTotal), y=105, size=3, col="black", inherit.aes = FALSE)+ 
+  
+  # Format scales
+  scale_fill_manual(name = "Method type",
+                    values = as.vector(methodAES$colour))+
+  scale_x_discrete(limits = levels(typeMethodDf$order), 
+                    labels = levels(typeMethodDf$oro_type))+
+  ylim(c(0,105))+
+  
+  labs(y="Percent contribution")+
+  theme(
+    panel.background = element_rect(fill="white",colour = "black"),
+    panel.grid.major = element_line(colour = "grey"),
+    axis.text.x = element_text(angle=45, hjust=1,size=10),
+    axis.title.x = element_blank(),
+    plot.margin = unit(c(0.15,0.15,0.5,1),'cm'),
+    legend.position = "bottom"
+  )
+
+```
+
+```{r write figure}
+
+ggsave(filename = here::here("figures/main/Fig3.pdf"),plot = fig3_ggp,width = 7,height=5, units='in')
+```
+
+
+
+
