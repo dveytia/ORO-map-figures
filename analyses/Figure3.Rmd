@@ -209,7 +209,7 @@ fig3_ggp <- ggplot(typeMethodDf, aes(x=order, y=method_percent))+
 
 ```{r write figure}
 
-ggsave(filename = here::here("figures/main/Fig3.pdf"),plot = fig3_ggp,width = 7,height=5, units='in')
+ggsave(filename = here::here("figures/main/methodsBarPlot.pdf"),plot = fig3_ggp,width = 7,height=5, units='in')
 ```
 
 
