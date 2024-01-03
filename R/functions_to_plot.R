@@ -154,4 +154,32 @@ biplot_fig2c <- function(data, xlab, ylab, color_scale, log.transf, quant.prob, 
   return(plot)
   
 }
+
+
+#' Check Geoparsing Outputs
+#'
+#' @param data the data
+#' @param land TRUE/FALSE to select only land or sea results. DEFAULT = NULL to have both land and sea cells
+#' @param Place2Filter the place to select (e.g., "bolivarian republic of venezuela")
+#' @param world the shapefile of the world
+#'
+#' @return
+#' @export
+#'
+#' @examples
+plot_geoparsing <- function(data, world, land = NULL, Place2Filter){
+  
+  if(land == TRUE){data <- filter(data, is_land == 1)}
+  if(land == FALSE){data <- filter(data, is_land == 0)}
+  
+  ### ---- Filter the wanted place
+  subset_data <- sf::st_as_sf(data |> filter(place == Place2Filter), coords = c("LON", "LAT"), crs = 4326)
+  
+  ### ---- Plot
+  ggplot(data = subset_data) +
+    geom_sf(data = world_shp, fill = "grey95") +
+    geom_sf(color = "red") +
+    theme_bw()
+  
+}
   
