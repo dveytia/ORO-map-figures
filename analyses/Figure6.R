@@ -35,6 +35,55 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
 
 ### ----- PANEL A -----
 
+  ## ---- LOAD & FORMAT DATA
+  ccodes <- raster::ccodes() |>  
+    select(NAME, continent) |> 
+    rename(ccode_continent = continent)
+
+  gdp_per_capita <- readr::read_csv(here::here("data/external/gdp-per-capita/gdp-per-capita-worldbank-2021.csv"), 
+                                    show_col_types = FALSE) |>
+    rename(country = Entity,
+           GDP_per_capita = `GDP per capita, PPP (constant 2017 international $)`) |> 
+    group_by(country, Code) |> 
+    summarise(GDP_per_capita = mean(GDP_per_capita, na.rm = T)) |> 
+    left_join(ccodes, by = c("country" = "NAME")) |> 
+    mutate(continent = countrycode(sourcevar   = country,
+                                   origin      = "country.name",
+                                   destination = "continent"),
+           continent2 = case_when(continent == "Americas" ~ ccode_continent,
+                                  TRUE ~ continent))|>
+    filter(!is.na(continent2)) |> 
+    select(-ccode_continent, -continent)
+  
+    
+  energy_demand <- readr::read_csv(here::here("data/external/ghg-emissions/owid-co2-data.csv"),
+                                   show_col_types = FALSE) |> 
+    select(country, year, iso_code, energy_per_capita, energy_per_gdp) |>
+    filter(year > 2000) |> 
+    group_by(country, iso_code) |> 
+    summarise(energy_per_capita = mean(energy_per_capita, na.rm = T),
+              energy_per_gdp    = mean(energy_per_gdp,    na.rm = T)) |> 
+    left_join(ccodes, by = c("country" = "NAME")) |> 
+    mutate(continent = countrycode(sourcevar   = country,
+                                   origin      = "country.name",
+                                   destination = "continent"),
+           continent2 = case_when(continent == "Americas" ~ ccode_continent,
+                                  TRUE ~ continent))|>
+    filter(!is.na(continent2)) |> 
+    select(-ccode_continent, -continent)
+    
+  
+  
+  ## ---- CHECK IF ANY CORRELATION BETWEEN BOTH VARIABLES
+  energy_gdp <- full_join(energy_demand, gdp_per_capita |> ungroup() |> select(-continent2, -country), by = c("iso_code" = "Code"))
+  
+  correlation_btw_var(x = energy_gdp$GDP_per_capita, y = energy_gdp$energy_per_capita)
+  correlation_btw_var(x = log10(energy_gdp$GDP_per_capita), y = log10(energy_gdp$energy_per_capita))
+  
+
+  ## ---- PLOT DATA
+
+
 
 ### -----
 
@@ -62,6 +111,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     ccodes <- raster::ccodes() |>  
       select(NAME, continent) |> 
       rename(ccode_continent = continent)
+    
     pred_oro_type_continent_1Aaff <- pred_oro_type_continent1A$oroAff_1stA |> 
       left_join(ccodes, by = c("country_aff" = "NAME")) |> 
       mutate(continent = countrycode(sourcevar   = country_aff,
@@ -69,7 +119,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                                      destination = "continent"),
              continent2 = case_when(continent == "Americas" ~ ccode_continent,
                                     TRUE ~ continent)) |>
-      filter(!is.na(continent)) 
+      filter(!is.na(continent2)) 
     
     
     test <- pred_oro_type_continent1A$oroAff_1stA |> 
@@ -152,12 +202,18 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
       geom_text(data = base_data, aes(x = title, y = -500, label=continent2), hjust=c(rep(0.5,5), 0.37), colour = "black", alpha=0.8, size=5.5, fontface="bold", inherit.aes = FALSE)
     
-    ggsave(here::here("figures", "main", "Figure6_B2.jpeg"), width = 13, height = 5, device = "jpeg")
+    ggsave(here::here("figures", "main", "Figure6_PanelB.jpeg"), width = 13, height = 5, device = "jpeg")
 
     
     
     
 ### ----- 
+    
+### ----- DISCONNECT -----
+DBI::dbDisconnect(dbcon)
+    
+    
+    
     
     
     
