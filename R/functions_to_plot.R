@@ -182,4 +182,28 @@ plot_geoparsing <- function(data, world, land = NULL, Place2Filter){
     theme_bw()
   
 }
+
+
+#' Test Correlation Bewteen Variables
+#'
+#' @param x the x variable
+#' @param y the y variable
+#'
+#' @return
+#' @export
+#'
+#' @examples
+correlation_btw_var <- function(x, y){
+  
+  ggplot2::ggplot(mapping = ggplot2::aes(x = x, 
+                                         y = y)) +
+    ggplot2::geom_point() +
+    ggplot2::geom_smooth(method = "lm") +
+    ggpubr::stat_regline_equation(mapping = ggplot2::aes(label = paste(..adj.rr.label.., sep = "~~~~")),
+                                  formula = y~x) +
+    ggplot2::labs(y = "Energy per capita", 
+                  x = "GDP per capita") +
+    ggplot2::theme_bw()
+  
+}
   
