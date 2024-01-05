@@ -19,6 +19,7 @@ library(viridis)
 library(rgdal)
 library(broom)
 library(countrycode)
+library(ggrepel)
 
 ### ----- LOAD FUNCTIONS -----
 source(here::here("R", "functions_to_format.R")) # all functions needed to format data
@@ -36,16 +37,18 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
 ### ----- PANEL A -----
 
   ## ---- LOAD & FORMAT DATA
+  world_shp <- sf::read_sf(here::here("data", "external", "world_shp")) # shape file of the world
   ccodes <- raster::ccodes() |>  
     select(NAME, continent) |> 
     rename(ccode_continent = continent)
 
   gdp_per_capita <- readr::read_csv(here::here("data/external/gdp-per-capita/gdp-per-capita-worldbank-2021.csv"), 
                                     show_col_types = FALSE) |>
+    filter(Year > 2015) |> 
     rename(country = Entity,
            GDP_per_capita = `GDP per capita, PPP (constant 2017 international $)`) |> 
     group_by(country, Code) |> 
-    summarise(GDP_per_capita = mean(GDP_per_capita, na.rm = T)) |> 
+    summarise(GDP_per_capita = median(GDP_per_capita, na.rm = T)) |> 
     left_join(ccodes, by = c("country" = "NAME")) |> 
     mutate(continent = countrycode(sourcevar   = country,
                                    origin      = "country.name",
@@ -59,10 +62,10 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   energy_demand <- readr::read_csv(here::here("data/external/ghg-emissions/owid-co2-data.csv"),
                                    show_col_types = FALSE) |> 
     select(country, year, iso_code, energy_per_capita, energy_per_gdp) |>
-    filter(year > 2000) |> 
+    filter(year > 2015) |> 
     group_by(country, iso_code) |> 
-    summarise(energy_per_capita = mean(energy_per_capita, na.rm = T),
-              energy_per_gdp    = mean(energy_per_gdp,    na.rm = T)) |> 
+    summarise(energy_per_capita = median(energy_per_capita, na.rm = T),
+              energy_per_gdp    = median(energy_per_gdp,    na.rm = T)) |> 
     left_join(ccodes, by = c("country" = "NAME")) |> 
     mutate(continent = countrycode(sourcevar   = country,
                                    origin      = "country.name",
@@ -75,14 +78,21 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   
   
   ## ---- CHECK IF ANY CORRELATION BETWEEN BOTH VARIABLES
-  energy_gdp <- full_join(energy_demand, gdp_per_capita |> ungroup() |> select(-continent2, -country), by = c("iso_code" = "Code"))
+  energy_gdp <- full_join(energy_demand, gdp_per_capita |> ungroup() |> select(-continent2, -country), by = c("iso_code" = "Code")) |> 
+    drop_na()
+
+  correlation_btw_var(data       = energy_gdp,
+                      log.transf = FALSE, 
+                      quant.prob = 0.9,
+                      name       = "supplemental/energy_vs_GFD")
   
-  correlation_btw_var(x = energy_gdp$GDP_per_capita, y = energy_gdp$energy_per_capita)
-  correlation_btw_var(x = log10(energy_gdp$GDP_per_capita), y = log10(energy_gdp$energy_per_capita))
-  
+  correlation_btw_var(data       = energy_gdp,
+                      log.transf = TRUE, 
+                      quant.prob = 0.9,
+                      name       = "supplemental/energy_vs_GFD_log")
 
   ## ---- PLOT DATA
-
+  residuals = resid(lm(data$energy_per_capita ~ data$GDP_per_capita, data = data))
 
 
 ### -----
@@ -94,6 +104,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   pred_oro_type_long <- tbl(dbcon, "pred_oro_type_long") %>% collect()
   uniquerefs <- tbl(dbcon, "uniquerefs") # metadata on the unique references
   countries_ls <- read.csv(file = here::here("data", "external", "list_of_countries", "sql-pays.csv"), sep = ";") # Countries names
+  world_shp <- sf::read_sf(here::here("data", "external", "world_shp")) # shape file of the world
   
   ## ---- FORMAT DATA
   

@@ -184,6 +184,8 @@ plot_geoparsing <- function(data, world, land = NULL, Place2Filter){
 }
 
 
+
+
 #' Test Correlation Bewteen Variables
 #'
 #' @param x the x variable
@@ -193,17 +195,53 @@ plot_geoparsing <- function(data, world, land = NULL, Place2Filter){
 #' @export
 #'
 #' @examples
-correlation_btw_var <- function(x, y){
+correlation_btw_var <- function(data, log.transf, quant.prob, name = NULL){
   
-  ggplot2::ggplot(mapping = ggplot2::aes(x = x, 
-                                         y = y)) +
-    ggplot2::geom_point() +
-    ggplot2::geom_smooth(method = "lm") +
+  ### Log transformation if wanted
+  if(log.transf == TRUE){
+    data <- data |> 
+      mutate(energy_per_capita    = log(energy_per_capita),
+             GDP_per_capita = log(GDP_per_capita))
+  }
+  
+  ### Residuals
+  data$residuals <- resid(lm(data$energy_per_capita ~ data$GDP_per_capita, data = data))
+  data$labels <- abs(data$residuals) >= quantile(abs(data$residuals), prob = quant.prob)
+  
+  ggplot2::ggplot(data, mapping = ggplot2::aes(x = GDP_per_capita, 
+                                               y = energy_per_capita)) +
+    
+    ggplot2::geom_point(data, mapping = aes(x = GDP_per_capita, 
+                                            y = energy_per_capita,
+                                            color = continent2)) +
+    
+    ggplot2::geom_smooth(method = lm, col = "grey15") +
+    
     ggpubr::stat_regline_equation(mapping = ggplot2::aes(label = paste(..adj.rr.label.., sep = "~~~~")),
                                   formula = y~x) +
+    
+    geom_text_repel(data        = filter(data, labels == TRUE), 
+                    mapping     = aes(label = country, color = continent2), 
+                    show.legend = FALSE,
+                    min.segment.length = 0.1) +
+    
+    scale_color_manual(name = NULL, 
+                       values = c("Africa" = "#9c40b8",
+                                  "Asia"   = "#1f7819",
+                                  "Europe" = "#3456ad",
+                                  "North America" = "#e89338",
+                                  "Oceania"       = "#7d431f",
+                                  "South America" = "#eb4e49")) +
     ggplot2::labs(y = "Energy per capita", 
                   x = "GDP per capita") +
     ggplot2::theme_bw()
+  
+  
+  if(! is.null(name)) {
+    
+    ggplot2::ggsave(here::here("figures", paste0(name, ".jpeg")), width = 7, height = 5, device = "jpeg")
+    
+  }
   
 }
   
