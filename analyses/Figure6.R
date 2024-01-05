@@ -20,6 +20,7 @@ library(rgdal)
 library(broom)
 library(countrycode)
 library(ggrepel)
+library(cartogram)
 
 ### ----- LOAD FUNCTIONS -----
 source(here::here("R", "functions_to_format.R")) # all functions needed to format data
@@ -37,7 +38,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
 ### ----- PANEL A -----
 
   ## ---- LOAD & FORMAT DATA
-  world_shp <- sf::read_sf(here::here("data", "external", "world_shp")) # shape file of the world
+  world_conti_shp <- sf::read_sf(here::here("data", "external", "world_continents_shp")) # shape file of the world
   ccodes <- raster::ccodes() |>  
     select(NAME, continent) |> 
     rename(ccode_continent = continent)
@@ -78,8 +79,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   
   
   ## ---- CHECK IF ANY CORRELATION BETWEEN BOTH VARIABLES
-  energy_gdp <- full_join(energy_demand, gdp_per_capita |> ungroup() |> select(-continent2, -country), by = c("iso_code" = "Code")) |> 
-    drop_na()
+  energy_gdp <- full_join(energy_demand, gdp_per_capita |> ungroup() |> select(-continent2, -country), by = c("iso_code" = "Code")) |> drop_na()
 
   correlation_btw_var(data       = energy_gdp,
                       log.transf = FALSE, 
@@ -90,11 +90,72 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                       log.transf = TRUE, 
                       quant.prob = 0.9,
                       name       = "supplemental/energy_vs_GFD_log")
+  # https://ourworldindata.org/grapher/energy-use-per-person-vs-gdp-per-capita
+  
+  ## ==> Strong correlation, not necessary to use both variables. Cartogram with GDP only
+  
+  ## ---- Format GDP data
+  gdp_per_capita <- readr::read_csv(here::here("data/external/gdp-per-capita/gdp-per-capita-worldbank-2021.csv"), 
+                                    show_col_types = FALSE) |>
+    filter(Year > 2015 & Year < 2020) |> 
+    rename(country = Entity,
+           GDP_per_capita = `GDP per capita, PPP (constant 2017 international $)`) |> 
+    group_by(country, Code) |> 
+    summarise(GDP_per_capita = median(GDP_per_capita, na.rm = T)) |> 
+    left_join(ccodes, by = c("country" = "NAME")) |> 
+    mutate(continent = countrycode(sourcevar   = country,
+                                   origin      = "country.name",
+                                   destination = "continent"),
+           continent2 = case_when(continent == "Americas" ~ ccode_continent,
+                                  country   == "Russia"   ~ "Asia",
+                                  TRUE ~ continent)) |>
+    filter(!is.na(continent2)) |> 
+    group_by(continent2) |> 
+    summarise(GDP_per_capita = median(GDP_per_capita, na.rm = T)) 
+
+  
+  ## --- World shapefile, group Australia and Oceania
+  world_conti_shp2 <- world_conti_shp |> 
+    mutate(CONTINENT = case_when(CONTINENT == "Australia" ~ "Oceania",
+                                 TRUE ~ CONTINENT)) |> 
+    group_by(CONTINENT) |> 
+    summarise(geometry = sf::st_union(geometry))
+  
+  plot(world_conti_shp["CONTINENT"])
+  plot(world_conti_shp2["CONTINENT"])
+  
+  gdp_per_capita_sf <- left_join(world_conti_shp2 |> select(CONTINENT), gdp_per_capita, by = c("CONTINENT" = "continent2")) |> 
+    sf::st_transform(crs = 3857) |> # 53030
+    filter(CONTINENT != "Antarctica")
+  
 
   ## ---- PLOT DATA
-  residuals = resid(lm(data$energy_per_capita ~ data$GDP_per_capita, data = data))
+  plot(gdp_per_capita_sf["GDP_per_capita"])
+  ## !!! AUSTRALIA low because median value with oceanian's countries with low GDP per capita.
+  
+    # --- Format data to obtain a cartogram
+    gdp_conti_carto <- cartogram_cont(gdp_per_capita_sf, "GDP_per_capita", itermax = 5)
+    plot(gdp_conti_carto["GDP_per_capita"])
+    
+    Figure6_PanelA <- ggplot() +
+      geom_sf(data = gdp_conti_carto, aes(color = CONTINENT, fill  = GDP_per_capita), size = 1, show.legend = TRUE) +
+      scale_fill_viridis_c(option = "viridis", name = "GDP per capita") +
+      scale_color_manual(name = NULL,
+                         values = c("Africa" = "#9c40b8",
+                                    "Asia"   = "#1f7819",
+                                    "Europe" = "#3456ad",
+                                    "North America" = "#e89338",
+                                    "Oceania"       = "#7d431f",
+                                    "South America" = "#eb4e49"),
+                         guide = "none") +
+      theme_bw() +
+      theme(panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank()) ; Figure6_PanelA
+    
+    ggsave(here::here("figures", "main", "Figure6_PanelA.jpeg"), width = 7, height = 5, device = "jpeg")
 
-
+  
+  
 ### -----
 
 
@@ -132,11 +193,9 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                                     TRUE ~ continent)) |>
       filter(!is.na(continent2)) 
     
-    
-    test <- pred_oro_type_continent1A$oroAff_1stA |> 
-      
-    test_NA <- filter(test, is.na(continent)) ; unique(test_NA$country_aff)
-    sum(is.na(test$continent))
+    # --- Change Russia in the Asian continent
+    pred_oro_type_continent_1Aaff_RussiaAsia = pred_oro_type_continent_1Aaff
+    pred_oro_type_continent_1Aaff_RussiaAsia$continent2[pred_oro_type_continent_1Aaff_RussiaAsia$country_aff == "Russian Federation"] <- "Asia"
     
     # !!!! CHECK WITH DEVI !!!!
     # --- Select the most relevant oro_type predicted and estimate the # paper per continent, oro_branch and oro_type
@@ -151,7 +210,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       arrange(continent2, oro_branch, -n_mean) |>
       ungroup() |> 
       mutate(valueOrder = as.factor(row_number()))
-      
+    
       
     # tmp1 = filter(pred_oro_type_continent_1Aaff, continent == "Africa" & oro_branch == "Mitigation" & oro_type == "CO2 removal or storage") ;  nrow(tmp)
     # tmp2 = filter(pred_oro_type_continent_1Aaff, continent == "Africa" & oro_branch == "Mitigation" & oro_type == "Increase efficiency") ;  nrow(tmp)
@@ -211,14 +270,26 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
             legend.text     = element_text(size = 14),
             legend.title    = element_text(size = 16)) +
     
-      geom_text(data = base_data, aes(x = title, y = -500, label=continent2), hjust=c(rep(0.5,5), 0.37), colour = "black", alpha=0.8, size=5.5, fontface="bold", inherit.aes = FALSE)
-    
-    ggsave(here::here("figures", "main", "Figure6_PanelB.jpeg"), width = 13, height = 5, device = "jpeg")
+      # geom_text(data = base_data, aes(x = title, y = -500, label=continent2), hjust=c(rep(0.5,5), 0.37), colour = "black", alpha=0.8, size=5.5, fontface="bold", inherit.aes = FALSE)
+      geom_text(data = base_data, aes(x = title, y = -500, label=continent2), hjust=c(rep(0.5,5), 0.37), 
+                colour = c("#9c40b8","#1f7819","#3456ad","#e89338","#7d431f","#eb4e49"), 
+                size=5.5, fontface="bold", inherit.aes = FALSE)
+  
+    ggsave(here::here("figures", "main", "Figure6_PanelB_RussiaInAsia.jpeg"), width = 13, height = 5, device = "jpeg")
 
-    
+    c("#9c40b8","#1f7819","#3456ad","#e89338","#7d431f","#eb4e49")
     
     
 ### ----- 
+    
+### ----- ARRANGE PANEL
+library(cowplot)
+Figure6 <- ggdraw() +
+  draw_plot(Figure6_PanelA, x = 0.00, y = 0.50, width = 1, height = 0.5) +
+  draw_plot(Figure6_PanelB, x = 0.00, y = 0.00, width = 1, height = 0.5)
+
+ggsave(here::here("figures", "main", "Figure6.jpeg"), width = 13, height = 5, device = "jpeg")
+
     
 ### ----- DISCONNECT -----
 DBI::dbDisconnect(dbcon)
