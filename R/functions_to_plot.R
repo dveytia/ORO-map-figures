@@ -244,4 +244,129 @@ correlation_btw_var <- function(data, log.transf, quant.prob, name = NULL){
   }
   
 }
+
+
+#' Bivariate Map
+#'
+#' @param data_map the data ready to map obtained with CarcasSink::format_data_bivariate_map() 
+#' @param bivariate_color_scale a df of the bivariate color scale, obtained with CarcasSink::color_bivariate_map()
+#' @param name the name of the map to be saved
+#'
+#' @return
+#' @export
+#'
+#' @examples
+bivariate_map <- function(data_map, data_map_univ, data_world, bivariate_color_scale, xlab, ylab, name){
+  
+  # data_map <- tibble::as.tibble(data_map)
+  
+  ### Produce the map
+  map <- ggplot2::ggplot() +
+    
+    ## DBEM output grid
+    ggplot2::geom_sf(data    = data_map, 
+                     mapping = ggplot2::aes(fill     = fill,
+                                            geometry = geometry), 
+                     color   = NA, 
+                     size    = 0.01) +
+    
+    ggplot2::scale_fill_identity(na.value = "grey80") +
+    ggplot2::theme_void() +
+    
+    ## Add graticules
+    # ggplot2::geom_sf(data     = data_map$graticules,
+    #                  linetype = "dotted",
+    #                  color    = "black",
+    #                  size     = 0.4) +
+    
+    ggnewscale::new_scale_fill() +
+    
+    ## Add borders grid
+    geom_sf(data        = data_map_univ, 
+            mapping     = aes(fill = log(Count_ORO)),
+            colour      = "black",
+            size        = 0.1, 
+            show.legend = TRUE) +
+    scale_fill_gradientn(colors   = viridis::magma(10, direction = -1),
+                         na.value = "grey80") +
+      
+    theme_bw() +
+    theme(legend.position = "bottom")
+    
+    
+    # ggplot2::geom_sf(data   = data_map$box,
+    #                  colour = "black",
+    #                  fill   = NA,
+    #                  size   = 0.1) +
+    
+    ## Add latitude and longitude labels
+    # ggplot2::geom_text(data = data_map$lat_text, mapping = ggplot2::aes(x = X.prj2-1*10e5, y = Y.prj,          label = lbl), color = "grey20", size = 1.5) +
+    # ggplot2::geom_text(data = data_map$lon_text, mapping = ggplot2::aes(x = X.prj,         y = Y.prj-0.5*10e5, label = lbl), color = "black",  size = 1.5) +
+    # 
+    ## Theme
+    # ggplot2::theme(panel.grid.major.x = ggplot2::element_line(color = NA),
+    #                panel.background   = ggplot2::element_blank(),
+    #                axis.text          = ggplot2::element_blank(),
+    #                axis.ticks         = ggplot2::element_blank(), 
+    #                axis.title         = ggplot2::element_blank(),
+    #                plot.margin        = ggplot2::unit(c(0,0,0,0), "cm"),
+    #                plot.title         = ggplot2::element_text(size  = 12, 
+    #                                                           face  = "bold", 
+    #                                                           hjust = 0.5, 
+    #                                                           vjust = -0.5),
+    #                legend.title       = ggplot2::element_text(size  = 20, 
+    #                                                           face  = "bold", 
+    #                                                           hjust = 0.5, 
+    #                                                           vjust = 0.5),
+    #                legend.text        = ggplot2::element_text(size = 16))
+  
+  
+  ### Color legend
+  
+  ## Separate groups
+  color <- bivariate_color_scale |> 
+    dplyr::mutate(x = as.integer(rep(seq(1, 10, 1), 10)),
+                  y = as.integer(rep(1:10, each = 10)))
+  
+  
+  ## Plot
+  legend <- ggplot2::ggplot() +
+    
+    ggplot2::geom_tile(data    = color, 
+                       mapping = ggplot2::aes(x = x, y = y, fill = fill)) +
+    
+    ggplot2::scale_fill_identity() +
+    ggplot2::labs(x = xlab, y = ylab) +
+    # ggplot2::geom_hline(yintercept = 3.5, color = "red") +
+    cowplot::theme_map() +
+    ggplot2::theme(axis.title      = ggplot2::element_text(size = 16), 
+                   axis.title.x    = ggplot2::element_text(margin = ggplot2::margin(t = 0, 
+                                                                                    r = 0, 
+                                                                                    b = 0, 
+                                                                                    l = 0)),
+                   axis.title.y    = ggplot2::element_text(angle  = 90,
+                                                           margin = ggplot2::margin(t = 0,
+                                                                                    r = 5,
+                                                                                    b = 0,
+                                                                                    l = 0)),
+                   plot.background = ggplot2::element_rect(fill  = "white", 
+                                                           color = "transparent")) +
+    ggplot2::coord_fixed()
+  
+  
+  ### Arrange map with legend
+  map_bi <- cowplot::ggdraw() +
+    cowplot::draw_plot(map,    x = 0.0, y = 0.00, width = 0.70, height = 1.0) +
+    cowplot::draw_plot(legend, x = 0.65, y = 0.30, width = 0.35, height = 0.35)
+  
+  ### Save map
+  if(! is.null(name)) {
+    
+    ggplot2::ggsave(here::here("figures", paste0(name, ".jpeg")), width = 8.5, height = 6, device = "jpeg")
+    
+  }
+  
+  return(map_bi)
+  
+}
   
