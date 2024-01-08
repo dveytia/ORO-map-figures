@@ -94,3 +94,56 @@ PRISMAFlowChart <- metagear::plot_PRISMA(PRISMAFlow,
 dev.off()
 
 ```
+
+
+# Summarise manual screening and coding results
+
+
+```{r manual screening summary}
+seen_screen <- tbl(dbcon, "seen_screen") %>% collect()
+seen_coding <- tbl(dbcon, "seen_coding") %>% collect()
+
+
+# the number of inclusions vs exclusions
+seen_screen %>%
+  group_by(include_screen) %>%
+  summarise(n = n())
+#   include_screen     n
+#            <int> <int>
+# 1              0  1796
+# 2              1   956
+nrow(seen_screen) # in total, 2752
+
+# the screening effort
+screen_effort_summary <- seen_screen %>%
+  summarise(
+    DV = sum(grepl("devi", reviewer, ignore.case=TRUE)),
+    JGP = sum(grepl("jean", reviewer, ignore.case=TRUE)),
+    AC = sum(grepl("adrien", reviewer, ignore.case=TRUE))+sum(grepl("AC", reviewer)),
+    LB = sum(grepl("bopp", reviewer, ignore.case=TRUE))+sum(grepl("Laurent", reviewer, ignore.case=TRUE)),
+    YS = sum(grepl("yunne", reviewer, ignore.case=TRUE)),
+    FV = sum(grepl("Fred", reviewer, ignore.case=TRUE))
+  )
+screen_effort_summary
+
+#      DV   JGP    AC    LB    YS    FV
+#   <int> <int> <int> <int> <int> <int>
+# 1  1367   213   427   492   439    42
+
+screen_effort_summary2 <- reshape2::melt(screen_effort_summary)
+
+mean(screen_effort_summary2$value) # 496.6667
+sd(screen_effort_summary2$value) # 458.8833
+median(screen_effort_summary2$value) # 433
+
+
+# Number of articles that were supplementally screened and coded using a keyword search
+sum(seen_screen$sample_screen == "supplemental coding")
+```
+
+
+
+
+
+
+
