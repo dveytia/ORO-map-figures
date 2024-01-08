@@ -8,7 +8,7 @@
 #'
 #'
 #' @examples
-univariate_map <- function(data_map, color_scale, legend, show.legend, name = NULL){
+univariate_map <- function(data_map, color_scale, vals_colors_scale, legend, show.legend, name = NULL){
   
   ### Produce the map
   map <- ggplot2::ggplot() +
@@ -22,7 +22,8 @@ univariate_map <- function(data_map, color_scale, legend, show.legend, name = NU
                      show.legend = show.legend) +
     
     ggplot2::scale_fill_gradientn(colors   = color_scale,
-                                  na.value = "grey50") +
+                                  values   = vals_colors_scale,
+                                  na.value = "grey80") +
     
     # Add graticules
     # ggplot2::geom_sf(data     = data_map$graticules,
@@ -100,7 +101,7 @@ univariate_map <- function(data_map, color_scale, legend, show.legend, name = NU
 #' @export
 #'
 #' @examples
-biplot_fig2c <- function(data, xlab, ylab, color_scale, log.transf, quant.prob, name = NULL){
+biplot_fig2c <- function(data, xlab, ylab, color_scale, vals_colors_scale, log.transf, quant.prob, name = NULL){
   
   data <- data |> filter(!is.na(dominant_ORO) & !is.na(Count_ORO) & !is.na(Record.Count))
     
@@ -121,7 +122,7 @@ biplot_fig2c <- function(data, xlab, ylab, color_scale, log.transf, quant.prob, 
   plot <- ggplot(data    = data, 
                  mapping = aes(x = Record.Count, 
                                y = Count_ORO)) +
-    geom_point(mapping = aes(color = dominant_ORO)) +
+    geom_point(mapping = aes(color = layer)) +
     geom_smooth(method  = lm, 
                 col     = "grey10") +
     
@@ -129,21 +130,33 @@ biplot_fig2c <- function(data, xlab, ylab, color_scale, log.transf, quant.prob, 
 
     xlab(label = xlab) +
     ylab(label = ylab) +
-    geom_text_repel(data        = filter(data, labels == TRUE), 
-                    mapping     = aes(label = Country, color = dominant_ORO), 
-                    show.legend = FALSE,
+    geom_text_repel(data         = filter(data, labels == TRUE), 
+                    mapping      = aes(label = Country, color = layer),
+                    max.overlaps = 100,
+                    show.legend  = FALSE,
                     min.segment.length = 0.1) +
-    scale_color_manual(values = color_scale, 
-                       name   = "ORO branch:",
-                       labels = c("Adaptation", "50/50", "Mitigation")) +
+    # scale_color_manual(values = color_scale, 
+    #                    name   = "ORO branch:",
+    #                    labels = c("Adaptation", "50/50", "Mitigation")) +
+    scale_color_gradientn(name = "% mit. ORO",
+                          colors   = color_scale,
+                          values   = vals_colors_scale,
+                          na.value = "grey80") +
     theme_bw() +
-    theme(legend.position = c(0.15, 0.85),
+    guides(size = "none", color = guide_colourbar(title.position = "top", barwidth = 8, barheight = 0.7)) +
+    theme(legend.position = c(0.15,0.9),
           axis.text.x     = element_text(size = 11),
           axis.text.y     = element_text(size = 11),
           axis.title.x    = element_text(size = 13),
           axis.title.y    = element_text(size = 13),
           legend.text     = element_text(size = 12),
-          legend.title    = element_text(size = 13))
+          legend.title    = element_text(size  = 13, 
+                                         face  = "bold", 
+                                         hjust = 0.5, 
+                                         vjust = 0.5),
+          legend.title.align = 0.5, 
+          legend.direction   = "horizontal") 
+    
   
   if(! is.null(name)) {
     
@@ -280,12 +293,13 @@ bivariate_map <- function(data_map, data_map_univ, data_world, bivariate_color_s
     #                  size     = 0.4) +
     
     ggnewscale::new_scale_fill() +
-    
+
     ## Add borders grid
-    geom_sf(data        = data_map_univ, 
-            mapping     = aes(fill = log(Count_ORO)),
+    geom_sf(data        = data_map_univ,
+            # mapping     = aes(fill = log(Count_ORO)),
             colour      = "black",
-            size        = 0.1, 
+            fill        = "grey90",
+            size        = 0.1,
             show.legend = TRUE) +
     scale_fill_gradientn(colors   = viridis::magma(10, direction = -1),
                          na.value = "grey80") +

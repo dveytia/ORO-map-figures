@@ -20,6 +20,7 @@ library(stringr)
 library(viridis)
 library(rgdal)
 library(broom)
+library(ggrepel)
 
 ### ----- LOAD FUNCTIONS -----
 source(here::here("R", "functions_to_format.R")) # all functions needed to format data
@@ -38,9 +39,10 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
 
   ## ---- LOAD DATA
   uniquerefs <- tbl(dbcon, "uniquerefs") # metadata on the unique references
-  pred_relevance <- tbl(dbcon, "pred_relevance") # which articles are relevant to OROs
+  pred_relevance <- tbl(dbcon, "pred_relevance")  # which articles are relevant to OROs
   
   countries_ls <- read.csv(file = here::here("data", "external", "list_of_countries", "sql-pays.csv"), sep = ";") # Countries names
+  
   numb_OandApub_per_country <- read.delim(here::here("data/external/ocean-and-climate-publications/WOS_ocean-and-climate_by-country_2023-11-21.txt"))
   world_shp <- sf::read_sf(here::here("data", "external", "world_shp")) # shape file of the world
   
@@ -56,6 +58,9 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     # --- Extract the country of the first author for each relevant publications
     data_1stA_country <- extract_1stA_affiliation(data         = oroAffiliations, 
                                                   countries_ls = countries_ls) 
+    
+    tmp <- data_1stA_country$oroAff_1stA |> sample_n(size = 50)
+    lapply(data_1stA_country, dim)
     
       # -- Number of publication per country
       ORO_per_country <- data_1stA_country$oroAff_1stA |> 
@@ -85,11 +90,12 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                                          PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
     
   ## ---- PLOT PANEL A
-  panelA <- univariate_map(data_map    = data_2_map_panelA,
-                           color_scale = viridis::magma(6, direction = -1),
-                           legend      = "Ratio (%)",
-                           show.legend = TRUE,
-                           name        = "main/Fig2_panelA")
+  panelA <- univariate_map(data_map          = data_2_map_panelA,
+                           color_scale       = viridis::magma(10, direction = -1),
+                           vals_colors_scale = NULL,
+                           legend            = "#ORO/#O&C (%)",
+                           show.legend       = TRUE,
+                           name              = "main/Fig2_panelA")
 ### -----
 
 ### ----- PANEL B -----
@@ -97,23 +103,32 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   ## ---- LOAD DATA
   uniquerefs <- tbl(dbcon, "uniquerefs") # metadata on the unique references
   pred_oro_branch <- tbl(dbcon, "pred_oro_branch") # predictions for ORO branch
+  pred_relevance <- tbl(dbcon, "pred_relevance") # which articles are relevant to OROs
+  countries_ls <- read.csv(file = here::here("data", "external", "list_of_countries", "sql-pays.csv"), sep = ";") # Countries names
+  world_shp <- sf::read_sf(here::here("data", "external", "world_shp")) # shape file of the world
+  
   
   ## ---- FORMAT DATA 
     
     # --- Just simplify and create a column that idenfies with 1 or 0 whether 
     # --- a publication is relevant for mitiagion or adaptation
-    mitAdaptPubs <- pred_oro_branch %>%
+    mitAdaptPubs <- pred_oro_branch %>% 
+      left_join(pred_relevance, by = "analysis_id") |> 
+      filter(0.5 <= relevance_mean) %>%
       mutate(adaptation = ifelse(0.5 <= `oro_branch.Nature - mean_prediction` |
                                  0.5 <= `oro_branch.Societal - mean_prediction`,
                                  1, 0),
-             mitigation = ifelse(0.5 <= `oro_branch.Mitigation - mean_prediction`, 1 ,0))%>%
+             mitigation = ifelse(0.5 <= `oro_branch.Mitigation - mean_prediction`, 1 ,0)) %>% 
       select(analysis_id, adaptation, mitigation) %>%
       left_join(uniquerefs %>% select(analysis_id, affiliation), by = "analysis_id") %>%
       collect()
     
     # --- Extract the country of the first author for each relevant publications
     data_1stA_country_MA <- extract_1stA_affiliation(data         = mitAdaptPubs, 
-                                                    countries_ls = countries_ls) 
+                                                     countries_ls = countries_ls) 
+    
+    tmp <- data_1stA_country_MA$oroAff_1stA |> sample_n(size = 50)
+    lapply(data_1stA_country_MA, dim)
     
     # --- Ratio # of mitigation publications over # of adaptation publications
     ratio_mitig_adapt <- data_1stA_country_MA$oroAff_1stA |> 
@@ -135,11 +150,12 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                                          PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
     
   ## ---- PLOT PANEL B
-  panelB <- univariate_map(data_map    = data_2_map_panelB,
-                           color_scale = viridis::mako(10, direction = 1),
-                           legend      = "% mit. ORO",
-                           show.legend = TRUE,
-                           name        = "main/Fig2_panelB")
+  panelB <- univariate_map(data_map          = data_2_map_panelB,
+                           color_scale       = c("#4c4680", "#7670a8", "white", "#35a7d9", "#197da8"),
+                           vals_colors_scale = c(0, 0.3, 0.5, 0.7, 1),
+                           legend            = "% mit. ORO",
+                           show.legend       = TRUE,
+                           name              = "main/Fig2_panelB")
   
 ### -----
   
@@ -170,10 +186,11 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   panelC <- biplot_fig2c(data        = data_panelC,
                          ylab        = "# ORO publication",
                          xlab        = "# O&C publication",
-                         color_scale = c("#DD7E54", "mediumpurple3", "#20BAA7"),
+                         color_scale       = c("#4c4680", "#7670a8", "grey70", "#35a7d9", "#197da8"),
+                         vals_colors_scale = c(0, 0.3, 0.5, 0.7, 1),
                          log.transf  = TRUE,
                          quant.prob  = 0.85, 
-                         name        = "main/Fig2_panelC") ; panelC  
+                         name        = "main/test") ; panelC  
 
   
 ### -----
