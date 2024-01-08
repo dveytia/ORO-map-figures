@@ -77,7 +77,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       # - Format the shapefile of the world countries polygon and bind data
       world_shp_boundaries <- format_shp_of_the_world(world_shp    = world_shp,
                                                       data_to_bind = mitPubs_per_country,
-                                                      PROJ         = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+                                                      PROJ         = 4326)
       
       
     # --- Bivariate color scale:
@@ -105,52 +105,140 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       collect() 
     
       # - Trasform into a spatial object
-      mitigation_grid_sf <- sf::st_as_sf(mitigation_grid_df, coords = c("LON", "LAT"), crs = 4326) |> 
-        sf::st_transform(crs = PROJ)
+      mitigation_grid_sf <- sf::st_as_sf(mitigation_grid_df, coords = c("LON", "LAT"), crs = 4326)
+        
       
-      mit_grid_land <- filter(mitigation_grid_sf, is_land == 1)
-      range(mit_grid_land$n_articles_weighted, na.rm=T)
-      sum(mit_grid_land$n_articles_weighted > 0, na.rm = T) # 2656 terrestrial cells with 
-      
-      ggplot(data = mit_grid_land) +
-        geom_sf(aes(color = n_articles_weighted)) +
-        scale_colour_viridis_c(na.value = "grey80") +
-        theme_bw()
-      
-      mit_grid_sea <- filter(mitigation_grid_sf, is_land == 0)
-      range(mit_grid_sea$n_articles_weighted, na.rm=T)
-      ggplot(data = mit_grid_sea) +
-        geom_sf(aes(color = n_articles_weighted)) +
-        scale_colour_viridis_c(na.value = "grey80") +
-        theme_bw()
+      # mit_grid_land <- filter(mitigation_grid_sf, is_land == 1)
+      # range(mit_grid_land$n_articles_weighted, na.rm=T)
+      # sum(mit_grid_land$n_articles_weighted > 0, na.rm = T) # 2656 terrestrial cells with 
+      # 
+      # ggplot(data = mit_grid_land) +
+      #   geom_sf(aes(color = n_articles_weighted)) +
+      #   scale_colour_viridis_c(na.value = "grey80") +
+      #   theme_bw()
+      # 
+      # mitigation_grid_sf_sea <- filter(mitigation_grid_sf, is_land == 0)
+      # range(mit_grid_sea$n_articles_weighted, na.rm=T)
+      # ggplot(data = mit_grid_sea) +
+      #   geom_sf(aes(color = n_articles_weighted)) +
+      #   scale_colour_viridis_c(na.value = "grey80") +
+      #   theme_bw()
       
 
-
-    
-      # - Annual mean of countries's GHG emissions over the 2000-2020 period 
+      # - Annual median of countries's GHG emissions over the 2000-2020 period 
       # - Full code book available here: https://github.com/owid/co2-data
       mean_GHGemi_country <- GHGemi_country |> 
         select(year, iso_code, total_ghg) |>  # total_ghg refers to total GHG emissions (in MtCO2eq) including land-use change and forestry.
         filter(year >= 2000 & year <=2020) |> 
         group_by(iso_code) |> 
-        summarise(an_mean_co2eq_em = mean(total_ghg, na.rm = T),
+        summarise(an_mean_co2eq_em = median(total_ghg, na.rm = T),
                   sd_co2eq_em      = sd(total_ghg, na.rm = T)) |> 
         filter(iso_code != "") 
       
       # - Bind data with eez shapefile
       GHGemi_country_eez <- eez_shp |> 
-        left_join(mean_GHGemi_country, by = c("ISO_SOV1" = "iso_code")) |> 
-        sf::st_transform(crs = PROJ) 
+        left_join(mean_GHGemi_country, by = c("ISO_SOV1" = "iso_code"))
       
-      plot(GHGemi_country_eez["an_mean_co2eq_em"])
+      ggplot(GHGemi_country_eez) +
+        geom_sf(data = world_shp, fill = "grey90") +
+        geom_sf(aes(fill = an_mean_co2eq_em)) +
+        scale_fill_viridis_c() +
+        theme_bw()
       
-      # - Intersection: merge point matching in eez polygons
-      GHGemi_mitigationGRID_eez <- sf::st_join(mitigation_grid_sf, GHGemi_country_eez)
+      # - Intersection: merge point matching in eez polygons for MRE and BC publications
+      grid_df <- tbl(dbcon, "grid_df_res2.5") |>  collect()
+      sf::sf_use_s2(FALSE)
+      MRE_BC_in_eez_sf <- eez_shp |> 
+        sf::st_join(mitigation_grid_sf) |> 
+        sf::st_drop_geometry() |> 
+        left_join(grid_df, by = "grid_df_id") |>
+        filter(!is.na(LAT) & !is.na(LON)) |> 
+        sf::st_as_sf(coords = c("LON", "LAT"), crs = 4326)
       
-      GHGemi_mitigationGRID_eez <- sf::st_intersection(GHGemi_country_eez, mitigation_grid_sf)
+      ggplot(MRE_BC_in_eez_sf) +
+        geom_sf(data = world_shp, fill = "grey90") +
+        geom_sf(color = "red", shape = 3, size = 0.2) +
+        theme_bw()
+      
+      MRE_BC_mean_eez_sf <- MRE_BC_in_eez_sf |> 
+        sf::st_drop_geometry() |> 
+        group_by(MRGID, Country, ISO_SOV1) |> 
+        summarise(n_articles_weighted = mean(n_articles_weighted, na.rm = TRUE))
+      
+      MRE_BC_mean_eez_sf2 <- eez_shp |> 
+        left_join(MRE_BC_mean_eez_sf, by = "MRGID")
+      
+      ggplot(MRE_BC_mean_eez_sf2) +
+        geom_sf(data = world_shp, fill = "grey90") +
+        geom_sf(aes(fill = log(n_articles_weighted+1))) +
+        scale_fill_viridis_c() +
+        theme_bw()
+      
+      tmp <- MRE_BC_mean_eez_sf2 |>  sf::st_drop_geometry()
+      
+      # - Union with over-sea territories
+      MRE_BC_mean_eez_sf_noDOMTOM <- MRE_BC_in_eez_sf |> 
+        sf::st_drop_geometry() |> 
+        group_by(Country, ISO_SOV1) |> 
+        summarise(n_articles_weighted = mean(n_articles_weighted, na.rm = TRUE))
+      
+      MRE_BC_mean_eez_sf_noDOMTOM <- eez_shp |> 
+        left_join(MRE_BC_mean_eez_sf_noDOMTOM, by = "ISO_SOV1")
+      
+      ggplot(MRE_BC_mean_eez_sf_noDOMTOM) +
+        geom_sf(data = world_shp, fill = "grey90") +
+        geom_sf(aes(fill = log(n_articles_weighted+1))) +
+        scale_fill_viridis_c() +
+        theme_bw()
+
+      
+      # test <- sf::st_join(eez_shp, mitigation_grid_sf)
+      # tmp <- eez_shp[which(sf::st_intersects(mitigation_grid_sf, eez_shp, sparse = FALSE)),]
+      # tmp <- sf::st_intersects(mitigation_grid_sf, eez_shp)
+      # GHGemi_mitigationGRID_eez <- sf::st_intersection(GHGemi_country_eez, mitigation_grid_sf)
     
       # !!!!! Check the period !!!!!
       
+      # -- Merge CO2 emissions and MRE_BC papers
+      data_panelA <- MRE_BC_mean_eez_sf_noDOMTOM |> 
+        sf::st_drop_geometry() |> 
+        select(ISO_SOV1, TERRITORY1, n_articles_weighted) |> 
+        # rename(ISO_SOV1 = ISO_SOV1.x) |> 
+        left_join(GHGemi_country_eez |> 
+                    sf::st_drop_geometry() |> 
+                    select(ISO_SOV1, an_mean_co2eq_em), 
+                  by = "ISO_SOV1") |> 
+        distinct()
+      
+      # -- Create the bivariate color scale
+      bivariate_color_scale <- color_bivariate_map(nquantiles  = 10, 
+                                                   upperleft   = rgb(130,0,80, maxColorValue = 255), 
+                                                   upperright  = rgb(255,230,15, maxColorValue = 255),
+                                                   bottomleft  = "white",
+                                                   bottomright = rgb(0,150,235, maxColorValue = 255), 
+                                                   ylab        = "CO2 emission",
+                                                   xlab        = "n_weighted_papers")
+      
+      # -- Adapt it to the data
+      data_bivar_n_article_CO2em <- format_data_bivariate_map(data        = data_panelA,
+                                                              data.x      = "n_articles_weighted",
+                                                              data.y      = "an_mean_co2eq_em",
+                                                              color_table = bivariate_color_scale,
+                                                              probs.quant = seq(0,1,0.1))
+      
+        
+      data_panelA_sf <- eez_shp |> 
+        select(ISO_SOV1, TERRITORY1, geometry) |> 
+        right_join(data_bivar_n_article_CO2em, by = "TERRITORY1") 
+      
+      # -- Map 
+      bivariate_map(data_map              = data_panelA_sf,
+                    data_map_univ         = world_shp_boundaries,
+                    data_world            = world_shp,
+                    bivariate_color_scale = bivariate_color_scale,
+                    ylab                  = "CO2 emission",
+                    xlab                  = "n_weighted_papers",
+                    name                  = "main/bivariate_map_panelA2") 
       
       
 

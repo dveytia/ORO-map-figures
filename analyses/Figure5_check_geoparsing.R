@@ -38,6 +38,7 @@ pred_blue_carbon <- tbl(dbcon, "pred_blue_carbon")
 shp_df_matches <- tbl(dbcon, "geoparsed-text_shp_df_matches") 
 grid_df <- tbl(dbcon, "grid_df_res2.5") 
 world_shp <- sf::read_sf(here::here("data", "external", "world_shp")) # shape file of the world
+pred_oro_any_mitigation <- tbl(dbcon, "pred_oro_any_mitigation")
 
 
 ### ----- Perform calculations to give you the weighted number of articles relevant to blue carbon or mitigation
@@ -65,6 +66,8 @@ mitigation_grid_df <- pred_blue_carbon %>%
 ### ----- PLOT DATA
   
   # - Trasform into a spatial object
+  PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+
   mitigation_grid_sf <- sf::st_as_sf(mitigation_grid_df, coords = c("LON", "LAT"), crs = 4326) |> 
     sf::st_transform(crs = PROJ)
   
@@ -82,7 +85,7 @@ mitigation_grid_df <- pred_blue_carbon %>%
   ggplot(data = mitigation_grid_sf_LAND) +
     geom_sf(data = world_shp, fill = "grey95") +
     geom_sf(aes(color = n_articles_weighted)) +
-    scale_colour_viridis_c(na.value = "green") +
+    scale_colour_viridis_c(na.value = "white") +
     theme_bw()
   
   
@@ -141,7 +144,7 @@ tmp_land_FR <- sf::st_as_sf(tmp_land |> filter(place == "republic of france"), c
 ### I tried to understand by plotting one paper (I randomly took the analysis_id = 31942)
 
 # Analysis_id = 31942 with 15 lines (15 different LAT LON)
-FR_31942 <- sf::st_as_sf(tmp_land_FR |> filter(analysis_id == 31942), coords = c("LON", "LAT"), crs = 4326)
+FR_31942 <- sf::st_as_sf(tmp_land_FR |> filter(analysis_id == 31942), coords = c("LON", "LAT"), crs = 4326) # try with 2249
 ggplot(data = FR_31942) +
   geom_sf(data = world_shp, fill = "grey95") +
   geom_sf(color = "red") +

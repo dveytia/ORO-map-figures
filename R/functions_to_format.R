@@ -325,3 +325,100 @@ format_data2map <- function(data, PROJ){
   return(data_map)
   
 }
+
+
+#' Bivariate Color Scale 
+#'
+#' @param nquantiles the number of quantile to split the data
+#' @param upperleft the color in the top left corner
+#' @param upperright the color in the top right corner
+#' @param bottomleft the color in the bottom left corner
+#' @param bottomright the color in the bottom right corner
+#' @param xlab x axis label for the plot
+#' @param ylab y axis label for the plot
+#'
+#' @return
+#' @export
+#'
+#' @examples
+color_bivariate_map <- function(nquantiles, upperleft, upperright, bottomleft, bottomright, xlab, ylab){
+  
+  ### Create classes
+  my.data <- seq(0, 1, .01)
+  my.class <- classInt::classIntervals(my.data, n = nquantiles, style = "quantile") 
+  
+  ### Extract classes from my.class and assign them a color
+  my.pal.1 <- classInt::findColours(my.class, c(upperleft,bottomleft)) 
+  my.pal.2 <- classInt::findColours(my.class, c(upperright, bottomright)) 
+  
+  ### Create a matrix of colors
+  col.matrix <- matrix(nrow = 101, ncol = 101, NA)
+  
+  ## For loop to assign a color to each element of the matrix
+  for(i in 1:101){
+    my.col <- c(paste(my.pal.1[i]), paste(my.pal.2[i])) 
+    col.matrix[102-i,] <- classInt::findColours(my.class, my.col) # Assign a different color betwwen color extract in my.col for each element of the row 
+  }
+  
+  
+  plot(c(1,1), pch = 19, col = my.pal.1, cex = 0.5, xlim = c(0,1), ylim = c(0,1), frame.plot = F, xlab = xlab, ylab = ylab, cex.lab = 1.3) # pch = shape of the point
+  
+  ### For loop to plot squares
+  for(i in 1:101){
+    col.temp <- col.matrix[i-1,]
+    points(my.data, rep((i-1)/100, 101), pch = 15, col = col.temp, cex = 1) # Drawing a sequence of point at the specified coordinates.
+  }
+  
+  seqs <- seq(0, 100, (100/nquantiles)) 
+  seqs[1] <- 1
+  col.matrix <- col.matrix[c(seqs), c(seqs)] # Matrix of color with with 10 rows and 10 columns
+  
+  
+  ### Turn it into a table that would match with data
+  tbl_color <- dplyr::as_tibble(col.matrix[2:11, 2:11])  |> 
+    tidyr::gather(group, fill, V1, V2, V3, V4, V5, V6, V7, V8, V9 ,V10) |> 
+    dplyr::mutate(group = as.character(c(seq(1.10, 10.1, 1), seq(1.2, 10.2, 1), seq(1.3, 10.3, 1), seq(1.4, 10.4, 1), seq(1.5, 10.5, 1), seq(1.6, 10.6, 1),
+                                         seq(1.70, 10.7, 1), seq(1.8, 10.8, 1), seq(1.9, 10.9, 1), 
+                                         "1.10", "2.10", "3.10", "4.10", "5.10", "6.10", "7.10", "8.10", "9.10", "10.10"))) |> 
+    as.data.frame(.) |> 
+    dplyr::rename()
+  
+  return(tbl_color)
+  
+}
+
+#' Format Data To Create A Bivariate Map
+#'
+#' @param data_x a dataframe with the data column named "x"
+#' @param data_y a dataframe with the data column named "y"
+#' @param color_table the color data table, use CarcasSink::color_bivariate_map 
+#' @param grid a sf object with cell id, their longitude and latitude and the column geometry
+#' @param PROJ a character representing the projection  
+#'
+#' @return
+#' @export
+#'
+#' @examples
+format_data_bivariate_map <- function(data, data.x, data.y, color_table, probs.quant = seq(0,1,0.1)){
+  
+  ### Calculate quantiles
+  
+    ## For data x
+    x_quantile <- quantile(data[, data.x], probs = probs.quant, na.rm = TRUE)
+    
+    ## For data y
+    y_quantile <- quantile(data[, data.y], probs = probs.quant, na.rm = TRUE)
+  
+  
+  ### Cut data into groups 
+  data_xy <- data |>
+    dplyr::mutate(x_quantile = cut(data[, data.x], breaks = x_quantile, include.lowest = TRUE),
+                  y_quantile = cut(data[, data.y], breaks = unique(y_quantile), include.lowest = TRUE),
+                  group      = ifelse(!is.na(y_quantile) & !is.na(x_quantile), paste0(as.numeric(x_quantile), ".", as.numeric(y_quantile)), NA)) |> 
+    dplyr::left_join(color_table, by = "group")
+  
+  return(data_xy)
+  
+}
+
+
