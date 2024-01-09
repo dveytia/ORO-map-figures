@@ -190,7 +190,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                          vals_colors_scale = c(0, 0.3, 0.5, 0.7, 1),
                          log.transf  = TRUE,
                          quant.prob  = 0.85, 
-                         name        = "main/test") ; panelC  
+                         name        = "main/Fig2_PanelC") ; panelC  
 
   
 ### -----

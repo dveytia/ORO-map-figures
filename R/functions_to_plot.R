@@ -269,7 +269,7 @@ correlation_btw_var <- function(data, log.transf, quant.prob, name = NULL){
 #' @export
 #'
 #' @examples
-bivariate_map <- function(data_map, data_map_univ, data_world, bivariate_color_scale, univariate_color_scale, xlab, ylab, name){
+bivariate_map <- function(data_map, data_map_univ, data_world, bivariate_color_scale, univariate_color_scale, xlab, ylab, lab_univ, name){
   
   # data_map <- tibble::as.tibble(data_map)
   
@@ -296,24 +296,24 @@ bivariate_map <- function(data_map, data_map_univ, data_world, bivariate_color_s
 
     ## Add borders grid
     geom_sf(data = data_map_univ,
-            # mapping     = aes(fill = log(Count_ORO)),
-            fill = "grey85",
+            mapping     = aes(fill = log(Count_ORO)),
+            # fill = "grey85",
             color = "black",
             size  = 0.2) +
   
-    stat_sf_coordinates(data        = data_map_univ,
-                        mapping     = aes(color = log(Count_ORO)),
-                        # colour      = "black",
-                        # fill        = "grey90",
-                        size        = 0.8,
-                        show.legend = TRUE) +
+    # stat_sf_coordinates(data        = data_map_univ,
+    #                     mapping     = aes(color = log(Count_ORO)),
+    #                     # colour      = "black",
+    #                     # fill        = "grey90",
+    #                     size        = 0.8,
+    #                     show.legend = TRUE) +
 
-    scale_color_gradientn(name     = "# mit. paper (log)",
-                          colors   = univariate_color_scale,
-                          na.value = "transparent") +
+    scale_fill_gradientn(name     = lab_univ,
+                         colors   = univariate_color_scale,
+                         na.value = "grey90") +
     
     # guides(size = "none", color = guide_colourbar(title.position = "top", barwidth = 8, barheight = 0.7)) +
-    guides(size = "none", color = guide_colourbar(title.position = "top", barwidth = 8, barheight = 0.7, direction = "horizontal")) +
+    guides(size = "none", fill = guide_colourbar(title.position = "top", barwidth = 8, barheight = 0.7, direction = "horizontal")) +
     
     theme_bw() +
     theme(legend.position = "right",

@@ -422,3 +422,26 @@ format_data_bivariate_map <- function(data, data.x, data.y, color_table, probs.q
 }
 
 
+#' Normalize Raster Values Between 0 and 1
+#'
+#' @param r the raster to modify
+#'
+#' @return a raster with values normalized between 0 and 1
+#' @export
+#'
+#' @examples
+normalize_rast_values_01 <- function(r){
+  
+  # get the min max values
+  minmax_r = range(raster::values(r), na.rm=TRUE) 
+  
+  # rescale 
+  rast_i <- (r-minmax_r[1]) / (diff(minmax_r))
+  
+  # Transform NA into 0
+  r <- raster::reclassify(rast_i, cbind(NA, 0))
+  return(r)
+  
+}
+
+
