@@ -43,6 +43,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   pred_blue_carbon <- tbl(dbcon, "pred_blue_carbon")
   uniquerefs <- tbl(dbcon, "uniquerefs") # metadata on the unique references
   pred_oro_branch <- tbl(dbcon, "pred_oro_branch") # predictions for ORO branch
+  pred_relevance <- tbl(dbcon, "pred_relevance") # which articles are relevant to OROs
   
   GHGemi_country <- read.csv(file = here::here("data", "external", "ghg-emissions", "owid-co2-data.csv")) # Countrie's GHG emissions
   countries_ls <- read.csv(file = here::here("data", "external", "list_of_countries", "sql-pays.csv"), sep = ";") # Countries names
@@ -56,8 +57,11 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   
     # --- Univariate color scale: # pub of Mitigation OROs by 1st author affiliation
     mitPubs <- pred_oro_branch %>%
+      left_join(pred_relevance, by = "analysis_id") |> 
+      filter(0.5 <= relevance_mean) %>%
       mutate(mitigation = ifelse(0.5 <= `oro_branch.Mitigation - mean_prediction`, 1,0))%>%
       select(analysis_id, mitigation) %>%
+      filter(mitigation == 1) |> 
       # Join with affiliation information
       left_join(uniquerefs %>% select(analysis_id, affiliation), by = "analysis_id") %>%
       collect()
@@ -128,20 +132,40 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       # - Annual median of countries's GHG emissions over the 2000-2020 period 
       # - Full code book available here: https://github.com/owid/co2-data
       mean_GHGemi_country <- GHGemi_country |> 
-        select(year, iso_code, total_ghg) |>  # total_ghg refers to total GHG emissions (in MtCO2eq) including land-use change and forestry.
-        filter(year >= 2000 & year <=2020) |> 
+        select(year, iso_code, co2_including_luc) |>  # total_ghg refers to total GHG emissions (in MtCO2eq) including land-use change and forestry.
+        filter(year >= 2000 & year <=2021) |>
         group_by(iso_code) |> 
-        summarise(an_mean_co2eq_em = median(total_ghg, na.rm = T),
-                  sd_co2eq_em      = sd(total_ghg, na.rm = T)) |> 
+        summarise(an_mean_co2eq_em = median(co2_including_luc, na.rm = T),
+                  sd_co2eq_em      = sd(co2_including_luc,     na.rm = T)) |> 
         filter(iso_code != "") 
+      
+     GHGemi_country_allvar <- GHGemi_country |> 
+        select(year, iso_code, cumulative_co2, cumulative_co2_including_luc) |>  # total_ghg refers to total GHG emissions (in MtCO2eq) including land-use change and forestry.
+        # filter(year >= 2000 & year <=2020) |>
+        filter(year == 2020) |> 
+        filter(iso_code != "") |>
+        left_join(mean_GHGemi_country, by = "iso_code")
+       
       
       # - Bind data with eez shapefile
       GHGemi_country_eez <- eez_shp |> 
-        left_join(mean_GHGemi_country, by = c("ISO_SOV1" = "iso_code"))
-      
+        left_join(GHGemi_country_allvar, by = c("ISO_SOV1" = "iso_code"))
+
       ggplot(GHGemi_country_eez) +
         geom_sf(data = world_shp, fill = "grey90") +
         geom_sf(aes(fill = an_mean_co2eq_em)) +
+        scale_fill_viridis_c() +
+        theme_bw()
+      
+      ggplot(GHGemi_country_eez) +
+        geom_sf(data = world_shp, fill = "grey90") +
+        geom_sf(aes(fill = cumulative_co2_including_luc)) +
+        scale_fill_viridis_c() +
+        theme_bw()
+      
+      ggplot(GHGemi_country_eez) +
+        geom_sf(data = world_shp, fill = "grey90") +
+        geom_sf(aes(fill = cumulative_co2)) +
         scale_fill_viridis_c() +
         theme_bw()
       
@@ -163,7 +187,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       MRE_BC_mean_eez_sf <- MRE_BC_in_eez_sf |> 
         sf::st_drop_geometry() |> 
         group_by(MRGID, Country, ISO_SOV1) |> 
-        summarise(n_articles_weighted = mean(n_articles_weighted, na.rm = TRUE))
+        summarise(n_articles_weighted = sum(n_articles_weighted, na.rm = TRUE))
       
       MRE_BC_mean_eez_sf2 <- eez_shp |> 
         left_join(MRE_BC_mean_eez_sf, by = "MRGID")
@@ -180,7 +204,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       MRE_BC_mean_eez_sf_noDOMTOM <- MRE_BC_in_eez_sf |> 
         sf::st_drop_geometry() |> 
         group_by(Country, ISO_SOV1) |> 
-        summarise(n_articles_weighted = mean(n_articles_weighted, na.rm = TRUE))
+        summarise(n_articles_weighted = sum(n_articles_weighted, na.rm = TRUE))
       
       MRE_BC_mean_eez_sf_noDOMTOM <- eez_shp |> 
         left_join(MRE_BC_mean_eez_sf_noDOMTOM, by = "ISO_SOV1")
@@ -206,23 +230,23 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
         # rename(ISO_SOV1 = ISO_SOV1.x) |> 
         left_join(GHGemi_country_eez |> 
                     sf::st_drop_geometry() |> 
-                    select(ISO_SOV1, an_mean_co2eq_em), 
+                    select(ISO_SOV1, an_mean_co2eq_em, cumulative_co2), 
                   by = "ISO_SOV1") |> 
         distinct()
       
       # -- Create the bivariate color scale
       bivariate_color_scale <- color_bivariate_map(nquantiles  = 10, 
-                                                   upperleft   = rgb(130,0,80, maxColorValue = 255), 
-                                                   upperright  = rgb(255,230,15, maxColorValue = 255),
+                                                   upperleft   = "#be64ac", 
+                                                   upperright  = "#434e87",
                                                    bottomleft  = "white",
-                                                   bottomright = rgb(0,150,235, maxColorValue = 255), 
-                                                   ylab        = "CO2 emission",
+                                                   bottomright = "#5ac8c8",  
+                                                   ylab        = "CO2 emission (cum)",
                                                    xlab        = "n_weighted_papers")
-      
+
       # -- Adapt it to the data
       data_bivar_n_article_CO2em <- format_data_bivariate_map(data        = data_panelA,
                                                               data.x      = "n_articles_weighted",
-                                                              data.y      = "an_mean_co2eq_em",
+                                                              data.y      = "cumulative_co2",
                                                               color_table = bivariate_color_scale,
                                                               probs.quant = seq(0,1,0.1))
       
@@ -232,21 +256,20 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
         right_join(data_bivar_n_article_CO2em, by = "TERRITORY1") 
       
       # -- Map 
-      bivariate_map(data_map              = data_panelA_sf,
-                    data_map_univ         = world_shp_boundaries,
-                    data_world            = world_shp,
-                    bivariate_color_scale = bivariate_color_scale,
-                    ylab                  = "CO2 emission",
-                    xlab                  = "n_weighted_papers",
-                    name                  = "main/bivariate_map_panelA2") 
+      bivariate_map(data_map               = data_panelA_sf,
+                    data_map_univ          = world_shp_boundaries,
+                    data_world             = world_shp,
+                    bivariate_color_scale  = bivariate_color_scale,
+                    univariate_color_scale = viridis::rocket(10, direction = -1),
+                    ylab                   = "CO2eq. emissions",
+                    xlab                   = "# MRE&BC papers",
+                    name                   = "main/Figure5_PanelA") # 
       
       
+### -----
 
     
     
-
-    
-    
-
-    
-
+### ----- PANEL B -----
+ 
+### -----

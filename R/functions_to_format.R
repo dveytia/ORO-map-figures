@@ -412,7 +412,7 @@ format_data_bivariate_map <- function(data, data.x, data.y, color_table, probs.q
   
   ### Cut data into groups 
   data_xy <- data |>
-    dplyr::mutate(x_quantile = cut(data[, data.x], breaks = x_quantile, include.lowest = TRUE),
+    dplyr::mutate(x_quantile = cut(data[, data.x], breaks = unique(x_quantile), include.lowest = TRUE),
                   y_quantile = cut(data[, data.y], breaks = unique(y_quantile), include.lowest = TRUE),
                   group      = ifelse(!is.na(y_quantile) & !is.na(x_quantile), paste0(as.numeric(x_quantile), ".", as.numeric(y_quantile)), NA)) |> 
     dplyr::left_join(color_table, by = "group")

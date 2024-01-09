@@ -269,7 +269,7 @@ correlation_btw_var <- function(data, log.transf, quant.prob, name = NULL){
 #' @export
 #'
 #' @examples
-bivariate_map <- function(data_map, data_map_univ, data_world, bivariate_color_scale, xlab, ylab, name){
+bivariate_map <- function(data_map, data_map_univ, data_world, bivariate_color_scale, univariate_color_scale, xlab, ylab, name){
   
   # data_map <- tibble::as.tibble(data_map)
   
@@ -295,17 +295,35 @@ bivariate_map <- function(data_map, data_map_univ, data_world, bivariate_color_s
     ggnewscale::new_scale_fill() +
 
     ## Add borders grid
-    geom_sf(data        = data_map_univ,
+    geom_sf(data = data_map_univ,
             # mapping     = aes(fill = log(Count_ORO)),
-            colour      = "black",
-            fill        = "grey90",
-            size        = 0.1,
-            show.legend = TRUE) +
-    scale_fill_gradientn(colors   = viridis::magma(10, direction = -1),
-                         na.value = "grey80") +
-      
+            fill = "grey85",
+            color = "black",
+            size  = 0.2) +
+  
+    stat_sf_coordinates(data        = data_map_univ,
+                        mapping     = aes(color = log(Count_ORO)),
+                        # colour      = "black",
+                        # fill        = "grey90",
+                        size        = 0.8,
+                        show.legend = TRUE) +
+
+    scale_color_gradientn(name     = "# mit. paper (log)",
+                          colors   = univariate_color_scale,
+                          na.value = "transparent") +
+    
+    # guides(size = "none", color = guide_colourbar(title.position = "top", barwidth = 8, barheight = 0.7)) +
+    guides(size = "none", color = guide_colourbar(title.position = "top", barwidth = 8, barheight = 0.7, direction = "horizontal")) +
+    
     theme_bw() +
-    theme(legend.position = "bottom")
+    theme(legend.position = "right",
+          legend.justification = "top",
+          axis.title.x     = element_blank(),
+          axis.title.y     = element_blank())
+    # theme(legend.position = "bottom",
+    #       # legend.justification = "top",
+    #       axis.title.x     = element_blank(),
+    #       axis.title.y     = element_blank())
     
     
     # ggplot2::geom_sf(data   = data_map$box,
@@ -353,7 +371,7 @@ bivariate_map <- function(data_map, data_map_univ, data_world, bivariate_color_s
     ggplot2::labs(x = xlab, y = ylab) +
     # ggplot2::geom_hline(yintercept = 3.5, color = "red") +
     cowplot::theme_map() +
-    ggplot2::theme(axis.title      = ggplot2::element_text(size = 16), 
+    ggplot2::theme(axis.title      = ggplot2::element_text(size = 13), 
                    axis.title.x    = ggplot2::element_text(margin = ggplot2::margin(t = 0, 
                                                                                     r = 0, 
                                                                                     b = 0, 
@@ -369,9 +387,12 @@ bivariate_map <- function(data_map, data_map_univ, data_world, bivariate_color_s
   
   
   ### Arrange map with legend
+  # map_bi <- cowplot::ggdraw() +
+  #   cowplot::draw_plot(map,    x = 0.0, y = 0.00, width = 0.70, height = 1.0) +
+  #   cowplot::draw_plot(legend, x = 0.65, y = 0.30, width = 0.35, height = 0.35)
   map_bi <- cowplot::ggdraw() +
-    cowplot::draw_plot(map,    x = 0.0, y = 0.00, width = 0.70, height = 1.0) +
-    cowplot::draw_plot(legend, x = 0.65, y = 0.30, width = 0.35, height = 0.35)
+    cowplot::draw_plot(map,    x = 0.0, y = 0.00, width = 0.9, height = 1.0) +
+    cowplot::draw_plot(legend, x = 0.63, y = 0.25, width = 0.35, height = 0.35)
   
   ### Save map
   if(! is.null(name)) {
