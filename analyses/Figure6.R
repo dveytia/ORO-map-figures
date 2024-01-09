@@ -124,8 +124,8 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   plot(world_conti_shp["CONTINENT"])
   plot(world_conti_shp2["CONTINENT"])
   
-  gdp_per_capita_sf <- left_join(world_conti_shp2 |> select(CONTINENT), gdp_per_capita, by = c("CONTINENT" = "continent2")) |> 
-    sf::st_transform(crs = 3857) |> # 53030
+  gdp_per_capita_sf <- left_join(world_conti_shp2 |> select(CONTINENT), gdp_per_capita, by = c("CONTINENT" = "continent2"))
+    # sf::st_transform(crs = 3857) |> # 53030
     filter(CONTINENT != "Antarctica")
   
 
@@ -138,8 +138,8 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     plot(gdp_conti_carto["GDP_per_capita"])
     
     Figure6_PanelA <- ggplot() +
-      geom_sf(data = gdp_conti_carto, aes(color = CONTINENT, fill  = GDP_per_capita), size = 1, show.legend = TRUE) +
-      scale_fill_viridis_c(option = "viridis", name = "GDP per capita") +
+      geom_sf(data = gdp_per_capita_sf, aes(color = CONTINENT, fill  = GDP_per_capita), size = 0.8, show.legend = TRUE) +
+      scale_fill_viridis_c(option = "rocket", direction = -1, name = "GDP per capita") +
       scale_color_manual(name = NULL,
                          values = c("Africa" = "#9c40b8",
                                     "Asia"   = "#1f7819",
