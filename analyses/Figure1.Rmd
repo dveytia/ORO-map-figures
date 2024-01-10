@@ -142,6 +142,13 @@ scopus_by_year <- scopus_by_year %>%
 
 ```
 
+```{r get the timeline of policy moments}
+
+policyTimeline <- readxl::read_xlsx(here::here("data/external/policyMoments.xlsx"))
+policyTimeline$year <- as.Date(paste0(policyTimeline$year,"-01-01"))
+policyTimeline <- merge(policyTimeline, wos_by_year, bu="year") 
+```
+
 ```{r PLOT PANEL A}
 
 fig1_A_ggp <- ggplot()+
@@ -155,6 +162,11 @@ fig1_A_ggp <- ggplot()+
   geom_line(data = scopus_by_year, 
             aes(x=year, y=log(n_articles), linetype = "Scopus"), col="black", linewidth = 1,
             na.rm=T)+
+  # Add policy moments
+  geom_vline(data=policyTimeline, aes(xintercept = year), col="red", linewidth=0.5)+
+  geom_text(data=policyTimeline, aes(x = year, y=log(n_articles), label = stringr::str_wrap(event_name,14)), 
+            col="red", angle = 90,size=2, vjust=1, hjust=1, nudge_x = 100, nudge_y = -0.5)+
+  # Format scales
   scale_color_manual(values = varAES$colour, 
                      name = "ORO branch", guide=guide_legend(order=1, nrow=3), position = "top")+
   scale_fill_manual(values = factor_aes$colour[which(factor_aes$variable == "ORO_branch")], guide = "none")+
@@ -162,8 +174,10 @@ fig1_A_ggp <- ggplot()+
                         guide=guide_legend(order=2, nrow=2), position = "bottom")+
   labs(x="Year", y="log(N articles)")+
   scale_x_date(limits = c(as.Date("1980-01-01"),xmax))+
-  scale_y_continuous(sec.axis = sec_axis(trans = exp, name = "N articles"),
-                     breaks = seq(0,90000, by= 30000))+
+  scale_y_continuous(sec.axis = sec_axis(trans = exp, name = "N articles", 
+                                         breaks = c(0,100,1000,10000,30000,80000),
+                                         labels = function(x) formatC(x, big.mark=",", format="d")),
+                     breaks = seq(0,10, by= 2))+
   theme_classic()+
   theme(
     legend.position = "bottom",
@@ -273,13 +287,13 @@ load(here::here('data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs_matches
 ipccMatches <- ipccMatches[!is.na(ipccMatches$ipccRef_id),]
 
 
-## Load and check that matches make sense
-load(here::here("data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs.RData"))
-
-ipccMatches %>% 
-  select(title, ipccRef_id) %>%
-  head() %>%
-  left_join(ipccBibUnique %>% select(title, ipccRef_id), by= "ipccRef_id")
+# ## Load and check that matches make sense
+# load(here::here("data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs.RData"))
+# 
+# ipccMatches %>% 
+#   select(title, ipccRef_id) %>%
+#   head() %>%
+#   left_join(ipccBibUnique %>% select(title, ipccRef_id), by= "ipccRef_id")
 
 ```
 
@@ -376,7 +390,7 @@ fig1_B_ggp
 
 ```{r assemble panels and write figure}
 pdf(here::here("figures/main/oroBranchTimeAndIpccMatches.pdf"),
-    width = 7, height=5.5)
+    width = 8, height=4.5)
 egg::ggarrange(fig1_A_ggp+theme(legend.position = "bottom"), fig1_B_ggp+theme(legend.position = "bottom"),
           nrow=1, ncol=2, newpage = FALSE, labels = c("a.","b."))
 dev.off()
@@ -384,7 +398,81 @@ dev.off()
 ```
 
 
+# Supplementary figure: timeline of mitigation OROs
 
+
+```{r Sum n articles per mitigation ORO per year}
+predRel <- tbl(dbcon, "pred_relevance") 
+predType <- tbl(dbcon, "pred_oro_type_long") 
+uniquerefs <- tbl(dbcon, "uniquerefs")
+
+## Format and collect needed data
+predMitigationDf <- predRel %>%
+  filter(0.5 <= relevance_mean) %>%
+  select(analysis_id) %>%
+  inner_join(predType, by ="analysis_id") %>%
+  filter(oro_branch == "Mitigation") %>%
+  left_join(uniquerefs %>% select(analysis_id, year), by = "analysis_id") %>%
+  collect()
+
+
+
+mitigation_oro_by_year_sums <- predMitigationDf %>%
+  filter(1980 <= year) %>%
+  group_by(oro_type, year) %>%
+  summarise(
+    mean = sum(0.5 <= mean),
+    lower = sum(0.5 <= lower),
+    upper = sum(0.5 <= upper)
+  ) 
+
+
+# Factor and format
+mitigationAES <- factor_aes[which(factor_aes$level %in% unique(mitigation_oro_by_year_sums$oro_type)),]
+mitigationAES$order <- order(mitigationAES$order)
+mitigationAES <- mitigationAES[mitigationAES$order,]
+
+mitigation_oro_by_year_sums <- mitigation_oro_by_year_sums%>%
+  na.omit() %>%
+  mutate(year = as.Date(paste0(year, "-01-01")),
+         oro_type = factor(oro_type, levels = mitigationAES$level, labels = mitigationAES$label))
+
+
+summary(mitigation_oro_by_year_sums)
+
+
+```
+
+```{r PLOT timeline of mitigation OROs}
+
+Sfig_mitigation_oro_ggp <- ggplot()+
+  geom_ribbon(data = mitigation_oro_by_year_sums, 
+              aes(x=year, ymin = log(lower), ymax=log(upper), fill = oro_type), alpha = 0.5)+
+  geom_line(data = mitigation_oro_by_year_sums, aes(x=year, y=log(mean), col=oro_type), 
+            linewidth = 1,
+            na.rm=T)+
+
+  # Format scales
+  scale_color_manual(values = mitigationAES$colour, 
+                     name = "Mitigation\nORO type", guide=guide_legend(order=1, nrow=1))+
+  scale_fill_manual(values = mitigationAES$colour, guide = "none")+
+  labs(x="Year", y="log(N articles)")+
+  scale_x_date(limits = c(as.Date("1980-01-01"),max(mitigation_oro_by_year_sums$year)))+
+  scale_y_continuous(sec.axis = sec_axis(trans = exp, name = "N articles", 
+                                         breaks = c(0,100,1000,10000,30000,80000),
+                                         labels = function(x) formatC(x, big.mark=",", format="d")),
+                     breaks = seq(0,10, by= 2))+
+  theme_classic()+
+  theme(
+    legend.position = "bottom",
+    legend.box = "vertical",
+    legend.text = element_text(size=8),
+    legend.title = element_text(size=10),
+    axis.text = element_text(size=7)
+    )
+
+Sfig_mitigation_oro_ggp
+```
 
 
 
