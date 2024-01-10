@@ -150,11 +150,20 @@ policyTimeline <- merge(policyTimeline, wos_by_year, bu="year")
 ```
 
 ```{r PLOT PANEL A}
+# For publications in an incomplete year, plot with different linetype
+# separaret into complete and incompelete years
+oro_branch_by_year_sums1 <- oro_branch_by_year_sums %>%
+  filter(year < as.Date("2023-01-01"))
+oro_branch_by_year_sums2 <- oro_branch_by_year_sums %>%
+  filter(as.Date("2022-01-01") <= year)
 
+# Plot
 fig1_A_ggp <- ggplot()+
+  
+  # Plot complete years
   geom_ribbon(data = oro_branch_by_year_sums, 
               aes(x=year, ymin = log(lower), ymax=log(upper), fill = ORO_branch), alpha = 0.5)+
-  geom_line(data = oro_branch_by_year_sums, aes(x=year, y=log(mean), col=ORO_branch), linewidth = 1,
+  geom_line(data = oro_branch_by_year_sums1, aes(x=year, y=log(mean), col=ORO_branch), linewidth = 1,
             na.rm=T)+
   geom_line(data = wos_by_year, 
             aes(x=year, y=log(n_articles), linetype = "WOS"), col="black", linewidth = 1,
@@ -162,6 +171,9 @@ fig1_A_ggp <- ggplot()+
   geom_line(data = scopus_by_year, 
             aes(x=year, y=log(n_articles), linetype = "Scopus"), col="black", linewidth = 1,
             na.rm=T)+
+  # Plot incomplete years
+  geom_line(data = oro_branch_by_year_sums2, aes(x=year, y=log(mean), col=ORO_branch), linewidth = 0.7,
+            na.rm=T, linetype = "dashed")+
   # Add policy moments
   geom_vline(data=policyTimeline, aes(xintercept = year), col="red", linewidth=0.5)+
   geom_text(data=policyTimeline, aes(x = year, y=log(n_articles), label = stringr::str_wrap(event_name,14)), 
@@ -238,9 +250,15 @@ oroTypeSums$oro_type <- factor(
 
 # Join in with aesthetics for ORO branch -- determines colour of bar by oro_branch
 branchAES <- factor_aes[which(factor_aes$variable == "ORO_branch"),]
-typeAES <- merge(typeAES, branchAES[,c("label","colour")] %>%rename(oro_branch = label), 
-                 by = "colour") %>%
+branchTypeLookup <- data.frame(
+  label = typeAES$label,
+  oro_branch = c(rep("Mitigation",3), rep("Natural resilience",2), rep("Societal adaptation",2))
+)
+typeAES <- merge(typeAES, branchTypeLookup,
+                 by = "label") %>%
   rename(oro_type = label)
+
+
 # Merge sums with plotting order, colour and corresponding branch 
 oroTypeSums <- merge(oroTypeSums,typeAES[,c("oro_type","order","colour","oro_branch")])
 oroTypeSums$oro_branch <- factor(oroTypeSums$oro_branch,
@@ -324,9 +342,17 @@ oroMatchesSums$oro_type <- factor(
 
 # Join in with aesthetics for ORO branch -- determines colour of bar by oro_branch
 branchAES <- factor_aes[which(factor_aes$variable == "ORO_branch"),]
-typeAES <- merge(typeAES, branchAES[,c("label","colour")] %>%rename(oro_branch = label), 
-                 by = "colour") %>%
+# typeAES <- merge(typeAES, branchAES[,c("label","colour")] %>%rename(oro_branch = label), 
+#                  by = "colour") %>%
+#   rename(oro_type = label)
+branchTypeLookup <- data.frame(
+  label = typeAES$label,
+  oro_branch = c(rep("Mitigation",3), rep("Natural resilience",2), rep("Societal adaptation",2))
+)
+typeAES <- merge(typeAES, branchTypeLookup,
+                 by = "label") %>%
   rename(oro_type = label)
+
 # Merge sums with plotting order, colour and corresponding branch 
 oroMatchesSums <- merge(oroMatchesSums,typeAES[,c("oro_type","order","colour","oro_branch")])
 oroMatchesSums$oro_branch <- factor(oroMatchesSums$oro_branch,
@@ -351,22 +377,25 @@ oroMatchesProp <- oroMatchesProp %>%
 ```{r plot panel B}
 fig1_B_ggp <- ggplot()+
   # plot bars number of model predictions
-  geom_col(data=oroTypeSums, aes(x=order, y=n_mean, fill = oro_branch))+
+  geom_col(data=oroTypeSums, aes(x=order, y=n_mean, fill = oro_type))+
   geom_errorbar(data=oroTypeSums, aes(x=order, ymin = n_lower, ymax = n_upper), width=.2)+
   geom_text(data=oroTypeSums, aes(x=order, y=n_upper,label = n_mean), nudge_y = 1000, size=3, col="red")+ #nudge_x=0.2,
   
   # Overlay number of ipcc matches
-  geom_col(data = oroMatchesSums, aes(x=order, y=n_mean),
-           fill = "darkgrey", alpha = 0.2)+
+  # geom_col(data = oroMatchesSums, aes(x=order, y=n_mean),
+  #          fill = "darkgrey", alpha = 0.2)+
   #geom_errorbar(data = oroMatchesSums, aes(x=order, ymin = n_lower, ymax = n_upper), width=.2)+
   geom_text(data = oroMatchesProp,
             aes(x=order, y=n_upper.total, label = paste(signif(prop_mean*100, 2),"%")), 
             size=3, col="black", nudge_y = 3500)+ 
   
   # Format scales
-  scale_fill_manual(name = "ORO\nbranch", 
-                    values = as.vector(branchAES$colour), 
-                    guide = guide_legend(nrow=3))+
+  # scale_fill_manual(name = "ORO\nbranch", 
+  #                   values = as.vector(branchAES$colour), 
+  #                   guide = guide_legend(nrow=3))+
+  scale_fill_manual(name = "ORO\ntype", 
+                    values = as.vector(typeAES$colour[order(typeAES$order)]), 
+                    guide = guide_legend(ncol=2))+
   scale_x_discrete(limits = levels(oroTypeSums$order), 
                     labels = levels(oroTypeSums$oro_type))+
   
@@ -377,10 +406,11 @@ fig1_B_ggp <- ggplot()+
     axis.text.y = element_text(size=8),
     axis.text.x = element_text(angle=45, hjust=1, size=8),
     axis.title.x = element_blank(),
-    legend.text = element_text(size=8),
+    legend.text = element_text(size=7),
     legend.title = element_text(size=10),
     legend.position = "bottom",
-    legend.key.size = unit(0.3, "cm")
+    legend.key.size = unit(0.3, "cm"),
+    plot.margin = margin(0.1,0.5,0.1,0.1, unit="cm")
   )
 
 fig1_B_ggp
@@ -441,6 +471,10 @@ mitigation_oro_by_year_sums <- mitigation_oro_by_year_sums%>%
 summary(mitigation_oro_by_year_sums)
 
 
+# text labels
+mitigation_oro_text <- mitigation_oro_by_year_sums %>%
+  filter(year == as.Date("2020-01-01")) 
+
 ```
 
 ```{r PLOT timeline of mitigation OROs}
@@ -451,6 +485,9 @@ Sfig_mitigation_oro_ggp <- ggplot()+
   geom_line(data = mitigation_oro_by_year_sums, aes(x=year, y=log(mean), col=oro_type), 
             linewidth = 1,
             na.rm=T)+
+  geom_text(data= mitigation_oro_text, 
+            aes(x=year, y=log(upper), label = stringr::str_wrap(oro_type, width=30)),
+            vjust = "outward", hjust="inward", size=3, col="black")+
 
   # Format scales
   scale_color_manual(values = mitigationAES$colour, 
@@ -464,15 +501,20 @@ Sfig_mitigation_oro_ggp <- ggplot()+
                      breaks = seq(0,10, by= 2))+
   theme_classic()+
   theme(
-    legend.position = "bottom",
+    legend.position = "none",
     legend.box = "vertical",
     legend.text = element_text(size=8),
     legend.title = element_text(size=10),
     axis.text = element_text(size=7)
     )
 
+
 Sfig_mitigation_oro_ggp
+
+ggsave(here::here("figures/supplemental/mitigationOROsTimeline.pdf"), width=6, height=4, units="in")
 ```
+
+
 
 
 
