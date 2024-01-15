@@ -405,3 +405,182 @@ bivariate_map <- function(data_map, data_map_univ, data_world, bivariate_color_s
   
 }
   
+
+#' Donuts Plots
+#'
+#' @param data 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+donuts_plots <- function(data){
+  
+  ### Quartiles
+  GDP_quartiles <- quantile(data$GDP_per_capita, probs = seq(0, 1, 0.25), na.rm = TRUE)
+  data <- data |> 
+    mutate(gdp_quartile = cut(GDP_per_capita, breaks = unique(GDP_quartiles), include.lowest = TRUE),
+           group        = ifelse(!is.na(gdp_quartile), as.numeric(gdp_quartile), NA))
+  
+  
+  ### Format Data
+  data_grp <- data |> 
+    filter(! is.na(group)) |> 
+    group_by(group, oro_type) |> 
+    summarise(n_mean = sum(n_mean, na.rm = TRUE)) |> 
+    mutate(n_paper_tot = case_when(group == 1 ~ sum(n_mean[group == 1], na.rm = TRUE),
+                                   group == 2 ~ sum(n_mean[group == 2], na.rm = TRUE),
+                                   group == 3 ~ sum(n_mean[group == 3], na.rm = TRUE),
+                                   group == 4 ~ sum(n_mean[group == 4], na.rm = TRUE)),
+           contrib     = (n_mean/n_paper_tot)*100) |>
+    group_split(group)
+  
+
+  ### Plot data
+  plot_ls <- lapply(data_grp, function(x){
+    
+    x_plot <- x |> 
+      mutate(oro_type = factor(oro_type, levels = c("Marine renewable energy",
+                                                    "CO2 removal or storage",
+                                                    "Increase efficiency",                               
+                                                    "Conservation",
+                                                    "Human assisted evolution",
+                                                    "Built infrastructure & technology",
+                                                    "Socio-institutional")),
+             Type     = "Type") |> 
+      arrange(oro_type) 
+    
+    ggplot(x_plot, aes(x = Type, y = -contrib, fill = oro_type)) +
+      geom_col(show.legend = F) +
+      # geom_text(aes(label = paste0(round(Percent, 1), "%"), x = Type, y = pos), size = 4, color = "white") +
+      # Colors
+      scale_fill_manual(name   = NULL,
+                        values = c("Marine renewable energy"            = "#026996",
+                                   "CO2 removal or storage"             = "#0688c2",
+                                   "Increase efficiency"                = "#9ed7f0",                               
+                                   "Conservation"                       = "#078257",
+                                   "Human assisted evolution"           = "#43b08a",
+                                   "Built infrastructure & technology"  = "#600787",
+                                   "Socio-institutional"                = "#ad5ad1")) +
+      scale_x_discrete(limits = c(" ", "Type")) +
+      coord_polar("y") +
+      theme_void()
+    
+  })
+
+  cowplot::plot_grid(plotlist = plot_ls, ncol = 2)
+  
+  return(plot_ls) 
+
+}
+
+
+#' Title
+#'
+#' @param data 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+barplots_gdp <- function(data){
+  
+  
+    ### Quartiles
+    data <- data |> 
+      select(country_aff, GDP_per_capita) |> 
+      distinct() |> 
+      mutate(group = ntile(GDP_per_capita, 4)) |> 
+      select(-GDP_per_capita) |> 
+      left_join(data, by = "country_aff")
+    
+    ### Format data
+    val_order <- data |> 
+      group_by(country) |> 
+      summarise(n_mean = sum(n_mean),
+                group  = unique(group)) |> 
+      arrange(-group, -n_mean) |> 
+      ungroup() |> 
+      mutate(valueOrder = as.factor(row_number())) |> 
+      select(-n_mean)
+    
+
+    data_arrange <- left_join(data, val_order |> select(-group), by = "country") |> 
+      filter(!is.na(country)) 
+    
+    ### Horizontal lines for quartiles
+    vline1 <- length(unique(val_order$country[val_order$group == 4])) + 0.5
+    vline2 <- length(unique(val_order$country[val_order$group == 3 | val_order$group == 4])) + 0.5
+    vline3 <- length(unique(val_order$country[val_order$group == 4 | val_order$group == 3 | val_order$group == 2])) + 0.5
+    
+
+    ### Plot data
+    plot <- ggplot(data_arrange, aes(x = valueOrder, y = n_mean, fill = GDP_per_capita)) +
+      
+      # Bars
+      geom_col(position = position_dodge(), show.legend = FALSE) +
+      geom_errorbar(aes(ymin = n_lower, ymax = n_upper),
+                    position = position_dodge(0.9),
+                    width = .2) +
+      
+      # geom_vline(xintercept = c(0.25*n_country, 0.5*n_country, 0.75*n_country)) +
+      geom_vline(xintercept = c(vline1, vline2, vline3)) +
+      
+      scale_x_discrete(labels = gsub("_"," ", unique(data_arrange$code[order(data_arrange$valueOrder)]))) +
+      
+      facet_grid(oro_branch ~ ., scales = "free_y") +
+      
+      # Colors
+      scale_fill_viridis_c(option = "magma", direction = -1) +
+      
+      
+      labs(y = "# ORO articles", x = NULL) +
+      theme_bw() +
+      theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+            # strip.background = element_rect(fill = c("#35a7d9", "forestgreen", "#7670a8")))
+    
+    ### Change strips backgrounds
+    fill_colors = c("#35a7d9", "forestgreen", "#7670a8")
+    plot2 <- ggplot2::ggplot_gtable(ggplot2::ggplot_build(plot))
+    strips <- which(startsWith(plot2$layout$name,'strip'))
+    
+    for (s in seq_along(strips)) {
+      plot2$grobs[[strips[s]]]$grobs[[1]]$children[[1]]$gp$fill <- fill_colors[s]
+    }
+    
+    plot(plot2)
+    
+    # if(label_x == FALSE){
+    #   
+    #   plot <- plot +
+    #     theme(axis.text.x  = element_blank(),
+    #           axis.title.x = element_blank(),
+    #           axis.ticks.x = element_blank())
+    #   
+    # }
+    # 
+    # return(plot)
+    
+  # }
+  
+    ## Plot Mitigation
+    # plot_mit <- function_plot(data_oro = data_mit,
+    #                           label_x  = FALSE) 
+    # 
+    # ## Plot Nature
+    # plot_nat <- function_plot(data_oro = data_nat,
+    #                           label_x  = FALSE) 
+    # 
+    # ## Plot Societal Adaptation
+    # plot_ada <- function_plot(data_oro = data_ada,
+    #                           label_x  = TRUE) 
+    
+    ## Add plots
+    # plot_final <- cowplot::ggdraw() +
+    #   cowplot::draw_plot(plot_mit,    x = 0.0, y = 0.725, width = 1, height = 0.275) +
+    #   cowplot::draw_plot(plot_nat,    x = 0.0, y = 0.45, width = 1, height = 0.275) +
+    #   cowplot::draw_plot(plot_ada,    x = 0.0, y = 0.00, width = 1, height = 0.45)
+      
+  return(plot2)
+
+}
