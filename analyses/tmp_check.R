@@ -12,8 +12,8 @@ oroAffiliations |>
 tmp = mitPubs |> 
   filter(analysis_id == 293101) ; tmp$affiliation
 
-tmp2 = test |> 
-  filter(analysis_id == 60791) ; tmp$affiliation
+test <- uniquerefs |> 
+  filter(analysis_id == 36439) |> collect() ; test$affiliation
 
 tmp2 = NA_country_ada2 |> 
   filter(stringr::str_detect(affiliation, pattern = "Korea \\(the Republic of\\)") == TRUE)
