@@ -447,12 +447,13 @@ donuts_plots <- function(data){
                                                     "Human assisted evolution",
                                                     "Built infrastructure & technology",
                                                     "Socio-institutional")),
-             Type     = "Type") |> 
+             Type     = "Type",
+             pos         = round(cumsum(contrib) - (0.5 * contrib), 2)) |> 
       arrange(oro_type) 
     
     ggplot(x_plot, aes(x = Type, y = -contrib, fill = oro_type)) +
       geom_col(show.legend = F) +
-      # geom_text(aes(label = paste0(round(Percent, 1), "%"), x = Type, y = pos), size = 4, color = "white") +
+      # geom_text(aes(label = paste0(round(contrib, 1), "%"), x = Type, y = pos), size = 4, color = "white") +
       # Colors
       scale_fill_manual(name   = NULL,
                         values = c("Marine renewable energy"            = "#026996",
@@ -518,7 +519,7 @@ barplots_gdp <- function(data){
     plot <- ggplot(data_arrange, aes(x = valueOrder, y = n_mean, fill = GDP_per_capita)) +
       
       # Bars
-      geom_col(position = position_dodge(), show.legend = FALSE) +
+      geom_col(position = position_dodge(), show.legend = TRUE) +
       geom_errorbar(aes(ymin = n_lower, ymax = n_upper),
                     position = position_dodge(0.9),
                     width = .2) +
@@ -531,12 +532,17 @@ barplots_gdp <- function(data){
       facet_grid(oro_branch ~ ., scales = "free_y") +
       
       # Colors
-      scale_fill_viridis_c(option = "magma", direction = -1) +
+      scale_fill_viridis_c(name = "GDP per capita ($)", option = "magma", direction = -1) +
       
       
       labs(y = "# ORO articles", x = NULL) +
       theme_bw() +
-      theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+      
+      guides(size = "none", fill = guide_colourbar(title.position = "top", barwidth = 8, barheight = 0.7, direction = "horizontal")) +
+      
+      theme(axis.text.x     = element_text(size = 8, angle = 60, hjust = 1, vjust = 1.1), # , vjust = 0.5
+            legend.position = "bottom",
+            legend.justification = "top")
             # strip.background = element_rect(fill = c("#35a7d9", "forestgreen", "#7670a8")))
     
     ### Change strips backgrounds

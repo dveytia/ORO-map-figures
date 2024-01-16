@@ -140,11 +140,11 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     # --- Arrange plot
     plot_final <- cowplot::ggdraw() +
       cowplot::draw_plot(barplots,    x = 0.00, y = 0.0, width = 1.0, height = 0.8) +
-      cowplot::draw_plot(donuts[[4]], x = 0.08, y = 0.8, width = 0.2, height = 0.2) +
-      cowplot::draw_plot(donuts[[3]], x = 0.34, y = 0.8, width = 0.2, height = 0.2) +
-      cowplot::draw_plot(donuts[[2]], x = 0.58, y = 0.8, width = 0.2, height = 0.2) +
-      cowplot::draw_plot(donuts[[1]], x = 0.80, y = 0.8, width = 0.2, height = 0.2) ; plot_final
+      cowplot::draw_plot(donuts[[4]], x = 0.06, y = 0.8, width = 0.2, height = 0.2) +
+      cowplot::draw_plot(donuts[[3]], x = 0.29, y = 0.8, width = 0.2, height = 0.2) +
+      cowplot::draw_plot(donuts[[2]], x = 0.52, y = 0.8, width = 0.2, height = 0.2) +
+      cowplot::draw_plot(donuts[[1]], x = 0.76, y = 0.8, width = 0.2, height = 0.2) ; plot_final
     
-    ggsave(here::here("figures", "main", "Figure62.jpeg"), width = 15, height = 7, device = "jpeg")
-    
+    ggsave(here::here("figures", "main", "Figure6.jpeg"), width = 15, height = 7, device = "jpeg")
+
   
