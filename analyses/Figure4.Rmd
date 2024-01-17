@@ -154,6 +154,26 @@ marSysTypeThreatSums <- marSysTypeThreatSums %>%
 
 ```
 
+```{r old stacked bar plot version}
+fig4_B_barplot_ggp <- ggplot(marSysTypeThreatSums, aes(y = oro_type, x=n_articles, fill = climate_threat))+
+  facet_wrap(vars(marine_system), ncol=1, scales = "free")+
+  geom_col(position = "stack")+
+  labs(fill = "Climate impact\ndriver", x = "N articles")+ 
+  # colour palette derived from the IBM design library colour blind safe palette
+  # https://davidmathlogic.com/colorblind/#%23648FFF-%23785EF0-%23DC267F-%23FE6100-%23FFB000-%235E5C5E
+  scale_fill_manual(values = threatAES$colour, breaks = threatAES$label, na.value = "transparent")+ 
+  scale_y_discrete(limits = rev)+
+  theme_bw()+
+  theme(
+    #axis.text.x = element_text(angle = 45, hjust=1, vjust=1)
+    legend.position = "left",
+    axis.title.y = element_blank()
+  )
+
+fig4_B_barplot_ggp
+```
+
+
 Plot panel B with the breaks based on quantile
 
 ```{r plot panel B breaks based on quantile}
@@ -426,7 +446,7 @@ fig4_B_percent_nonlinear_ggp <- ggplot(marSysTypeThreatSumsNorm,
   #                   colors = viridis::viridis(n_breaksFill),
   #                   show.limits = TRUE, limits = c(0, max(nDat$percent_articles, na.rm = T)),
   #                   na.value = "transparent")+ 
-  scale_fill_binned(name = "%\narticles", 
+  scale_fill_binned(name = "% articles", 
                type = "viridis",
                breaks = breaksFill, nice.breaks = FALSE,
                labels = function(x) ifelse(1000 <= x, paste(x/1000, "k"), paste(x)),
@@ -446,6 +466,7 @@ fig4_B_percent_nonlinear_ggp <- ggplot(marSysTypeThreatSumsNorm,
   
   # other aesthetics
   labs(y="Climate impact driver", x="ORO type")+ 
+  geom_vline(xintercept = c(3.5, 5.5), col="red", linewidth = 1.5)+
   
   #scale_y_discrete(limits = rev)+
   #coord_flip()+
@@ -454,36 +475,18 @@ fig4_B_percent_nonlinear_ggp <- ggplot(marSysTypeThreatSumsNorm,
     panel.grid = element_blank(),
     axis.text.x = element_text(angle = 30, hjust=1, vjust=1, size=11),
     axis.text.y = element_text(size=11),
-    legend.position = "right",
+    #legend.position = "right",
+    legend.position = "top",
     axis.title.x = element_blank(),
-    legend.key.width = unit(0.3, 'cm'),
-    legend.key.height = unit(0.8, 'cm'),
-    legend.text = element_text(size=6),
-    legend.box = "vertical"
+    legend.key.height = unit(0.35, 'cm'),
+    legend.key.width = unit(1, 'cm'),
+    #legend.key.width = unit(0.3, 'cm'),
+    #legend.key.height = unit(0.8, 'cm'),
+    legend.text = element_text(size=6)
+    #legend.box = "vertical"
   )
 
 fig4_B_percent_nonlinear_ggp
-```
-
-
-Still loses the idea of the gradient of changes in oro types across marine systems, so keep with the stacked bar plot? Include code here just in case
-```{r old stacked bar plot version}
-fig4_B_barplot_ggp <- ggplot(marSysTypeThreatSums, aes(y = oro_type, x=n_articles, fill = climate_threat))+
-  facet_wrap(vars(marine_system), ncol=1, scales = "free")+
-  geom_col(position = "stack")+
-  labs(fill = "Climate impact\ndriver", x = "N articles")+ 
-  # colour palette derived from the IBM design library colour blind safe palette
-  # https://davidmathlogic.com/colorblind/#%23648FFF-%23785EF0-%23DC267F-%23FE6100-%23FFB000-%235E5C5E
-  scale_fill_manual(values = threatAES$colour, breaks = threatAES$label, na.value = "transparent")+ 
-  scale_y_discrete(limits = rev)+
-  theme_bw()+
-  theme(
-    #axis.text.x = element_text(angle = 45, hjust=1, vjust=1)
-    legend.position = "left",
-    axis.title.y = element_blank()
-  )
-
-fig4_B_barplot_ggp
 ```
 
 
@@ -1166,7 +1169,7 @@ fig4_C_i
 pdf(file = here::here("figures/main/marineSystemsAndClimateImpactDrivers.pdf"),
     width = 15, height = 7)
 plot_grid(fig4_A_ggp+theme(plot.margin = unit(c(0,0,2,0), "cm")),
-          fig4_B_percent_nonlinear_ggp, 
+          fig4_B_percent_nonlinear_ggp+theme(plot.margin = unit(c(0,0.75,0,0), "cm")), 
           fig4_C_simplified2, #+theme(plot.margin = unit(c(2,0,0,0), "cm"))
           rel_widths = c(0.7,1,1), ncol=3, labels = list("a.","b.","c."), label_size = 19)
 while (!is.null(dev.list())) dev.off()
