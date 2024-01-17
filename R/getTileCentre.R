@@ -9,8 +9,8 @@ getTileCentre <- function(
   
   require(dplyr)
   
-  if(tileLoc == "bottomright"){xTrans=-0.5+c(0,1,1); yTrans=-0.5+c(0,0,1)}
-  if(tileLoc == "topleft"){xTrans=-0.5+c(0,1,0); yTrans = -0.5+c(0,1,1)}
+  if(tileLoc == "topleft"){xTrans=-0.5+c(0,1,1); yTrans=-0.5+c(0,0,1)}
+  if(tileLoc == "bottomright"){xTrans=-0.5+c(0,1,0); yTrans = -0.5+c(0,1,1)}
   
   # Filter dataset based on chosen Variable x Value
   df = df[which(df[,filterVar] == filterVal),]
