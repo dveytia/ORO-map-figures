@@ -55,7 +55,12 @@ factor_aes <- readxl::read_excel(here::here("R/factor_aesthetics.xlsx"))
 
 ```{r read in svg image of infographic created in inkscape}
 ## Read in the infographic of the marine systems
-fig4_A_Img <- magick::image_read(here::here("figures/inkscape/marineSystems.svg"))
+msFiles <- dir(here::here("figures/inkscape/"))
+msFiles <- msFiles[grep("marineSystems", msFiles)]
+msVersions <- as.numeric(gsubfn::strapplyc(msFiles, "_v(.*).svg", simplify = TRUE))
+
+
+fig4_A_Img <- magick::image_read(here::here(paste0("figures/inkscape/", msFiles[which.max(msVersions)])))
 
 # Plot of the svg infographic 
 fig4_A_ggp <- ggdraw()+draw_image(fig4_A_Img, scale = 1)
@@ -386,6 +391,78 @@ fig4_B_percent_ggp <- ggplot(nDat, aes(x = climate_threat, y=oro_type))+
   )
 
 fig4_B_percent_ggp
+```
+
+
+
+```{r plot panel B normalizing by oro type ie by row to make a percentage with nonlinear colour scale}
+paneltotals <- marSysTypeThreatSums %>%
+  group_by(oro_type) %>%
+  summarise(total = sum(n_articles))
+
+marSysTypeThreatSumsNorm <- marSysTypeThreatSums %>%
+  left_join(paneltotals) %>%
+  mutate(percent_articles = n_articles/total*100)
+
+# nDat <- marSysTypeThreatSumsNorm
+# nDat$percent_articles[which(nDat$climate_threat == "Unidentified")] <- NA
+# naDat <- marSysTypeThreatSumsNorm %>%
+#             filter(climate_threat == "Unidentified") %>%
+#             rename(na_articles = percent_articles)
+
+
+# get breaks for the data
+breaksFill <- unique(c(seq(0,60,by=5), seq(50, 100, by=25)))
+
+## plot
+fig4_B_percent_nonlinear_ggp <- ggplot(marSysTypeThreatSumsNorm, 
+                                       aes(y = climate_threat, x=oro_type))+
+  facet_grid(vars(marine_system), labeller = label_wrap_gen(width=15))+
+  # Fill for all articles
+  geom_tile(aes(fill = percent_articles))+
+  # scale_fill_stepsn(name = "% articles", 
+  #                   n.breaks = n_breaksFill, nice.breaks = TRUE,
+  #                   labels = function(x){paste(x,"%")},
+  #                   colors = viridis::viridis(n_breaksFill),
+  #                   show.limits = TRUE, limits = c(0, max(nDat$percent_articles, na.rm = T)),
+  #                   na.value = "transparent")+ 
+  scale_fill_binned(name = "%\narticles", 
+               type = "viridis",
+               breaks = breaksFill, nice.breaks = FALSE,
+               labels = function(x) ifelse(1000 <= x, paste(x/1000, "k"), paste(x)),
+               rescaler = scales::rescale,
+               #values = range01(breaksFill),
+               show.limits = TRUE, 
+               limits = breaksFill[c(1, length(breaksFill))], 
+               oob= scales::squish,
+               na.value = "transparent",
+               guide = guide_coloursteps(order = 1), #barwidth = unit(0.5, 'cm') 
+               position = "top")+ 
+  
+  #scale_x_discrete(labels = stringr::str_wrap(typeAES$label, width=20))+
+  
+  geom_text(aes(label = formatC(n_articles, format="d", big.mark = ",")), 
+            col="darkgrey", size=3)+
+  
+  # other aesthetics
+  labs(y="Climate impact driver", x="ORO type")+ 
+  
+  #scale_y_discrete(limits = rev)+
+  #coord_flip()+
+  theme_bw()+
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 30, hjust=1, vjust=1, size=11),
+    axis.text.y = element_text(size=11),
+    legend.position = "right",
+    axis.title.x = element_blank(),
+    legend.key.width = unit(0.3, 'cm'),
+    legend.key.height = unit(0.8, 'cm'),
+    legend.text = element_text(size=6),
+    legend.box = "vertical"
+  )
+
+fig4_B_percent_nonlinear_ggp
 ```
 
 
@@ -746,8 +823,13 @@ mitigationSums$coastEcoFraction_cut <- cut(mitigationSums$coastEcoFraction, brea
 adaptationSums$coastEcoFraction_cut <- cut(adaptationSums$coastEcoFraction, breaks = brks2, include.lowest = T)
 
 # Format data frames for bivariate plotting
+# Manually set 0 articles to class 1-1 otherwise it's counter intutitive
 mitigationSums <- bi_class(mitigationSums, x=percent_articles_cut, y=coastEcoFraction_cut, dim=5, style = "equal")
+mitigationSums$bi_class <- ifelse(mitigationSums$n_articles == 0, "1-1",mitigationSums$bi_class)
+
 adaptationSums <- bi_class(adaptationSums, x=percent_articles_cut, y=coastEcoFraction_cut, dim=5, style = "equal")
+adaptationSums$bi_class <- ifelse(adaptationSums$n_articles == 0, "1-1",adaptationSums$bi_class)
+
 
 # calculate labels
 labs <- bi_class_breaks(mitigationSums, x=percent_articles_cut, y = coastEcoFraction, style = "equal",
@@ -758,18 +840,24 @@ labs <- bi_class_breaks(mitigationSums, x=percent_articles_cut, y = coastEcoFrac
 ## For the adaptation plot, want to display two variables in triangles
 # so format data for plotting
 source(here::here("R/getTiles.R"))
+source(here::here("R/getTileCentre.R"))
 
 humanDf <- getTiles(df = adaptationSums, filterVar = "adapt_to_threat", filterVal = "Human", 
+                    orderVars = c(y="oro_type",x="ecosystem_type"),
+                    tileLoc = "bottomright")
+humanDfText <- getTileCentre(df = adaptationSums, filterVar = "adapt_to_threat", 
+                             filterVal = "Human", 
                     orderVars = c(y="oro_type",x="ecosystem_type"),
                     tileLoc = "bottomright")
 natureDf <- getTiles(df = adaptationSums, filterVar = "adapt_to_threat", filterVal = "Nature", 
                     orderVars = c(y="oro_type",x="ecosystem_type"),
                     tileLoc = "topleft"
                     )
-cii_text <- data.frame(
-  x=c(0.75,1.25),y=c(nrow(typeAES)+0.5,nrow(typeAES)-0.5),labs = c("Nature", "Human")
-)
-cii_text
+natureDfText <- getTileCentre(df = adaptationSums, filterVar = "adapt_to_threat", filterVal = "Nature", 
+                    orderVars = c(y="oro_type",x="ecosystem_type"),
+                    tileLoc = "topleft"
+                    )
+
 ```
 
 
@@ -782,28 +870,32 @@ write.csv(adaptationSums, here::here("outputs/coastalEcosystemsAdaptationSums.cs
 ```{r plot panel C.i - Mitigation as a bivariate map}
 fig4_C_i <- ggplot(mitigationSums, aes(y=oro_type, x=ecosystem_type))+
   geom_tile(aes(fill = bi_class), show.legend = FALSE)+
+  geom_text(data=mitigationSums %>% filter(0<n_articles),
+            aes(label = formatC(n_articles, format="d", big.mark=",")), col="darkgrey", size=4)+
   bi_scale_fill(pal = biPal5, dim=5, na.value = "white")+
   #scale_fill_gradient2(mid="white",high="#3182bd", midpoint = 0, guide = guide_coloursteps())+
   #scale_y_discrete(limits=rev)+
-  geom_hline(yintercept = c(0.5,2.5,4.5), col="black", linewidth=0.5)+
+  geom_hline(yintercept = c(3.5,5.5), col="black", linewidth=1)+
   # annotation_raster(marsh_ras, 0.5, 1.5, -2, -0)+
   # annotation_raster(mangrove_ras, 1.5, 2.5, -2, -0)+
   # annotation_raster(seagrass_ras, 2.5, 3.5, -2, -0)+
   # annotation_raster(coral_ras, 3.5, 4.5, -2, -0)+
   # coord_cartesian(ylim = c(-1.5, length(levels(mitigationSums$oro_type))), clip = 'off')+
   labs(
-    #x = "Ecosystem type", #y = "ORO type", 
+    x = "Ecosystem type", #y = "ORO type", 
     title = "i. Mitigation"
   )+
+  coord_flip()+ # Added this -- double check
   theme_bw()+
   theme(
-    axis.title.y = element_blank(),
+    #axis.title.y = element_blank(),
     panel.grid = element_blank(),
     legend.position = "bottom",
     #axis.text.x = element_text(angle=45, vjust=1, hjust=1)
     axis.text.x = element_blank(),
     axis.title.x = element_blank(),
-    axis.ticks.x = element_blank()
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_text(size=11)
   )
 
 
@@ -818,37 +910,58 @@ finalPlot
 
 
 ```{r plot panel C.ii - Adaptation as a bivariate map}
+# cii_text <- data.frame(
+#   x=c(0.75,1.25),
+#   y=c(nrow(typeAES)+0.5,
+#       nrow(typeAES)-0.5),
+#   labs = c("Nature", "Human")
+# )
+cii_text <- data.frame(
+  x=c(nrow(ecoTypeAES)+0.45, nrow(ecoTypeAES)-0.45),
+  y=c(0.55,1.45),
+  labs = c("Nature", "Human")
+)
+
+
 
 fig4_C_ii <- ggplot()+
-  geom_polygon(data = humanDf, aes(x,y,group=id, fill = bi_class), show.legend = FALSE)+
-  geom_polygon(data = natureDf, aes(x,y,group=id, fill = bi_class), show.legend = FALSE)+
-  geom_text(data=cii_text, aes(x, y, label = labs), size=2)+
+  geom_polygon(data = humanDf %>% filter(0<n_articles), aes(x,y,group=id, fill = bi_class), show.legend = FALSE, col="darkgrey")+
+  geom_polygon(data = natureDf%>% filter(0<n_articles), aes(x,y,group=id, fill = bi_class), show.legend = FALSE, col="darkgrey")+
+  # geom_text(data=cii_text%>%filter(labs == "Nature"), aes(x, y, label = labs), size=2, hjust="inward", vjust="inward")+
+  # geom_text(data=cii_text%>%filter(labs == "Human"), aes(x, y, label = labs), size=2, hjust="outward", vjust="outward")+
+  
+  # Add text of article numbers 
+  geom_text(data=rbind(humanDfText, natureDfText)%>% filter(0<n_articles), aes(x,y,label = formatC(n_articles, format="d", big.mark = ",")),
+            col="darkgrey", size=3)+
   
   bi_scale_fill(pal = biPal5, dim=5, na.value = "white")+
   
-  geom_hline(yintercept = c(0.5,2.5,4.5), col="black", linewidth=0.5)+
-  annotation_raster(marsh_ras, 0.5, 1.5, -2, -0)+
-  annotation_raster(mangrove_ras, 1.5, 2.5, -2, -0)+
-  annotation_raster(seagrass_ras, 2.5, 3.5, -2, -0)+
-  annotation_raster(coral_ras, 3.5, 4.5, -2, -0)+
+  geom_hline(yintercept = c(3.5,5.5), col="black", linewidth=1)+
+
+  # annotation_raster(marsh_ras, 0.5, 1.5, -2, -0)+
+  # annotation_raster(mangrove_ras, 1.5, 2.5, -2, -0)+
+  # annotation_raster(seagrass_ras, 2.5, 3.5, -2, -0)+
+  # annotation_raster(coral_ras, 3.5, 4.5, -2, -0)+
   
-  # Format axes
+  # # Format axes
   scale_x_continuous(breaks = 1:nrow(ecoTypeAES),labels = ecoTypeAES$label)+
-  #scale_y_continuous(breaks = 1:nrow(typeAES),labels = typeAES$label)+
-  scale_y_binned(breaks = 1:nrow(typeAES),labels = typeAES$label)+
-  
-  coord_cartesian(ylim = c(-1.5, nrow(typeAES)), clip = 'off')+
+  scale_y_continuous(breaks = 1:nrow(typeAES),labels = stringr::str_wrap(typeAES$label, width=20))+
+  # scale_y_binned(breaks = 1:nrow(typeAES),labels = typeAES$label)+ #, limits = c(1,nrow(typeAES))
+  # 
+  # coord_cartesian(ylim = c(0.5, nrow(typeAES)+0.5), clip = 'off')+
   labs(
     x = "Ecosystem type", #y = "ORO type", 
     title = "ii. Adaptation"
   )+
+  coord_flip()+ # added this -- double check
   theme_bw()+
   theme(
     #plot.margin = unit(c(0,0,0,0), "cm"),
-    axis.title.y = element_blank(),
+    axis.title.x = element_blank(),
     panel.grid = element_blank(),
     legend.position = "bottom",
-    axis.text.x = element_text(angle=45, vjust=1, hjust=1)
+    axis.text.x = element_text(angle=45, vjust=1, hjust=1, size=11),
+    axis.text.y = element_text(size=11)
     #axis.title.x = element_text(vjust = -8)
   )
 
@@ -872,12 +985,14 @@ biLegend <- bi_legend(pal = biPal5,
                     breaks = labs2,
                     arrows=FALSE,
                     size = 6)
-biLegend
+biLegend <- biLegend+theme(
+  panel.background = element_rect(fill="transparent"),
+  plot.background = element_rect(fill='transparent', color=NA))
 ```
 
 ```{r combine two panel C subplots together}
 fig4_C <- plot_grid(finalPlot, 
-                    finalPlot2+draw_plot(biLegend, x=0, y=0, width=0.4, height=0.4),
+                    finalPlot2+draw_plot(biLegend, x=-0.23, y=0, width=0.4, height=0.4),
                     nrow=2, rel_heights = c(0.7,1))
 fig4_C
 ```
@@ -921,8 +1036,10 @@ fig4_C_i
 ```{r Write figure to pdf}
 pdf(file = here::here("figures/main/marineSystemsAndClimateImpactDrivers.pdf"),
     width = 15, height = 7)
-plot_grid(fig4_A_ggp,fig4_B_percent_ggp, fig4_C +theme(plot.margin = unit(c(2,0,0,0), "cm")), 
-          rel_widths = c(1,1,1), ncol=3, labels = list("a.","b.","c."), label_size = 17)
+plot_grid(fig4_A_ggp+theme(plot.margin = unit(c(0,0,2,0), "cm")),
+          fig4_B_percent_nonlinear_ggp, 
+          fig4_C, #+theme(plot.margin = unit(c(2,0,0,0), "cm"))
+          rel_widths = c(0.7,1,1), ncol=3, labels = list("a.","b.","c."), label_size = 19)
 while (!is.null(dev.list())) dev.off()
 
 ```
