@@ -539,7 +539,14 @@ seagrass_ras <- as.raster(image_fill(image_read_svg(here::here("figures/phylopic
 
 
 ```{r Changing salt marsh prediction threshold}
+source(here::here("R/bool_detect.R"))
+source(here::here("R/clean_string.R"))
+source(here::here("R/utils.R"))
+
 ## Access relevant tables
+uniquerefs <- tbl(dbcon, "uniquerefs") %>% 
+  select(analysis_id, title, abstract, keywords)
+
 predMarSys <- tbl(dbcon, "pred_marine_system") %>%
   select(analysis_id, 
          `marine_system.land - mean_prediction`,
@@ -558,8 +565,33 @@ saltMarshDf <- tbl(dbcon, "pred_ecosystem_type") %>%
          `ecosystem_type.Salt_marsh - upper_pred`) %>%
   rename(mean = `ecosystem_type.Salt_marsh - mean_prediction`,
          upper = `ecosystem_type.Salt_marsh - upper_pred`) %>%
+  left_join(uniquerefs, by = "analysis_id") %>%
   collect() %>%
-  reshape2::melt(id.vars = "analysis_id", variable.name = "Prediction_boundary", value.name = "Prediction")
+  reshape2::melt(id.vars = c("analysis_id", "title","abstract","keywords"), variable.name = "Prediction_boundary", value.name = "Prediction")
+
+saltMarshDf <- saltMarshDf %>%
+  mutate(text = clean_string(paste(title, abstract, keywords))) %>%
+  select(-c(title, abstract, keywords)) %>%
+  mutate(match = bool_detect(text, "salt AND marsh*")) 
+
+
+## How many matches for salt marsh terms are there? 
+sumSaltMarshMatches <- saltMarshDf %>%
+  mutate(Threshold = ifelse(0.5 <= Prediction, "above 0.5 threshold","below 0.5 threshold")) %>%
+  group_by(Prediction_boundary, Threshold) %>%
+  summarise(n_matches = sum(match), n_total = n(), percent_matches = n_matches/n_total*100)
+
+#   Prediction_boundary Threshold           n_matches n_total percent_matches
+#   <fct>               <chr>                   <int>   <int>           <dbl>
+# 1 mean                below 0.5 threshold      1095   61656           1.78 
+# 2 upper               above 0.5 threshold       814   15428           5.28 
+# 3 upper               below 0.5 threshold       281   46228           0.608
+
+# So really, the number of keyword matches are pretty small in comparison to the number of articles predicted relevant. Using the upper threshold at 0.5, that's 5 % of all articles predicted relevant have the words "salt marsh" in them. 
+
+
+## Save results file
+# write.csv(sumSaltMarshMatches, file = here::here("outputs/saltMarshKeywordMatches.csv"))
 
 # Aesthetics for plotting
 marSysAES <- factor_aes[which(factor_aes$variable == "marine_system"),]
@@ -606,6 +638,7 @@ pdf(here::here("figures/supplemental/saltMarshPredictionsHistogramAndMarineSyste
 egg::ggarrange(saltMarshPredictions_ggp, saltMarshMarSys_ggp,
           nrow=1, ncol=2, newpage = FALSE, labels = c("a.","b."))
 dev.off()
+
 
 ```
 
@@ -685,7 +718,7 @@ adaptAES <- adaptAES[order(adaptAES$order),]
 ```
 
 
-Why are there a high number of coral reef papers and marine renewable energy predicted?
+Why are there a high number of salt marsh papers with mitigation outcomes and marine renewable energy predicted?
 ```{r Investigate the ecosystem x outcome for MRE}
 MRE_Df <- predRel %>%
   inner_join(predType, by="analysis_id") %>%
@@ -707,6 +740,59 @@ MRE_ggp <- ggplot(MRE_Df, aes(x=ecosystem_type, y=Outcome, fill=n_articles))+
   geom_tile()
 
 MRE_ggp
+
+
+## Investigate these papers & their topics using a Latent Dirichlet Allocation topic model
+
+# Filter to articles in this area
+uniquerefs <- tbl(dbcon, "uniquerefs") %>% 
+  select(analysis_id, title, abstract, keywords)
+
+MRE_saltMarsh <- predRel %>%
+  inner_join(predType, by="analysis_id") %>%
+  filter(oro_type == "Marine renewable energy" ) %>%
+  collect() %>%
+  inner_join(predMarSys, by="analysis_id") %>%
+  inner_join(predEcoType, by="analysis_id") %>%
+  left_join(predMit, by="analysis_id") %>%
+  filter(ecosystem_type == "Salt_marsh", 0.5 <= climate_mitigation, marine_system == "coastal_ocean") %>%
+  inner_join(uniquerefs, by = "analysis_id", copy=TRUE)
+
+
+# Are there any keyword matches for salt marshes?
+source(here::here("R/bool_detect.R"))
+source(here::here("R/clean_string.R"))
+source(here::here("R/utils.R"))
+MRE_saltMarsh$text <- clean_string(paste(
+  MRE_saltMarsh$title, MRE_saltMarsh$abstract, MRE_saltMarsh$keywords))
+marshMatches <- bool_detect(MRE_saltMarsh$text, "salt AND marsh*")
+sum(marshMatches) # 0 
+
+
+# So what are these papers about? -- Calculate topic model
+all_stopwords <- unique(c(litsearchr::get_stopwords("English"), revtools::revwords()))
+x_dtm <- revtools::make_dtm(MRE_saltMarsh$text, stop_words = all_stopwords)
+x_lda <- revtools::run_topic_model(x_dtm, "lda", 5, 5000)
+save(x_dtm, x_lda, file=here::here("outputs/saltMarshAndMRETopicModel.RData")) # save
+load(here::here("outputs/saltMarshAndMRETopicModel.RData"))
+
+docTopics <- topicmodels::topics(x_lda) # topic assigned to each document
+top5termsPerTopic <- topicmodels::terms(x_lda, 5) # top 5 terms in each topic 
+topicNames <- apply(top5termsPerTopic, 2, paste, collapse=" ") # use to create a topic name
+
+docTopicDf <- data.frame(
+  document_ID = names(docTopics),
+  topicNumber = docTopics,
+  topicName = topicNames[docTopics]
+)
+
+ggplot(docTopicDf, aes(x=docTopics, fill=topicName))+
+  geom_bar()+
+  labs(x="Topic Number", fill = "Top 5\ntopic terms",
+       caption = paste("N documents with pollut* term matches =", length(x_lda@documents)))+
+  theme_classic()
+
+
 ```
 
 
