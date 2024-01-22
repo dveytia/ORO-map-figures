@@ -8,7 +8,7 @@
 #'
 #'
 #' @examples
-univariate_map <- function(data_map, color_scale, vals_colors_scale, legend, show.legend, name = NULL){
+univariate_map <- function(data_map, color_scale, second.var, midpoint, title_color, title_size, show.legend, name = NULL){
   
   ### Produce the map
   map <- ggplot2::ggplot() +
@@ -21,9 +21,7 @@ univariate_map <- function(data_map, color_scale, vals_colors_scale, legend, sho
                      size    = 0.1,
                      show.legend = show.legend) +
     
-    ggplot2::scale_fill_gradientn(colors   = color_scale,
-                                  values   = vals_colors_scale,
-                                  na.value = "grey80") +
+
     
     # Add graticules
     # ggplot2::geom_sf(data     = data_map$graticules,
@@ -51,7 +49,8 @@ univariate_map <- function(data_map, color_scale, vals_colors_scale, legend, sho
     
     ggplot2::labs(fill = legend) +
     
-    ggplot2::guides(size = "none", fill = ggplot2::guide_colourbar(title.position = "right", barwidth = 0.7)) +
+    ggplot2::guides(size = ggplot2::guide_legend(title = title_size, title.position = "right", title.hjust = 0.5, ncol = 1, override.aes = list(fill = "transparent")), 
+                    fill = ggplot2::guide_colourbar(title = title_color, title.position = "right", barwidth = 0.7)) +
     
     ## Theme
     ggplot2::theme(panel.grid.major.x = ggplot2::element_line(color = NA),
@@ -70,8 +69,38 @@ univariate_map <- function(data_map, color_scale, vals_colors_scale, legend, sho
                                                               vjust = 0.5, angle = 90),
                    legend.title.align = 0.5, 
                    legend.direction   = "vertical",
+                   legend.position     = "right",
+                   legend.justification = "center",
+                   legend.key           = element_rect(color = "white"),
                    legend.text        = ggplot2::element_text(size = 12))
   
+  if(!is.null(midpoint)){
+    map <- map + 
+      ggplot2::scale_fill_gradient2(low = "darkred", 
+                                    high = "darkblue",
+                                    mid = "white",
+                                    midpoint = 0,
+                                    na.value = "grey80")
+  }
+  
+  
+  if(!is.null(color_scale)){
+    map <- map + 
+      ggplot2::scale_fill_gradientn(colors   = color_scale,
+                                    # values   = vals_colors_scale,
+                                    na.value = "grey80") 
+  }
+  
+  if(!is.null(second.var)){
+    map <- map +
+      stat_sf_coordinates(data        = data_map$data,
+                          mapping     = aes(size = get(second.var)),
+                          colour      = "darkblue",
+                          # fill        = "grey90",
+                          # size        = 1,
+                          show.legend = TRUE) +
+      scale_size(range = c(0,3))
+  }
   
   ### Save map
   if(! is.null(name)) {
@@ -269,7 +298,7 @@ correlation_btw_var <- function(data, log.transf, quant.prob, name = NULL){
 #' @export
 #'
 #' @examples
-bivariate_map <- function(data_map, data_map_univ, data_world, bivariate_color_scale, univariate_color_scale, xlab, ylab, lab_univ, name){
+bivariate_map <- function(data_map, data_map_univ, data_world, color, univariate_color_scale, xlab, ylab, lab_univ, name){
   
   # data_map <- tibble::as.tibble(data_map)
   
@@ -277,13 +306,24 @@ bivariate_map <- function(data_map, data_map_univ, data_world, bivariate_color_s
   map <- ggplot2::ggplot() +
     
     ## DBEM output grid
-    ggplot2::geom_sf(data    = data_map, 
+    ggplot2::geom_sf(data    = data_map$data, 
                      mapping = ggplot2::aes(fill     = fill,
                                             geometry = geometry), 
-                     color   = NA, 
-                     size    = 0.01) +
+                     color   = "black", 
+                     size    = 0.1) +
     
     ggplot2::scale_fill_identity(na.value = "grey80") +
+    
+    ggplot2::geom_sf(data   = data_map$box, 
+                     colour = "black", 
+                     fill   = NA, 
+                     size   = 0.1) +
+    
+    
+    ## Add latitude and longitude labels
+    ggplot2::geom_text(data = data_map$lat_text, mapping = ggplot2::aes(x = X.prj2-1*10e5, y = Y.prj,          label = lbl), color = "grey20", size = 1.5) +
+    ggplot2::geom_text(data = data_map$lon_text, mapping = ggplot2::aes(x = X.prj,         y = Y.prj-0.5*10e5, label = lbl), color = "black",  size = 1.5) + 
+    
     ggplot2::theme_void() +
     
     ## Add graticules
@@ -292,14 +332,14 @@ bivariate_map <- function(data_map, data_map_univ, data_world, bivariate_color_s
     #                  color    = "black",
     #                  size     = 0.4) +
     
-    ggnewscale::new_scale_fill() +
+    # ggnewscale::new_scale_fill() +
 
     ## Add borders grid
-    geom_sf(data = data_map_univ,
-            mapping     = aes(fill = log(Count_ORO)),
-            # fill = "grey85",
-            color = "black",
-            size  = 0.2) +
+    # geom_sf(data = data_map_univ,
+    #         mapping     = aes(fill = log(Count_ORO)),
+    #         # fill = "grey85",
+    #         color = "black",
+    #         size  = 0.2) +
   
     # stat_sf_coordinates(data        = data_map_univ,
     #                     mapping     = aes(color = log(Count_ORO)),
@@ -308,17 +348,15 @@ bivariate_map <- function(data_map, data_map_univ, data_world, bivariate_color_s
     #                     size        = 0.8,
     #                     show.legend = TRUE) +
 
-    scale_fill_gradientn(name     = lab_univ,
-                         colors   = univariate_color_scale,
-                         na.value = "grey90") +
+    # scale_fill_gradientn(name     = lab_univ,
+    #                      colors   = univariate_color_scale,
+    #                      na.value = "grey90") +
     
     # guides(size = "none", color = guide_colourbar(title.position = "top", barwidth = 8, barheight = 0.7)) +
-    guides(size = "none", fill = guide_colourbar(title.position = "top", barwidth = 8, barheight = 0.7, direction = "horizontal")) +
+    # guides(size = "none", fill = guide_colourbar(title.position = "top", barwidth = 8, barheight = 0.7, direction = "horizontal")) +
     
-    theme_bw() +
-    theme(legend.position = "right",
-          legend.justification = "top",
-          axis.title.x     = element_blank(),
+    # theme_bw() +
+    theme(axis.title.x     = element_blank(),
           axis.title.y     = element_blank())
     # theme(legend.position = "bottom",
     #       # legend.justification = "top",
@@ -353,24 +391,45 @@ bivariate_map <- function(data_map, data_map_univ, data_world, bivariate_color_s
     #                legend.text        = ggplot2::element_text(size = 16))
   
   
-  ### Color legend
+  if(!is.null(data_world) == TRUE){
+    map <- map +
+      geom_sf(data = data_world,
+              color = "black",
+              size  = 0.1)
+  }
   
+
   ## Separate groups
-  color <- bivariate_color_scale |> 
-    dplyr::mutate(x = as.integer(rep(seq(1, 10, 1), 10)),
-                  y = as.integer(rep(1:10, each = 10)))
+  data_col <- data_map$data |>  
+    sf::st_drop_geometry() |> 
+    separate(col = group, into = c("x", "y"), sep = "\\.", convert = TRUE, remove = FALSE) |>
+    filter(! is.na(fill)) |> 
+    group_by(fill) |> 
+    summarize(x=  x, y = y, count = n())
   
+  color <- color |> 
+    separate(col = group, into = c("x", "y"), sep = "\\.", convert = TRUE, remove = FALSE) 
+    # left_join(data_col |>  dplyr::select(NA2_DESCRI, cumulative_co2_including_luc, Count_ORO, fill), by = "fill")
+    # dplyr::mutate(x = as.integer(rep(seq(1, 10, 1), 10)),
+    #               y = as.integer(rep(1:10, each = 10)))
   
   ## Plot
   legend <- ggplot2::ggplot() +
     
-    ggplot2::geom_tile(data    = color, 
+    ggplot2::geom_tile(data    = color,
                        mapping = ggplot2::aes(x = x, y = y, fill = fill)) +
+    # ggplot2::geom_tile(data    = color2, 
+    #                    mapping = ggplot2::aes(x = Count_ORO, y = cumulative_co2_including_luc, fill = fill)) +
     
     ggplot2::scale_fill_identity() +
+    
+    ggplot2::geom_point(data = data_col, mapping = aes(x = x, y = y, size = count), show.legend = TRUE) +
+    ggplot2::scale_size(range = c(0, 4)) +
+    
     ggplot2::labs(x = xlab, y = ylab) +
     # ggplot2::geom_hline(yintercept = 3.5, color = "red") +
     cowplot::theme_map() +
+    guides(size = guide_legend(title = "# country", title.position = "right", title.hjust = 0.5, ncol = 1)) +
     ggplot2::theme(axis.title      = ggplot2::element_text(size = 13), 
                    axis.title.x    = ggplot2::element_text(margin = ggplot2::margin(t = 0, 
                                                                                     r = 0, 
@@ -381,9 +440,15 @@ bivariate_map <- function(data_map, data_map_univ, data_world, bivariate_color_s
                                                                                     r = 5,
                                                                                     b = 0,
                                                                                     l = 0)),
+                   legend.key      = element_rect(fill = 'transparent', colour = 'transparent'), 
+                   legend.position = "right",
+                   legend.justification = "center",
+                   legend.title         = element_text(angle = -90),
+                   legend.margin      = margin(0,0,0,0),
+                   legend.box.spacing = unit(0, "pt"),
                    plot.background = ggplot2::element_rect(fill  = "white", 
                                                            color = "transparent")) +
-    ggplot2::coord_fixed()
+    ggplot2::coord_fixed() ; legend
   
   
   ### Arrange map with legend
@@ -391,8 +456,8 @@ bivariate_map <- function(data_map, data_map_univ, data_world, bivariate_color_s
   #   cowplot::draw_plot(map,    x = 0.0, y = 0.00, width = 0.70, height = 1.0) +
   #   cowplot::draw_plot(legend, x = 0.65, y = 0.30, width = 0.35, height = 0.35)
   map_bi <- cowplot::ggdraw() +
-    cowplot::draw_plot(map,    x = 0.0, y = 0.00, width = 0.9, height = 1.0) +
-    cowplot::draw_plot(legend, x = 0.63, y = 0.25, width = 0.35, height = 0.35)
+    cowplot::draw_plot(map,    x = 0.0, y = 0.00, width = 0.65, height = 1.0) +
+    cowplot::draw_plot(legend, x = 0.65, y = 0.3, width = 0.35, height = 0.35)
   
   ### Save map
   if(! is.null(name)) {

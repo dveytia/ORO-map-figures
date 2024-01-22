@@ -18,6 +18,7 @@ extract_1stA_affiliation <- function(data, countries_ls){
     filter(!is.na(affiliation)) |> 
     mutate(affiliation = stringr::str_replace_all(affiliation, c("Georgia"                     = "GeorgiA", # To differentiate it from University of Georgia
                                                                  "England\\."                  = "United Kingdom.",
+                                                                 "Papua N Guinea"              = "Papua New Guinea",
                                                                  "\\, ENGLAND"                 = ", United Kingdom",
                                                                  "Engl\\,"                     = "United Kingdom,", # cf ref 378521
                                                                  "Wales"                       = "United Kingdom", 
@@ -186,6 +187,7 @@ number_OandC_paper_formating <- function(data, countries_ls){
     dplyr::mutate(Countries.Regions = stringr::str_replace_all(Countries.Regions, c("England"            = "United Kingdom",
                                                                                     "Scotland"           = "United Kingdom",
                                                                                     "Falkland Island"    = "United Kingdom",
+                                                                                    "North Ireland"      = "United Kingdom",
                                                                                     "Usa"                = "United States",
                                                                                     "Russia"             = "Russian Federation",
                                                                                     "Iran"               = "Islamic Republic of Iran",
@@ -229,10 +231,19 @@ number_OandC_paper_formating <- function(data, countries_ls){
                                                                                     "Vatican"            = "Vatican City State",
                                                                                     "Anguilla"           = "United Kingdom",
                                                                                     "Hong Kong"          = "China",
-                                                                                    "South Sudan"        = "Sudan")),
-                  Country           = stringr::str_extract(Countries.Regions, paste(countries_ls$name_en, collapse = "|"))) |> 
-    dplyr::filter(!is.na(Country)) |> 
-    dplyr::group_by(Country) |> 
+                                                                                    "South Sudan"        = "Sudan",
+                                                                                    "Papua N Guinea"     = "Papua New Guinea",
+                                                                                    "Fed Rep Ger"        = "Germany",
+                                                                                    "Micronesia"         = "Micronesia (Federated States of)",
+                                                                                    "Cent Afr Republ"    = "Central African Republic")),
+                  country = countrycode(sourcevar   = Countries.Regions,
+                                        origin      = "country.name",
+                                        destination = "country.name"),
+                  iso_code = countrycode(sourcevar   = country,
+                                         origin      = "country.name",
+                                         destination = "iso3c")) |> 
+    dplyr::filter(!is.na(country) & !is.na(iso_code)) |> 
+    dplyr::group_by(country, iso_code) |> 
     dplyr::summarise(Record.Count = sum(Record.Count, na.rm = T))
   
   return(output_data)
@@ -253,21 +264,51 @@ number_OandC_paper_formating <- function(data, countries_ls){
 format_shp_of_the_world <- function(world_shp, data_to_bind, PROJ){
   
   world_bounds <- world_shp |> 
-    dplyr::select(NA2_DESCRI, NA3_DESCRI, geometry) |> 
-    dplyr::mutate(NA2_DESCRI = stringr::str_replace_all(NA2_DESCRI, c("The Bahamas"                        = "Bahamas",
-                                                                      "Iran"                               = "Islamic Republic of Iran",
-                                                                      "Congo (Democratic Republic of the)" = "The Democratic Republic Of The Congo",
-                                                                      "Congo"                              = "Republic of the Congo",
-                                                                      "Svalbard"                           = "Svalbard and Jan Mayen",
-                                                                      "Vatican City"                       = "Vatican City State",
-                                                                      "Brunei"                             = "Brunei Darussalam",
-                                                                      "Burma"                              = "Myanmar",
-                                                                      "Russia"                             = "Russian Federation",
-                                                                      "Syria"                              = "Syrian Arab Republic",
-                                                                      "Turks and Caicas Islands"           = "Turks and Caicos Islands",
-                                                                      "The Gambia"                         = "Gambia",
-                                                                      "Tanzania"                           = "United Republic Of Tanzania"))) |> 
-    dplyr::full_join(data_to_bind, by = c("NA2_DESCRI" = "Country")) |> 
+    dplyr::mutate(country  = countrycode(sourcevar   = NA2_DESCRI,
+                                         origin      = "country.name",
+                                         destination = "country.name"),
+                  country  = case_when(is.na(country) == FALSE ~ country,
+                                       is.na(country) == TRUE & NA2_DESCRI == "Ashmore and Cartier Islands" ~ "Australia",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Navassa Island" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Coral Sea Islands" ~ "Australia",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Jarvis Island" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Europa Island" ~ "France",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Baker Island" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Glorioso Islands" ~ "France",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Howland Island" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Clipperton Island" ~ "France",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Jan Mayen" ~ "Norway",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Johnston Atoll" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Juan De Nova Island" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Kingman Reef" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Palmyra Atoll" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Midway Islands" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Paracel Islands" ~ "China",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Tromelin Island" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Virgin Islands" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Wake Island" ~ "United States"),
+                  iso_code = countrycode(sourcevar   = country,
+                                         origin      = "country.name",
+                                         destination = "iso3c"),
+                  admin_iso = paste0(NA2_DESCRI, ", ", iso_code)) |> 
+    dplyr::select(NA2_DESCRI,iso_code,country, admin_iso) |> 
+    # dplyr::select(NA2_DESCRI, NA3_DESCRI, geometry) |> 
+    # dplyr::mutate(NA2_DESCRI = stringr::str_replace_all(NA2_DESCRI, c("The Bahamas"                        = "Bahamas",
+    #                                                                   "Iran"                               = "Islamic Republic of Iran",
+    #                                                                   "Congo (Democratic Republic of the)" = "The Democratic Republic Of The Congo",
+    #                                                                   "Congo"                              = "Republic of the Congo",
+    #                                                                   "Svalbard"                           = "Svalbard and Jan Mayen",
+    #                                                                   "Vatican City"                       = "Vatican City State",
+    #                                                                   "Brunei"                             = "Brunei Darussalam",
+    #                                                                   "Burma"                              = "Myanmar",
+    #                                                                   "Russia"                             = "Russian Federation",
+    #                                                                   "Syria"                              = "Syrian Arab Republic",
+    #                                                                   "Turks and Caicas Islands"           = "Turks and Caicos Islands",
+    #                                                                   "The Gambia"                         = "Gambia",
+    #                                                                   "Tanzania"                           = "United Republic Of Tanzania"))) |> 
+    
+    # dplyr::full_join(data_to_bind, by = c("NA2_DESCRI" = "Country")) |>
+    dplyr::full_join(data_to_bind, by = "iso_code") |>
     sf::st_transform(crs = PROJ)
   
 }
@@ -404,18 +445,30 @@ format_data_bivariate_map <- function(data, data.x, data.y, color_table, probs.q
   ### Calculate quantiles
   
     ## For data x
-    x_quantile <- quantile(data[, data.x], probs = probs.quant, na.rm = TRUE)
-    
+    # x_quantile <- quantile(data[, data.x], probs = probs.quant, na.rm = TRUE)
+    # x_tile = ntile(x = data[, data.x], 10)
+    # y_tile = ntile(x = data[, data.y], 10)
     ## For data y
-    y_quantile <- quantile(data[, data.y], probs = probs.quant, na.rm = TRUE)
+    # y_quantile <- quantile(data[, data.y], probs = probs.quant, na.rm = TRUE)
   
+    # data_xy <- data |> 
+    #   mutate(group = 1:214)
+    #          group_y = y_tile,
+    #          group   = paste0(group_x, ".", group_y)) |>
+    #   left_join(color_table, by = "group")
   
-  ### Cut data into groups 
+  ## Cut data into groups
   data_xy <- data |>
-    dplyr::mutate(x_quantile = cut(data[, data.x], breaks = unique(x_quantile), include.lowest = TRUE),
-                  y_quantile = cut(data[, data.y], breaks = unique(y_quantile), include.lowest = TRUE),
-                  group      = ifelse(!is.na(y_quantile) & !is.na(x_quantile), paste0(as.numeric(x_quantile), ".", as.numeric(y_quantile)), NA)) |> 
-    dplyr::left_join(color_table, by = "group")
+    mutate(group_x = ntile(get(data.x), 10),
+           group_y = ntile(get(data.y), 10),
+           group   = paste0(group_x, ".", group_y)) |>
+    left_join(color_table, by = "group")
+  
+  # data_xy <- data |>
+  #   dplyr::mutate(x_quantile = cut(data[, data.x], breaks = unique(x_quantile), include.lowest = TRUE),
+  #                 y_quantile = cut(data[, data.y], breaks = unique(y_quantile), include.lowest = TRUE),
+  #                 group      = ifelse(!is.na(y_quantile) & !is.na(x_quantile), paste0(as.numeric(x_quantile), ".", as.numeric(y_quantile)), NA)) |>
+  #   dplyr::left_join(color_table, by = "group")
   
   return(data_xy)
   
