@@ -55,7 +55,12 @@ factor_aes <- readxl::read_excel(here::here("R/factor_aesthetics.xlsx"))
 
 ```{r read in svg image of infographic created in inkscape}
 ## Read in the infographic of the marine systems
-fig4_A_Img <- magick::image_read(here::here("figures/inkscape/marineSystems.svg"))
+msFiles <- dir(here::here("figures/inkscape/"))
+msFiles <- msFiles[grep("marineSystems", msFiles)]
+msVersions <- as.numeric(gsubfn::strapplyc(msFiles, "_v(.*).svg", simplify = TRUE))
+
+
+fig4_A_Img <- magick::image_read(here::here(paste0("figures/inkscape/", msFiles[which.max(msVersions)])))
 
 # Plot of the svg infographic 
 fig4_A_ggp <- ggdraw()+draw_image(fig4_A_Img, scale = 1)
@@ -148,6 +153,26 @@ marSysTypeThreatSums <- marSysTypeThreatSums %>%
   )
 
 ```
+
+```{r old stacked bar plot version}
+fig4_B_barplot_ggp <- ggplot(marSysTypeThreatSums, aes(y = oro_type, x=n_articles, fill = climate_threat))+
+  facet_wrap(vars(marine_system), ncol=1, scales = "free")+
+  geom_col(position = "stack")+
+  labs(fill = "Climate impact\ndriver", x = "N articles")+ 
+  # colour palette derived from the IBM design library colour blind safe palette
+  # https://davidmathlogic.com/colorblind/#%23648FFF-%23785EF0-%23DC267F-%23FE6100-%23FFB000-%235E5C5E
+  scale_fill_manual(values = threatAES$colour, breaks = threatAES$label, na.value = "transparent")+ 
+  scale_y_discrete(limits = rev)+
+  theme_bw()+
+  theme(
+    #axis.text.x = element_text(angle = 45, hjust=1, vjust=1)
+    legend.position = "left",
+    axis.title.y = element_blank()
+  )
+
+fig4_B_barplot_ggp
+```
+
 
 Plot panel B with the breaks based on quantile
 
@@ -389,24 +414,79 @@ fig4_B_percent_ggp
 ```
 
 
-Still loses the idea of the gradient of changes in oro types across marine systems, so keep with the stacked bar plot? Include code here just in case
-```{r old stacked bar plot version}
-fig4_B_barplot_ggp <- ggplot(marSysTypeThreatSums, aes(y = oro_type, x=n_articles, fill = climate_threat))+
-  facet_wrap(vars(marine_system), ncol=1, scales = "free")+
-  geom_col(position = "stack")+
-  labs(fill = "Climate impact\ndriver", x = "N articles")+ 
-  # colour palette derived from the IBM design library colour blind safe palette
-  # https://davidmathlogic.com/colorblind/#%23648FFF-%23785EF0-%23DC267F-%23FE6100-%23FFB000-%235E5C5E
-  scale_fill_manual(values = threatAES$colour, breaks = threatAES$label, na.value = "transparent")+ 
-  scale_y_discrete(limits = rev)+
+
+```{r plot panel B normalizing by oro type ie by row to make a percentage with nonlinear colour scale}
+paneltotals <- marSysTypeThreatSums %>%
+  group_by(oro_type) %>%
+  summarise(total = sum(n_articles))
+
+marSysTypeThreatSumsNorm <- marSysTypeThreatSums %>%
+  left_join(paneltotals) %>%
+  mutate(percent_articles = n_articles/total*100)
+
+# nDat <- marSysTypeThreatSumsNorm
+# nDat$percent_articles[which(nDat$climate_threat == "Unidentified")] <- NA
+# naDat <- marSysTypeThreatSumsNorm %>%
+#             filter(climate_threat == "Unidentified") %>%
+#             rename(na_articles = percent_articles)
+
+
+# get breaks for the data
+breaksFill <- unique(c(seq(0,60,by=5), seq(50, 100, by=25)))
+
+## plot
+fig4_B_percent_nonlinear_ggp <- ggplot(marSysTypeThreatSumsNorm, 
+                                       aes(y = climate_threat, x=oro_type))+
+  facet_grid(vars(marine_system), labeller = label_wrap_gen(width=15))+
+  # Fill for all articles
+  geom_tile(aes(fill = percent_articles))+
+  # scale_fill_stepsn(name = "% articles", 
+  #                   n.breaks = n_breaksFill, nice.breaks = TRUE,
+  #                   labels = function(x){paste(x,"%")},
+  #                   colors = viridis::viridis(n_breaksFill),
+  #                   show.limits = TRUE, limits = c(0, max(nDat$percent_articles, na.rm = T)),
+  #                   na.value = "transparent")+ 
+  scale_fill_binned(name = "% articles", 
+               type = "viridis",
+               breaks = breaksFill, nice.breaks = FALSE,
+               labels = function(x) ifelse(1000 <= x, paste(x/1000, "k"), paste(x)),
+               rescaler = scales::rescale,
+               #values = range01(breaksFill),
+               show.limits = TRUE, 
+               limits = breaksFill[c(1, length(breaksFill))], 
+               oob= scales::squish,
+               na.value = "transparent",
+               guide = guide_coloursteps(order = 1), #barwidth = unit(0.5, 'cm') 
+               position = "top")+ 
+  
+  #scale_x_discrete(labels = stringr::str_wrap(typeAES$label, width=20))+
+  
+  geom_text(aes(label = formatC(n_articles, format="d", big.mark = ",")), 
+            col="darkgrey", size=3)+
+  
+  # other aesthetics
+  labs(y="Climate impact driver", x="ORO type")+ 
+  geom_vline(xintercept = c(3.5, 5.5), col="red", linewidth = 1.5)+
+  
+  #scale_y_discrete(limits = rev)+
+  #coord_flip()+
   theme_bw()+
   theme(
-    #axis.text.x = element_text(angle = 45, hjust=1, vjust=1)
-    legend.position = "left",
-    axis.title.y = element_blank()
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 30, hjust=1, vjust=1, size=11),
+    axis.text.y = element_text(size=11),
+    #legend.position = "right",
+    legend.position = "top",
+    axis.title.x = element_blank(),
+    legend.key.height = unit(0.35, 'cm'),
+    legend.key.width = unit(1, 'cm'),
+    #legend.key.width = unit(0.3, 'cm'),
+    #legend.key.height = unit(0.8, 'cm'),
+    legend.text = element_text(size=6)
+    #legend.box = "vertical"
   )
 
-fig4_B_barplot_ggp
+fig4_B_percent_nonlinear_ggp
 ```
 
 
@@ -459,7 +539,14 @@ seagrass_ras <- as.raster(image_fill(image_read_svg(here::here("figures/phylopic
 
 
 ```{r Changing salt marsh prediction threshold}
+source(here::here("R/bool_detect.R"))
+source(here::here("R/clean_string.R"))
+source(here::here("R/utils.R"))
+
 ## Access relevant tables
+uniquerefs <- tbl(dbcon, "uniquerefs") %>% 
+  select(analysis_id, title, abstract, keywords)
+
 predMarSys <- tbl(dbcon, "pred_marine_system") %>%
   select(analysis_id, 
          `marine_system.land - mean_prediction`,
@@ -478,8 +565,33 @@ saltMarshDf <- tbl(dbcon, "pred_ecosystem_type") %>%
          `ecosystem_type.Salt_marsh - upper_pred`) %>%
   rename(mean = `ecosystem_type.Salt_marsh - mean_prediction`,
          upper = `ecosystem_type.Salt_marsh - upper_pred`) %>%
+  left_join(uniquerefs, by = "analysis_id") %>%
   collect() %>%
-  reshape2::melt(id.vars = "analysis_id", variable.name = "Prediction_boundary", value.name = "Prediction")
+  reshape2::melt(id.vars = c("analysis_id", "title","abstract","keywords"), variable.name = "Prediction_boundary", value.name = "Prediction")
+
+saltMarshDf <- saltMarshDf %>%
+  mutate(text = clean_string(paste(title, abstract, keywords))) %>%
+  select(-c(title, abstract, keywords)) %>%
+  mutate(match = bool_detect(text, "salt AND marsh*")) 
+
+
+## How many matches for salt marsh terms are there? 
+sumSaltMarshMatches <- saltMarshDf %>%
+  mutate(Threshold = ifelse(0.5 <= Prediction, "above 0.5 threshold","below 0.5 threshold")) %>%
+  group_by(Prediction_boundary, Threshold) %>%
+  summarise(n_matches = sum(match), n_total = n(), percent_matches = n_matches/n_total*100)
+
+#   Prediction_boundary Threshold           n_matches n_total percent_matches
+#   <fct>               <chr>                   <int>   <int>           <dbl>
+# 1 mean                below 0.5 threshold      1095   61656           1.78 
+# 2 upper               above 0.5 threshold       814   15428           5.28 
+# 3 upper               below 0.5 threshold       281   46228           0.608
+
+# So really, the number of keyword matches are pretty small in comparison to the number of articles predicted relevant. Using the upper threshold at 0.5, that's 5 % of all articles predicted relevant have the words "salt marsh" in them. 
+
+
+## Save results file
+# write.csv(sumSaltMarshMatches, file = here::here("outputs/saltMarshKeywordMatches.csv"))
 
 # Aesthetics for plotting
 marSysAES <- factor_aes[which(factor_aes$variable == "marine_system"),]
@@ -526,6 +638,7 @@ pdf(here::here("figures/supplemental/saltMarshPredictionsHistogramAndMarineSyste
 egg::ggarrange(saltMarshPredictions_ggp, saltMarshMarSys_ggp,
           nrow=1, ncol=2, newpage = FALSE, labels = c("a.","b."))
 dev.off()
+
 
 ```
 
@@ -605,7 +718,7 @@ adaptAES <- adaptAES[order(adaptAES$order),]
 ```
 
 
-Why are there a high number of coral reef papers and marine renewable energy predicted?
+Why are there a high number of salt marsh papers with mitigation outcomes and marine renewable energy predicted?
 ```{r Investigate the ecosystem x outcome for MRE}
 MRE_Df <- predRel %>%
   inner_join(predType, by="analysis_id") %>%
@@ -627,6 +740,59 @@ MRE_ggp <- ggplot(MRE_Df, aes(x=ecosystem_type, y=Outcome, fill=n_articles))+
   geom_tile()
 
 MRE_ggp
+
+
+## Investigate these papers & their topics using a Latent Dirichlet Allocation topic model
+
+# Filter to articles in this area
+uniquerefs <- tbl(dbcon, "uniquerefs") %>% 
+  select(analysis_id, title, abstract, keywords)
+
+MRE_saltMarsh <- predRel %>%
+  inner_join(predType, by="analysis_id") %>%
+  filter(oro_type == "Marine renewable energy" ) %>%
+  collect() %>%
+  inner_join(predMarSys, by="analysis_id") %>%
+  inner_join(predEcoType, by="analysis_id") %>%
+  left_join(predMit, by="analysis_id") %>%
+  filter(ecosystem_type == "Salt_marsh", 0.5 <= climate_mitigation, marine_system == "coastal_ocean") %>%
+  inner_join(uniquerefs, by = "analysis_id", copy=TRUE)
+
+
+# Are there any keyword matches for salt marshes?
+source(here::here("R/bool_detect.R"))
+source(here::here("R/clean_string.R"))
+source(here::here("R/utils.R"))
+MRE_saltMarsh$text <- clean_string(paste(
+  MRE_saltMarsh$title, MRE_saltMarsh$abstract, MRE_saltMarsh$keywords))
+marshMatches <- bool_detect(MRE_saltMarsh$text, "salt AND marsh*")
+sum(marshMatches) # 0 
+
+
+# So what are these papers about? -- Calculate topic model
+all_stopwords <- unique(c(litsearchr::get_stopwords("English"), revtools::revwords()))
+x_dtm <- revtools::make_dtm(MRE_saltMarsh$text, stop_words = all_stopwords)
+x_lda <- revtools::run_topic_model(x_dtm, "lda", 5, 5000)
+save(x_dtm, x_lda, file=here::here("outputs/saltMarshAndMRETopicModel.RData")) # save
+load(here::here("outputs/saltMarshAndMRETopicModel.RData"))
+
+docTopics <- topicmodels::topics(x_lda) # topic assigned to each document
+top5termsPerTopic <- topicmodels::terms(x_lda, 5) # top 5 terms in each topic 
+topicNames <- apply(top5termsPerTopic, 2, paste, collapse=" ") # use to create a topic name
+
+docTopicDf <- data.frame(
+  document_ID = names(docTopics),
+  topicNumber = docTopics,
+  topicName = topicNames[docTopics]
+)
+
+ggplot(docTopicDf, aes(x=docTopics, fill=topicName))+
+  geom_bar()+
+  labs(x="Topic Number", fill = "Top 5\ntopic terms",
+       caption = paste("N documents with pollut* term matches =", length(x_lda@documents)))+
+  theme_classic()
+
+
 ```
 
 
@@ -736,7 +902,9 @@ bi_pal(pal = biPal5, dim = 5) # Preview palette
 
 # Make my own breaks 
 library(classInt)
+# The percentage of coastal ecosystem articles
 brks1 <- classIntervals(c(mitigationSums$percent_articles, adaptationSums$percent_articles),n=5, style = "kmeans")$brks
+# The fraction of all articles made up by coastal ecosystem articles
 brks2 <- classIntervals(c(mitigationSums$coastEcoFraction, adaptationSums$coastEcoFraction), n=5,
                         style = "quantile")$brks
 # cut data
@@ -746,8 +914,13 @@ mitigationSums$coastEcoFraction_cut <- cut(mitigationSums$coastEcoFraction, brea
 adaptationSums$coastEcoFraction_cut <- cut(adaptationSums$coastEcoFraction, breaks = brks2, include.lowest = T)
 
 # Format data frames for bivariate plotting
+# Manually set 0 articles to class 1-1 otherwise it's counter intutitive
 mitigationSums <- bi_class(mitigationSums, x=percent_articles_cut, y=coastEcoFraction_cut, dim=5, style = "equal")
+mitigationSums$bi_class <- ifelse(mitigationSums$n_articles == 0, "1-1",mitigationSums$bi_class)
+
 adaptationSums <- bi_class(adaptationSums, x=percent_articles_cut, y=coastEcoFraction_cut, dim=5, style = "equal")
+adaptationSums$bi_class <- ifelse(adaptationSums$n_articles == 0, "1-1",adaptationSums$bi_class)
+
 
 # calculate labels
 labs <- bi_class_breaks(mitigationSums, x=percent_articles_cut, y = coastEcoFraction, style = "equal",
@@ -758,18 +931,24 @@ labs <- bi_class_breaks(mitigationSums, x=percent_articles_cut, y = coastEcoFrac
 ## For the adaptation plot, want to display two variables in triangles
 # so format data for plotting
 source(here::here("R/getTiles.R"))
+source(here::here("R/getTileCentre.R"))
 
 humanDf <- getTiles(df = adaptationSums, filterVar = "adapt_to_threat", filterVal = "Human", 
+                    orderVars = c(y="oro_type",x="ecosystem_type"),
+                    tileLoc = "bottomright")
+humanDfText <- getTileCentre(df = adaptationSums, filterVar = "adapt_to_threat", 
+                             filterVal = "Human", 
                     orderVars = c(y="oro_type",x="ecosystem_type"),
                     tileLoc = "bottomright")
 natureDf <- getTiles(df = adaptationSums, filterVar = "adapt_to_threat", filterVal = "Nature", 
                     orderVars = c(y="oro_type",x="ecosystem_type"),
                     tileLoc = "topleft"
                     )
-cii_text <- data.frame(
-  x=c(0.75,1.25),y=c(nrow(typeAES)+0.5,nrow(typeAES)-0.5),labs = c("Nature", "Human")
-)
-cii_text
+natureDfText <- getTileCentre(df = adaptationSums, filterVar = "adapt_to_threat", filterVal = "Nature", 
+                    orderVars = c(y="oro_type",x="ecosystem_type"),
+                    tileLoc = "topleft"
+                    )
+
 ```
 
 
@@ -782,28 +961,32 @@ write.csv(adaptationSums, here::here("outputs/coastalEcosystemsAdaptationSums.cs
 ```{r plot panel C.i - Mitigation as a bivariate map}
 fig4_C_i <- ggplot(mitigationSums, aes(y=oro_type, x=ecosystem_type))+
   geom_tile(aes(fill = bi_class), show.legend = FALSE)+
+  geom_text(data=mitigationSums %>% filter(0<n_articles),
+            aes(label = formatC(n_articles, format="d", big.mark=",")), col="black", size=4)+
   bi_scale_fill(pal = biPal5, dim=5, na.value = "white")+
   #scale_fill_gradient2(mid="white",high="#3182bd", midpoint = 0, guide = guide_coloursteps())+
   #scale_y_discrete(limits=rev)+
-  geom_hline(yintercept = c(0.5,2.5,4.5), col="black", linewidth=0.5)+
+  geom_hline(yintercept = c(3.5,5.5), col="black", linewidth=1)+
   # annotation_raster(marsh_ras, 0.5, 1.5, -2, -0)+
   # annotation_raster(mangrove_ras, 1.5, 2.5, -2, -0)+
   # annotation_raster(seagrass_ras, 2.5, 3.5, -2, -0)+
   # annotation_raster(coral_ras, 3.5, 4.5, -2, -0)+
   # coord_cartesian(ylim = c(-1.5, length(levels(mitigationSums$oro_type))), clip = 'off')+
   labs(
-    #x = "Ecosystem type", #y = "ORO type", 
+    x = "Ecosystem type", #y = "ORO type", 
     title = "i. Mitigation"
   )+
+  coord_flip()+ # Added this -- double check
   theme_bw()+
   theme(
-    axis.title.y = element_blank(),
+    #axis.title.y = element_blank(),
     panel.grid = element_blank(),
     legend.position = "bottom",
     #axis.text.x = element_text(angle=45, vjust=1, hjust=1)
     axis.text.x = element_blank(),
     axis.title.x = element_blank(),
-    axis.ticks.x = element_blank()
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_text(size=11)
   )
 
 
@@ -818,37 +1001,58 @@ finalPlot
 
 
 ```{r plot panel C.ii - Adaptation as a bivariate map}
+# cii_text <- data.frame(
+#   x=c(0.75,1.25),
+#   y=c(nrow(typeAES)+0.5,
+#       nrow(typeAES)-0.5),
+#   labs = c("Nature", "Human")
+# )
+cii_text <- data.frame(
+  x=c(nrow(ecoTypeAES)+0.45, nrow(ecoTypeAES)-0.45),
+  y=c(0.55,1.45),
+  labs = c("Nature", "Human")
+)
+
+
 
 fig4_C_ii <- ggplot()+
-  geom_polygon(data = humanDf, aes(x,y,group=id, fill = bi_class), show.legend = FALSE)+
-  geom_polygon(data = natureDf, aes(x,y,group=id, fill = bi_class), show.legend = FALSE)+
-  geom_text(data=cii_text, aes(x, y, label = labs), size=2)+
+  geom_polygon(data = humanDf %>% filter(0<n_articles), aes(x,y,group=id, fill = bi_class), show.legend = FALSE, col="darkgrey")+
+  geom_polygon(data = natureDf%>% filter(0<n_articles), aes(x,y,group=id, fill = bi_class), show.legend = FALSE, col="darkgrey")+
+  # geom_text(data=cii_text%>%filter(labs == "Nature"), aes(x, y, label = labs), size=2, hjust="inward", vjust="inward")+
+  # geom_text(data=cii_text%>%filter(labs == "Human"), aes(x, y, label = labs), size=2, hjust="outward", vjust="outward")+
+  
+  # Add text of article numbers 
+  geom_text(data=rbind(humanDfText, natureDfText)%>% filter(0<n_articles), aes(x,y,label = formatC(n_articles, format="d", big.mark = ",")),
+            col="black", size=3)+
   
   bi_scale_fill(pal = biPal5, dim=5, na.value = "white")+
   
-  geom_hline(yintercept = c(0.5,2.5,4.5), col="black", linewidth=0.5)+
-  annotation_raster(marsh_ras, 0.5, 1.5, -2, -0)+
-  annotation_raster(mangrove_ras, 1.5, 2.5, -2, -0)+
-  annotation_raster(seagrass_ras, 2.5, 3.5, -2, -0)+
-  annotation_raster(coral_ras, 3.5, 4.5, -2, -0)+
+  geom_hline(yintercept = c(3.5,5.5), col="black", linewidth=1)+
+
+  # annotation_raster(marsh_ras, 0.5, 1.5, -2, -0)+
+  # annotation_raster(mangrove_ras, 1.5, 2.5, -2, -0)+
+  # annotation_raster(seagrass_ras, 2.5, 3.5, -2, -0)+
+  # annotation_raster(coral_ras, 3.5, 4.5, -2, -0)+
   
-  # Format axes
+  # # Format axes
   scale_x_continuous(breaks = 1:nrow(ecoTypeAES),labels = ecoTypeAES$label)+
-  #scale_y_continuous(breaks = 1:nrow(typeAES),labels = typeAES$label)+
-  scale_y_binned(breaks = 1:nrow(typeAES),labels = typeAES$label)+
-  
-  coord_cartesian(ylim = c(-1.5, nrow(typeAES)), clip = 'off')+
+  scale_y_continuous(breaks = 1:nrow(typeAES),labels = stringr::str_wrap(typeAES$label, width=20))+
+  # scale_y_binned(breaks = 1:nrow(typeAES),labels = typeAES$label)+ #, limits = c(1,nrow(typeAES))
+  # 
+  # coord_cartesian(ylim = c(0.5, nrow(typeAES)+0.5), clip = 'off')+
   labs(
     x = "Ecosystem type", #y = "ORO type", 
     title = "ii. Adaptation"
   )+
+  coord_flip()+ # added this -- double check
   theme_bw()+
   theme(
     #plot.margin = unit(c(0,0,0,0), "cm"),
-    axis.title.y = element_blank(),
+    axis.title.x = element_blank(),
     panel.grid = element_blank(),
     legend.position = "bottom",
-    axis.text.x = element_text(angle=45, vjust=1, hjust=1)
+    axis.text.x = element_text(angle=45, vjust=1, hjust=1, size=11),
+    axis.text.y = element_text(size=11)
     #axis.title.x = element_text(vjust = -8)
   )
 
@@ -865,22 +1069,151 @@ finalPlot2
 ```{r plot of legend}
 labs2 <- labs
 labs2$bi_x <- round(labs2$bi_x)
+labs2$bi_y <- labs2$bi_y*100 # turn into percentage
 biLegend <- bi_legend(pal = biPal5,
                     dim = 5,
                     xlab = "% coastal ecosystem",
                     ylab = "% of all",
                     breaks = labs2,
                     arrows=FALSE,
-                    size = 6)
-biLegend
+                    size = 9)
+biLegend <- biLegend+theme(
+  panel.background = element_rect(fill="transparent"),
+  plot.background = element_rect(fill='transparent', color=NA))
 ```
 
 ```{r combine two panel C subplots together}
 fig4_C <- plot_grid(finalPlot, 
-                    finalPlot2+draw_plot(biLegend, x=0, y=0, width=0.4, height=0.4),
+                    finalPlot2+draw_plot(biLegend, x=-0.23, y=0, width=0.4, height=0.4),
                     nrow=2, rel_heights = c(0.7,1))
 fig4_C
 ```
+
+
+```{r save full figure of panel C as a supplementary figure}
+pdf(file = here::here("figures/supplemental/climateImpactDriversCoastalEcosystems_allOutcomes.pdf"), width =6, height = 7)
+
+plot_grid(fig4_C+theme(plot.margin = unit(c(0,0,0,3), "cm")))
+
+while (!is.null(dev.list())) dev.off()
+
+```
+
+
+```{r simplify panel C to combine mitigation and adaptation outcomes into one panel}
+cii_text <- data.frame(
+  x=c(nrow(ecoTypeAES)+0.45, nrow(ecoTypeAES)-0.45),
+  y=c(0.55,1.45),
+  labs = c("Nature", "Human")
+)
+
+
+## 1. Plot figure
+fig4_C_simplified <- ggplot()+
+  
+  # Plot mitigation tiles
+  geom_tile(data = mitigationSums %>% filter(0<n_articles & oro_branch == "Mitigation"), 
+            aes(y=as.numeric(factor(oro_type)), x=as.numeric(factor(ecosystem_type)),fill = bi_class), show.legend = FALSE)+
+  # Text of article numbers
+  geom_text(data=mitigationSums %>% filter(0<n_articles & oro_branch == "Mitigation"),
+            aes(y=as.numeric(factor(oro_type)), x=as.numeric(factor(ecosystem_type)),
+                label = formatC(n_articles, format="d", big.mark=",")), col="black", size=3)+
+  
+  # Plot triangles for adaptation outcomes
+  geom_polygon(data = humanDf %>% filter(0<n_articles & oro_branch != "Mitigation"), 
+               aes(x,y,group=id, fill = bi_class), show.legend = FALSE, col="darkgrey")+
+  geom_polygon(data = natureDf%>% filter(0<n_articles & oro_branch != "Mitigation"), 
+               aes(x,y,group=id, fill = bi_class), show.legend = FALSE, col="darkgrey")+
+  # text of article numbers 
+  geom_text(data=rbind(humanDfText, natureDfText)%>% filter(0<n_articles& oro_branch != "Mitigation"), 
+            aes(x,y,label = formatC(n_articles, format="d", big.mark = ",")),
+            col="black", size=3)+
+  
+  bi_scale_fill(pal = biPal5, dim=5, na.value = "white")+
+  
+  geom_hline(yintercept = c(3.5,5.5), col="black", linewidth=1)+
+
+  
+  # # Format axes
+  scale_x_continuous(breaks = 1:nrow(ecoTypeAES),labels = ecoTypeAES$label)+
+  scale_y_continuous(breaks = 1:nrow(typeAES),labels = stringr::str_wrap(typeAES$label, width=20))+
+  # scale_y_binned(breaks = 1:nrow(typeAES),labels = typeAES$label)+ #, limits = c(1,nrow(typeAES))
+  # 
+  # coord_cartesian(ylim = c(0.5, nrow(typeAES)+0.5), clip = 'off')+
+  labs(
+    x = "Ecosystem type" 
+  )+
+  coord_flip()+ # added this -- double check
+  theme_bw()+
+  theme(
+    #plot.margin = unit(c(0,0,0,0), "cm"),
+    axis.title.x = element_blank(),
+    panel.grid = element_blank(),
+    legend.position = "bottom",
+    axis.text.x = element_text(angle=45, vjust=1, hjust=1, size=11),
+    axis.text.y = element_text(size=11)
+    #axis.title.x = element_text(vjust = -8)
+  )
+
+
+
+# 2. New bi-legend
+biLegend2 <- bi_legend(pal = biPal5,
+                    dim = 5,
+                    xlab = "% Coastal ecosystem articles",
+                    ylab = "Coastal ecosystem % of all",
+                    breaks = labs2,
+                    arrows=FALSE,
+                    size = 9)
+biLegend2 <- biLegend2+theme(
+  panel.background = element_rect(fill="transparent"),
+  plot.background = element_rect(fill='transparent', color=NA))
+
+
+
+# 3. Legend showing where outcomes are displayed
+outcomeLegendDf <- rbind(
+  data.frame(
+    outcome = paste("Mitigation"), x= -0.5+c(0,1,1,0),y=-0.5+c(0,0,1,1)
+  ),
+  data.frame(
+    outcome = paste("Human\nadaptation"), x = 1+-0.5+c(0,1,1), y=-0.5+c(0,0,1)
+  ),
+  data.frame(
+    outcome = paste("Natural\nadaptation"), x=1+-0.5+c(0,1,0), y=-0.5+c(0,1,1)
+  )
+)
+
+outcomeLegendTextDf <- outcomeLegendDf %>%
+  group_by(outcome) %>%
+  mutate(x = mean(x), y = mean(y))
+
+outcomeLegend <- ggplot()+
+  geom_polygon(data=outcomeLegendDf, aes(x=x, y=y, group=outcome),
+               fill="transparent", col="black")+
+  geom_text(data=outcomeLegendTextDf, aes(x=x, y=y, label = outcome), col="black", size=3)+
+  theme(
+    panel.background = element_blank(),
+    panel.grid = element_blank(),
+    axis.line = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank()
+    
+  )
+
+
+fig4_C_simplified2 <- ggdraw() +
+  draw_plot(fig4_C_simplified+theme(plot.margin = unit(c(1,0.2,6,0), "cm")), 0, 0, 1, 1) +
+  draw_plot(biLegend2, x=0, y=0, width=0.4, height=0.4)+
+  draw_plot(outcomeLegend+theme(plot.margin = unit(c(0,0,1,0), "cm")), x=0.5, y=0, width=0.45, height=0.3)
+
+
+fig4_C_simplified2
+
+
+```
+
 
 ```{r old plot panel C.i - Mitigation}
 fig4_C_i <- ggplot(mitigationSums, aes(y=oro_type, x=ecosystem_type))+
@@ -916,13 +1249,15 @@ fig4_C_i
 
 
 
-# Write figure
+# Write main figure
 
 ```{r Write figure to pdf}
 pdf(file = here::here("figures/main/marineSystemsAndClimateImpactDrivers.pdf"),
     width = 15, height = 7)
-plot_grid(fig4_A_ggp,fig4_B_percent_ggp, fig4_C +theme(plot.margin = unit(c(2,0,0,0), "cm")), 
-          rel_widths = c(1,1,1), ncol=3, labels = list("a.","b.","c."), label_size = 17)
+plot_grid(fig4_A_ggp+theme(plot.margin = unit(c(0,0,2,0), "cm")),
+          fig4_B_percent_nonlinear_ggp+theme(plot.margin = unit(c(0,0.75,0,0), "cm")), 
+          fig4_C_simplified2, #+theme(plot.margin = unit(c(2,0,0,0), "cm"))
+          rel_widths = c(0.7,1,1), ncol=3, labels = list("a.","b.","c."), label_size = 19)
 while (!is.null(dev.list())) dev.off()
 
 ```
