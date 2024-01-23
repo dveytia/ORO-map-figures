@@ -59,27 +59,45 @@ for(i in 1:length(geoparsedTextFiles)){
   dbWriteTable(conn=dbcon,name=tblName, value=df, append=appendAction, overwrite = FALSE)
 }
 
+DBI::dbDisconnect(dbcon) # DIsconnect
 ```
 
 ```{r add other geoparsing tables}
+# Connect to latest version of the database
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+
+# Get a list of all the geoparsing file names
 geoparsingDir <- here::here("data/geoparsing")
-geoparsingFiles <- dir(geoparsedTextDir)
+geoparsingFiles <- dir(geoparsingDir)
 geoparsingFiles <- geoparsingFiles[grep(".csv", geoparsingFiles)]
 geoparsingTableNames <- gsub(".csv","", geoparsingFiles)
+geoparsingTableNames[-grep("grid_df_res", geoparsingTableNames)] <- gsub('[0-9]+', '', geoparsingTableNames[-grep("grid_df_res", geoparsingTableNames)])
+geoparsingTableNames <- unique(geoparsingTableNames)
 
 ## Loop through all the tables and write to the database
-for(i in 1:length(geoparsingFiles)){
+for(i in 1:length(geoparsingTableNames)){
+  # identify latest version of the file
+  files <- geoparsingFiles[grep(geoparsingTableNames[i], geoparsingFiles)]
+  fileVersions <- substr(files, nchar(geoparsingTableNames[i])+1, nchar(geoparsingTableNames[i])+1)
+  if("." %in% fileVersions){
+    fileVersions[which(fileVersions == ".")] <- 0
+  }
+  fileVersions <- as.numeric(fileVersions)
+  file <- files[which.max(fileVersions)]
+  
   # Read in file
-  df <- readr::read_csv(file = file.path(geoparsingDir, geoparsingFiles[i]), show_col_types = FALSE)
+  df <- readr::read_csv(file = file.path(geoparsingDir, file), show_col_types = FALSE)
   # Have to add this because some column names are duplicates (one is upper, the other is lower case)
-  if(geoparsingFiles[i] == "shp_df_natural-earth-shapes.csv"){
+  if(geoparsingTableNames[i] == "shp_df_natural-earth-shapes"){
     colnames(df) <- make.unique(tolower(colnames(df)), sep = "_")
   }
   # Write to database
-  dbWriteTable(conn=dbcon, name=geoparsingTableNames[i], value=df, append=FALSE, overwrite = FALSE)
+  dbWriteTable(conn=dbcon, name=geoparsingTableNames[i], value=df, append=FALSE, overwrite = TRUE)
 }
 
 src_dbi(dbcon)
+
+DBI::dbDisconnect(dbcon)
 ```
 
 
