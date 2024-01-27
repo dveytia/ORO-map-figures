@@ -276,7 +276,7 @@ typeMethodDfYear <- typeMethodDfYear %>%
 
 
 ```{r plot supplemental figure of method types by year}
-require(ggnewscale)
+#require(ggnewscale)
 
 SFig_methodYear <- ggplot(data=typeMethodDfYear %>% filter(as.Date("1980-01-01") <= year) %>%
                             mutate(oro_total_year = nlevels(typeMethodDfYear$method_type)+1))+
@@ -317,8 +317,95 @@ ggsave(here::here("figures/supplemental/methodTypeHovmoller.pdf"),
 ```
 
 
+# Alternative main figure combining Hovmoller plot with proportions displayed as doughnut plot
+
+```{r plot supplemental figure of method types by year with doughnuts showing proportions}
+
+## Panel a of the plot showing the % contributions through time
+
+SFig_methodYear_A <- ggplot(data=typeMethodDfYear %>% filter(as.Date("1980-01-01") <= year) %>%
+                            mutate(oro_total_year = nlevels(typeMethodDfYear$method_type)+1))+
+  facet_grid(rows=vars(oro_type),labeller = label_wrap_gen(width=15))+
+  geom_tile(aes(x=year, y=as.factor(as.numeric(method_type)), fill=method_percent))+
+  scale_fill_distiller(name="% contribution", palette = "Blues", direction = 1)+
+  # new_scale_fill()+
+  # geom_tile(aes(x=year, fill = oro_total, y=oro_total_year))+
+  # scale_fill_viridis_c(name="N articles", option = "magma")+
+  geom_hline(yintercept=nlevels(typeMethodDfYear$method_type)+0.5)+
+  geom_text(aes(x=year, label=formatC(oro_total, format = "d", big.mark=",")),
+            y=nlevels(typeMethodDfYear$method_type)+1,
+            size = 2, angle=90, hjust=0)+
+  
+  scale_y_discrete(name = "Method type",
+                   limits = factor(seq(1, nlevels(typeMethodDfYear$method_type)+2)),
+                   labels = c(levels(typeMethodDfYear$method_type), "N articles",""))+
+
+  scale_x_date(name = "Year")+
+  
+  theme_bw()+
+  theme(
+    panel.grid.major = element_blank(),
+    legend.position = "bottom",
+    axis.ticks.y = element_blank(),
+    strip.text = element_text(size=6)
+  )
+  
+SFig_methodYear_A
 
 
+## Panel B showing doughnut plots of overall proportions
+SFig_methodYear_B <- typeMethodDf %>%
+  arrange(oro_type, method_type) %>%
+  group_by(oro_type) %>%
+  mutate(ymax = cumsum(method_percent)) %>% 
+  mutate(ymax = ifelse(method_type == "Other", 100, ymax),
+         ymin = lag(ymax, default = 0)) %>% 
+  ggplot()+
+  facet_grid(rows = vars(oro_type))+
+  geom_rect(aes(ymax = ymax, ymin = ymin, xmax = 4, xmin = 3, fill = method_type))+
+  # geom_text(data = oroTotals, aes(x=3,label = oroTotal), y=0, size=2, col="black", inherit.aes = FALSE,vjust = 1, hjust=0.5)+ 
+  xlim(c(2,4))+
+  coord_polar(theta = "y")+
+  
+  # Format scales
+  scale_fill_manual(name = "Method type",
+                    values = as.vector(methodAES$colour))+
+  # scale_x_discrete(limits = levels(typeMethodDf$order), 
+  #                   labels = levels(typeMethodDf$oro_type))+
+  # ylim(c(0,105))+
+  # guides(fill=guide_legend(ncol=2))+
+  
+  # labs(y="Percent contribution")+
+  theme(
+    panel.background = element_rect(fill="white",colour = "white"),
+    panel.grid.major = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.title.y = element_blank(),
+    strip.background = element_blank(),
+    strip.text = element_blank(),
+    legend.position = "right"
+  )
+
+SFig_methodYear_B
+
+
+```
+
+
+```{r save supplemental method type hovmoller plot}
+require(cowplot)
+
+pdf(file = here::here("figures/main/methodsHovmollerDoughnut.pdf"),
+    width = 9, height = 7)
+plot_grid(SFig_methodYear_A,
+          SFig_methodYear_B+theme(plot.margin = unit(c(0,0,2.75,0), "cm")), 
+          rel_widths = c(1,0.5), rel_heights = c(1,0.2), ncol=2) #labels = list("a.","b."), label_size = 17
+while (!is.null(dev.list())) dev.off()
+```
 
 
 
