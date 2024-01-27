@@ -101,6 +101,128 @@ DBI::dbDisconnect(dbcon)
 ```
 
 
+```{r additional data cleaning of false associations between country matches for v3}
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, "all_tables_v3.sqlite"), create=FALSE)
+
+example_ids <- c(35143, 527)
+
+geoparsed_text <- tbl(dbcon, "geoparsed_text") %>%
+  filter(analysis_id %in% example_ids) %>%
+  collect()
+
+shp_df_matches <- tbl(dbcon, "geoparsed-text_shp_df_matches") %>%
+  filter(analysis_id %in% example_ids) %>%
+  collect()
+
+grid_df <- tbl(dbcon, "grid_df_res2.5") %>%
+  collect() 
+
+grid_df2 <- grid_df %>% right_join(shp_df_matches, by = "grid_df_id")
+
+
+## quick plot
+plot(grid_df$LON, grid_df$LAT)
+
+# So the geoparsing and matching to shapefiles looks fine, but its the intersection between shpfile polygons to grid ids that looks to be the problem. Try in R? The relevant shp_id is 31
+
+
+
+##  Recalculate shp_id to grid_df_id matching in R -----------
+shp_grid_df <- read.csv("C:\\Users\\deviv\\R-working-folder\\spacy_example\\outputs\\shp_grid_df.csv")
+
+countries <- map_data("world")
+
+shp_grid_df %>%
+  filter(shpfile_id == 31) %>%
+  left_join(grid_df, by = "grid_df_id") %>%
+  View() 
+
+shp_grid_df %>%
+  filter(shpfile_id == 31) %>%
+  left_join(grid_df, by = "grid_df_id") %>%
+  ggplot(aes(LON, LAT))+
+  geom_point(col="red")+
+  geom_polygon(data = countries, aes(long, lat, group=group))
+
+# The version calculated in my spacy script seems good, so use this and make the sqlite file version 2
+
+shp_df_matches <- tbl(dbcon, "geoparsed-text_shp_df_matches") %>% collect()
+
+# Separate where there is and isn't a shp_id
+shp_df_matches_noID <- shp_df_matches %>% filter(is.na(shp_id))
+shp_df_matches_ID <- shp_df_matches %>% filter(!is.na(shp_id))
+
+# Get unique combinations of analysis id, shp id, and place to rematch to grid cells
+shp_df_matches_ID_unique <- shp_df_matches_ID[c("analysis_id","shp_id","place")]
+shp_df_matches_ID_unique <- shp_df_matches_ID_unique[!duplicated(shp_df_matches_ID_unique),]
+
+# for each shp_id, add new rows for all the relevant grid cells
+shp_df_matches_ID_unique <- merge(shp_df_matches_ID_unique, shp_grid_df %>% rename(shp_id = "shpfile_id"),
+                                  by = "shp_id", all.x = TRUE, all.y = FALSE)
+
+
+# Double check again shp_id 31 (the UK) -- yes
+shp_df_matches_ID_unique %>%
+  filter(shp_id == 31) %>%
+  left_join(grid_df, by = "grid_df_id") %>%
+  ggplot(aes(LON, LAT))+
+  geom_point(col="red")+
+  geom_polygon(data = countries, aes(long, lat, group=group))
+
+
+
+# Calculate the grid cell weight
+## For each unique document and place, calculate the 1/the number of grid cells occupied by that place to get the grid cell weight
+shp_df_matches_ID_unique <- shp_df_matches_ID_unique %>%
+  group_by(analysis_id, shp_id) %>%
+  mutate(cell_weight = 1/n())
+
+# noticed that where there was no shp_id, cell weight was NA so recalculate grouping by place
+shp_df_matches_noID <- shp_df_matches_noID %>%
+  group_by(analysis_id, place) %>%
+  mutate(cell_weight = 1/n())
+
+## Rejoin new shp_id to grid matches with those rows that didn't have a shp_id
+shp_df_matches2 <- rbind(shp_df_matches_ID_unique, shp_df_matches_noID)
+
+
+## Recalculate grid sums
+shp_df_sum = shp_df_matches2 %>%
+  group_by(grid_df_id) %>%
+  summarise(n_articles = n(), n_articles_weighted = sum(cell_weight, na.rm=TRUE)) %>%
+  right_join(grid_df, by = "grid_df_id")
+
+# quick plot
+shp_df_sum %>%
+  ggplot()+
+  geom_tile(aes(LON, LAT, fill = log(n_articles_weighted)))+
+  scale_fill_viridis_c(option = "D")+
+  geom_polygon(data = countries, aes(long, lat, group=group), fill="transparent")
+  #coord_map(projection = "mercator")
+
+
+DBI::dbDisconnect(dbcon)
+
+```
+
+```{r Add fixes to new sqlite database v4}
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, "all_tables_v4.sqlite"), create=FALSE)
+
+# Write over old tables
+dbWriteTable(conn=dbcon, name="geoparsed-text_shp_df_matches", value=shp_df_matches, append=FALSE, overwrite = TRUE)
+
+dbWriteTable(conn=dbcon, name="shp_grid_df", value=shp_grid_df, append=FALSE, overwrite = TRUE)
+
+dbWriteTable(conn=dbcon, name="geoparsed-text_grid-sums", value=shp_df_sum, append=FALSE, overwrite = TRUE)
+
+
+DBI::dbDisconnect(dbcon)
+```
+
+
+
+
+
 ```{r disconnect from database}
 DBI::dbDisconnect(dbcon)
 ```
