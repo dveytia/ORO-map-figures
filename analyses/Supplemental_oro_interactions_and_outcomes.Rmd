@@ -10,5 +10,205 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r load libraries}
+library(dplyr)
+library(dbplyr)
+library(R.utils)
+library(RSQLite)
 library(ComplexUpset)
+library(ggplot2)
+
 ```
+
+```{r Get the latest version of sqlite database and connect}
+sqliteDir <- here::here("data/sqlite-databases")
+sqliteFiles <- dir(sqliteDir)
+sqliteVersions <- as.numeric(gsub(".sqlite","",substring(sqliteFiles, regexpr("_v", sqliteFiles) + 2)))
+latestVersion <- sqliteFiles[which.max(sqliteVersions)]
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+```
+
+
+```{r import common aesthetics}
+factor_aes <- readxl::read_excel(here::here("R/factor_aesthetics.xlsx"))
+
+```
+
+
+# Upset plot of ORO-ORO interactions
+
+From this can safely conclude that 2D interaciton matrix is enough -- the three way doesn't reveal much.
+Also, links between c02 removal and conservation, as well as conservation and built infrastructure and tech, and increase efficiency and MRE.
+
+```{r calculate oro-oro interaction sizes}
+predRel <- tbl(dbcon, "pred_relevance") %>%
+  filter(0.5 <= relevance_mean) %>%
+  select(analysis_id)
+predType <- tbl(dbcon, "pred_oro_type_long") %>%
+  filter(0.5 <= mean) %>%
+  select(analysis_id, oro_type)
+
+## Join together to get relevance preditions for all included
+oroTypeDf <- predRel %>%
+  inner_join(predType, by ="analysis_id") %>% 
+  collect()
+
+# Format aesthetics for plotting
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+
+oroTypeDf <- oroTypeDf %>%
+  mutate(oro_type = factor(oro_type, levels = typeAES$level, labels = typeAES$label))
+
+# format as tabular data
+oroTypeDf_wide <- oroTypeDf %>%
+  select(analysis_id, oro_type) %>%
+  mutate(count = 1) %>%
+  reshape2::dcast(analysis_id ~ oro_type, drop=FALSE, value.var = "count")
+
+upsetCols <- typeAES %>%
+  rename(set = label, fill = colour) %>%
+  select(set, fill)
+
+
+# Also calculate interaction matrix
+oroTypeDf_mat <- crossprod(table(oroTypeDf[,c("analysis_id","oro_type")]))
+
+```
+
+```{r save upset plot}
+pdf(here::here("figures/supplemental/oroInteractionsUpsetPlot.pdf"), width = 10, height=5)
+
+upset(
+  data=oroTypeDf_wide,
+  intersect = rev(colnames(oroTypeDf_wide)[colnames(oroTypeDf_wide) != "analysis_id"]),
+  sort_sets = FALSE,
+  base_annotations = list('Intersection size' = intersection_size(text = list(size=2.5))), #, vjust=-0.1, hjust=-0.1, angle=45
+  set_sizes = (upset_set_size(geom = geom_bar(fill = "white"))+
+                 geom_text(aes(label=..count..), hjust=1.1, stat='count', size=2.5, col="white")+
+                 expand_limits(y=30000)+
+                 theme(axis.text.x = element_text(angle=90))),
+  stripes = rev(typeAES$colour),
+  sort_intersections = 'ascending',
+  sort_intersections_by = c("degree","cardinality"),
+  group_by = "degree",
+  min_degree = 2,
+  # highlight some interesting interactions
+  # links between c02 removal and conservation, as well as conservation and built infrastructure and tech, and increase efficiency and MRE
+  queries = list(
+    upset_query(intersect = c("CO2 removal or storage", "Conservation"), color = "orange", fill="orange"),
+    upset_query(intersect = c("Built infrastructure & technology", "Conservation"), color = "orange", fill="orange"),
+    upset_query(intersect = c("Marine renewable energy", "Increase efficiency"), color = "orange", fill="orange")
+  )
+  # queries = list(
+  #   # Colour set bars
+  #   upset_query(set = paste(upsetCols[1,1]), fill = paste(upsetCols[1,2])),
+  #   upset_query(set = paste(upsetCols[2,1]), fill = paste(upsetCols[2,2])),
+  #   upset_query(set = paste(upsetCols[3,1]), fill = paste(upsetCols[3,2])),
+  #   upset_query(set = paste(upsetCols[4,1]), fill = paste(upsetCols[4,2])),
+  #   upset_query(set = paste(upsetCols[5,1]), fill = paste(upsetCols[5,2])),
+  #   upset_query(set = paste(upsetCols[6,1]), fill = paste(upsetCols[6,2])),
+  #   upset_query(set = paste(upsetCols[7,1]), fill = paste(upsetCols[7,2]))
+  # )
+)
+
+dev.off()
+```
+
+
+```{r save 2D upset plot}
+pdf(here::here("figures/supplemental/oroInteractionsUpsetPlot2D.pdf"), width = 10, height=5)
+
+upset(
+  data=oroTypeDf_wide,
+  intersect = rev(colnames(oroTypeDf_wide)[colnames(oroTypeDf_wide) != "analysis_id"]),
+  sort_sets = FALSE,
+  sort_intersections = 'descending',
+  sort_intersections_by = c("degree","cardinality"),
+  group_by = "degree",
+  min_degree = 2,
+  max_degree = 2,
+  queries = list(
+    # Colour set bars
+    upset_query(set = paste(upsetCols[1,1]), fill = paste(upsetCols[1,2])),
+    upset_query(set = paste(upsetCols[2,1]), fill = paste(upsetCols[2,2])),
+    upset_query(set = paste(upsetCols[3,1]), fill = paste(upsetCols[3,2])),
+    upset_query(set = paste(upsetCols[4,1]), fill = paste(upsetCols[4,2])),
+    upset_query(set = paste(upsetCols[5,1]), fill = paste(upsetCols[5,2])),
+    upset_query(set = paste(upsetCols[6,1]), fill = paste(upsetCols[6,2])),
+    upset_query(set = paste(upsetCols[7,1]), fill = paste(upsetCols[7,2]))
+  )
+)
+
+dev.off()
+```
+
+
+# Proportions of outcome type by ORO
+
+```{r Calculate percent contribution of different outcomes by year}
+
+predRel <- tbl(dbcon, "pred_relevance") %>%
+  filter(0.5 <= relevance_mean) %>%
+  select(analysis_id)
+predType <- tbl(dbcon, "pred_oro_type_long") %>%
+  filter(0.5 <= mean) %>%
+  select(analysis_id, oro_branch, oro_type)
+predOutcome <- tbl(dbcon, "pred_outcome_type") %>%
+  select(analysis_id, 
+         `outcome_type.Mathematical_predictionsimulation - mean_prediction`,
+         `outcome_type.Social_primary - mean_prediction`,
+         `outcome_type.Empirical - mean_prediction`)
+uniquerefs <- tbl(dbcon, "uniquerefs")
+
+## Calculations for plotting
+
+# Join datasets for relevance, orotype and outcome predictions
+typeOutcomeDfYear <- predRel %>%
+  inner_join(predType, by ="analysis_id") %>%
+  inner_join(predOutcome, by = "analysis_id") %>%
+  inner_join(uniquerefs %>% select(analysis_id, year) %>% filter(!is.na(year)), by = "analysis_id") %>%
+  # For each ORO type and year, sum the number of predictions for each outcome type
+  group_by(oro_branch, oro_type, year) %>%
+  summarise(
+    Mathematical_predictionsimulation = sum(0.5 <= `outcome_type.Mathematical_predictionsimulation - mean_prediction`),
+    Social_primary = sum(0.5 <= `outcome_type.Social_primary - mean_prediction`),
+    Empirical = sum(0.5 <= `outcome_type.Empirical - mean_prediction`),
+    oro_total = n()
+  ) %>%
+  collect()
+
+# Melt dataframe
+typeOutcomeDfYear <- reshape2::melt(typeOutcomeDfYear, 
+                               id.vars = c("oro_branch","oro_type","year", "oro_total"),
+                               variable.name = "outcome_type", 
+                               value.name = "outcome_sum")
+
+# Calculate outcome sums as a percent of total
+typeOutcomeDfYear$outcome_percent <- round(typeOutcomeDfYear$outcome_sum/typeOutcomeDfYear$oro_total*100)
+
+
+
+## Factor aesthetics
+# Factor oro_type columns for both outcomes and totals dataframes 
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+
+outcomeAES <- factor_aes[which(factor_aes$variable == "outcome_type"),]
+outcomeAES <- outcomeAES[order(outcomeAES$order,decreasing = FALSE),]
+
+typeOutcomeDfYear <- typeOutcomeDfYear %>%
+  # merge(typeAES %>%
+  #         rename(oro_type=level) %>%
+  #         select(oro_type, order), by="oro_type") %>%
+  mutate(oro_type = factor(oro_type, levels = typeAES$level, labels = typeAES$label),
+         outcome_type = factor(outcome_type, 
+                              levels = outcomeAES$level[-grep("Other", outcomeAES$level)],
+                              labels = outcomeAES$label[-grep("Other", outcomeAES$label)]),
+         year = as.Date(paste0(year,"-01-01")))
+
+
+
+```
+
+
+
