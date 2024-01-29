@@ -146,19 +146,45 @@ dev.off()
 # Proportions of outcome type by ORO
 
 ```{r Calculate percent contribution of different outcomes by year}
+## Get data for productions
 
+# All metadata
+uniquerefs <- tbl(dbcon, "uniquerefs")
+
+# Relevant articles
 predRel <- tbl(dbcon, "pred_relevance") %>%
   filter(0.5 <= relevance_mean) %>%
   select(analysis_id)
+
+# ORO type
 predType <- tbl(dbcon, "pred_oro_type_long") %>%
   filter(0.5 <= mean) %>%
-  select(analysis_id, oro_branch, oro_type)
-predOutcome <- tbl(dbcon, "pred_outcome_type") %>%
-  select(analysis_id, 
-         `outcome_type.Mathematical_predictionsimulation - mean_prediction`,
-         `outcome_type.Social_primary - mean_prediction`,
-         `outcome_type.Empirical - mean_prediction`)
-uniquerefs <- tbl(dbcon, "uniquerefs")
+  select(analysis_id, oro_type)
+
+# Outcomes
+predMit <- tbl(dbcon, "pred_climate_mitigation") %>% 
+  #filter(0.5 <= `0 - relevance - mean_prediction`) %>%
+  #mutate(outcome = paste("Mitigation")) %>%
+  #select(analysis_id, outcome) %>%
+  rename(Mitigation = `0 - relevance - mean_prediction`) %>%
+  select(analysis_id, Mitigation) 
+
+predAdapt <- tbl(dbcon, "pred_adapt_to_threat") %>%
+  select(analysis_id, `adapt_to_threat.Human - mean_prediction`,
+         `adapt_to_threat.Natural - mean_prediction`) %>% 
+  rename(`Human adaptation` = `adapt_to_threat.Human - mean_prediction`,
+         `Natural adaptation` = `adapt_to_threat.Natural - mean_prediction`) %>% 
+  # collect()%>%
+  # reshape2::melt(id.vars = "analysis_id", #measure.vars = c("Human_adaptation","Natural_adaptation"), 
+  #                variable.name = "outcome", value.name = "mean_prediction") %>% 
+  # filter(0.5 <= mean_prediction) %>%
+  # select(analysis_id, outcome) 
+  select(analysis_id, `Human adaptation`, `Natural adaptation`)
+
+#predOutcome <- rbind(predMit, predAdapt)
+predOutcome <- full_join(predMit, predAdapt)
+
+
 
 ## Calculations for plotting
 
@@ -168,18 +194,18 @@ typeOutcomeDfYear <- predRel %>%
   inner_join(predOutcome, by = "analysis_id") %>%
   inner_join(uniquerefs %>% select(analysis_id, year) %>% filter(!is.na(year)), by = "analysis_id") %>%
   # For each ORO type and year, sum the number of predictions for each outcome type
-  group_by(oro_branch, oro_type, year) %>%
+  group_by(oro_type, year) %>%
   summarise(
-    Mathematical_predictionsimulation = sum(0.5 <= `outcome_type.Mathematical_predictionsimulation - mean_prediction`),
-    Social_primary = sum(0.5 <= `outcome_type.Social_primary - mean_prediction`),
-    Empirical = sum(0.5 <= `outcome_type.Empirical - mean_prediction`),
+    Mitigation = sum(0.5 <= Mitigation, na.rm=TRUE),
+    `Human adaptation` = sum(0.5 <= `Human adaptation`, na.rm=TRUE),
+    `Natural adaptation` = sum(0.5 <= `Natural adaptation`, na.rm=TRUE),
     oro_total = n()
   ) %>%
   collect()
 
 # Melt dataframe
 typeOutcomeDfYear <- reshape2::melt(typeOutcomeDfYear, 
-                               id.vars = c("oro_branch","oro_type","year", "oro_total"),
+                               id.vars = c("oro_type","year", "oro_total"),
                                variable.name = "outcome_type", 
                                value.name = "outcome_sum")
 
@@ -202,13 +228,103 @@ typeOutcomeDfYear <- typeOutcomeDfYear %>%
   #         select(oro_type, order), by="oro_type") %>%
   mutate(oro_type = factor(oro_type, levels = typeAES$level, labels = typeAES$label),
          outcome_type = factor(outcome_type, 
-                              levels = outcomeAES$level[-grep("Other", outcomeAES$level)],
-                              labels = outcomeAES$label[-grep("Other", outcomeAES$label)]),
+                              levels = outcomeAES$level,
+                              labels = outcomeAES$label),
          year = as.Date(paste0(year,"-01-01")))
 
 
 
 ```
+
+```{r Hovmoller plot showing the % contributions through time does not reveal much temporal variation}
+
+SFig_outcomeYear_A <- ggplot(data=typeOutcomeDfYear %>% filter(as.Date("1980-01-01") <= year) %>%
+                            mutate(oro_total_year = nlevels(typeOutcomeDfYear$outcome_type)+1))+
+  facet_grid(rows=vars(oro_type),labeller = label_wrap_gen(width=15))+
+  geom_tile(aes(x=year, y=as.factor(as.numeric(outcome_type)), fill=outcome_percent))+
+  scale_fill_distiller(name="% contribution", palette = "Blues", direction = 1)+
+  # new_scale_fill()+
+  # geom_tile(aes(x=year, fill = oro_total, y=oro_total_year))+
+  # scale_fill_viridis_c(name="N articles", option = "magma")+
+  geom_hline(yintercept=nlevels(typeOutcomeDfYear$outcome_type)+0.5)+
+  geom_text(aes(x=year, label=formatC(oro_total, format = "d", big.mark=",")),
+            y=nlevels(typeOutcomeDfYear$outcome_type)+1,
+            size = 2, angle=90, hjust=0)+
+  
+  scale_y_discrete(name = "Outcome type",
+                   limits = factor(seq(1, nlevels(typeOutcomeDfYear$outcome_type)+2)),
+                   labels = c(levels(typeOutcomeDfYear$outcome_type), "N articles",""))+
+
+  scale_x_date(name = "Year")+
+  
+  theme_bw()+
+  theme(
+    panel.grid.major = element_blank(),
+    legend.position = "bottom",
+    axis.ticks.y = element_blank(),
+    strip.text = element_text(size=6)
+  )
+  
+SFig_outcomeYear_A
+
+```
+
+```{r}
+## Doesn't add up will have to re-calculate
+
+typeOutcomeDf <- typeOutcomeDfYear %>%
+  group_by(oro_type, outcome_type) %>%
+  summarise(oro_total = sum(oro_total),
+            outcome_sum = sum(outcome_sum)) %>%
+  mutate(outcome_percent = outcome_sum/oro_total*100) %>%
+  arrange(oro_type, outcome_type) %>%
+  group_by(oro_type) %>%
+  mutate(ymax = cumsum(outcome_percent)) %>% 
+  mutate(#ymax = ifelse(method_type == "Other", 100, ymax),
+         ymin = lag(ymax, default = 0))
+
+
+SFig_methodYear_B <- typeMethodDf %>%
+  arrange(oro_type, method_type) %>%
+  group_by(oro_type) %>%
+  mutate(ymax = cumsum(method_percent)) %>% 
+  mutate(ymax = ifelse(method_type == "Other", 100, ymax),
+         ymin = lag(ymax, default = 0)) %>% 
+  ggplot()+
+  facet_grid(rows = vars(oro_type))+
+  geom_rect(aes(ymax = ymax, ymin = ymin, xmax = 4, xmin = 3, fill = method_type))+
+  # geom_text(data = oroTotals, aes(x=3,label = oroTotal), y=0, size=2, col="black", inherit.aes = FALSE,vjust = 1, hjust=0.5)+ 
+  xlim(c(2,4))+
+  coord_polar(theta = "y")+
+  
+  # Format scales
+  scale_fill_manual(name = "Method type",
+                    values = as.vector(methodAES$colour))+
+  # scale_x_discrete(limits = levels(typeMethodDf$order), 
+  #                   labels = levels(typeMethodDf$oro_type))+
+  # ylim(c(0,105))+
+  # guides(fill=guide_legend(ncol=2))+
+  
+  # labs(y="Percent contribution")+
+  theme(
+    panel.background = element_rect(fill="white",colour = "white"),
+    panel.grid.major = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.title.y = element_blank(),
+    strip.background = element_blank(),
+    strip.text = element_blank(),
+    legend.position = "right"
+  )
+
+SFig_methodYear_B
+
+
+```
+
 
 
 
