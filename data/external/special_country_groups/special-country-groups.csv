@@ -1,0 +1,137 @@
+m49,Country,LDC,LLDC,SIDS,LIFDC,NFIC
+4,Afghanistan,Yes,Yes,No,Yes,Yes
+16,American Samoa,No,No,Yes,No,No
+24,Angola,Yes,No,No,No,Yes
+660,Anguilla,No,No,Yes,No,No
+28,Antigua and Barbuda,No,No,Yes,No,Yes
+51,Armenia,No,Yes,No,No,No
+533,Aruba,No,No,Yes,No,No
+31,Azerbaijan,No,Yes,No,No,No
+44,Bahamas,No,No,Yes,No,No
+48,Bahrain,No,No,Yes,No,No
+50,Bangladesh,Yes,No,No,Yes,Yes
+52,Barbados,No,No,Yes,No,Yes
+84,Belize,No,No,Yes,No,No
+204,Benin,Yes,No,No,Yes,Yes
+60,Bermuda,No,No,Yes,No,No
+64,Bhutan,Yes,Yes,No,No,Yes
+68,Bolivia (Plurinational State of),No,Yes,No,No,No
+72,Botswana,No,Yes,No,No,Yes
+92,British Virgin Islands,No,No,Yes,No,No
+854,Burkina Faso,Yes,Yes,No,Yes,Yes
+108,Burundi,Yes,Yes,No,Yes,Yes
+132,Cabo Verde,No,No,Yes,No,No
+116,Cambodia,Yes,No,No,No,Yes
+120,Cameroon,No,No,No,Yes,No
+136,Cayman Islands,No,No,Yes,No,No
+140,Central African Republic,Yes,Yes,No,Yes,Yes
+148,Chad,Yes,Yes,No,Yes,Yes
+174,Comoros,Yes,No,Yes,Yes,Yes
+178,Congo,No,No,No,Yes,No
+184,Cook Islands,No,No,Yes,No,No
+384,Côte d'Ivoire,No,No,No,Yes,Yes
+192,Cuba,No,No,Yes,No,Yes
+531,Curacao,No,No,Yes,No,No
+408,Democratic People's Republic of Korea,No,No,No,Yes,No
+180,Democratic Republic of the Congo,Yes,No,No,Yes,Yes
+262,Djibouti,Yes,No,No,Yes,Yes
+212,Dominica,No,No,Yes,No,Yes
+214,Dominican Republic,No,No,Yes,No,Yes
+218,Ecuador,No,No,No,No,No
+818,Egypt,No,No,No,No,Yes
+222,El Salvador,No,No,No,No,Yes
+232,Eritrea,Yes,No,No,Yes,Yes
+748,Eswatini,No,Yes,No,No,Yes
+231,Ethiopia,Yes,Yes,No,Yes,Yes
+242,Fiji,No,No,Yes,No,No
+258,French Polynesia,No,No,Yes,No,No
+266,Gabon,No,No,No,No,Yes
+270,Gambia,Yes,No,No,Yes,Yes
+288,Ghana,No,No,No,Yes,No
+308,Grenada,No,No,Yes,No,Yes
+312,Guadeloupe,No,No,Yes,No,No
+316,Guam,No,No,Yes,No,No
+320,Guatemala,No,No,No,No,No
+324,Guinea,Yes,No,No,Yes,Yes
+624,Guinea-Bissau,Yes,No,Yes,Yes,Yes
+328,Guyana,No,No,Yes,No,No
+332,Haiti,Yes,No,Yes,Yes,Yes
+340,Honduras,No,No,No,No,Yes
+356,India,No,No,No,Yes,No
+388,Jamaica,No,No,Yes,No,Yes
+400,Jordan,No,No,No,No,Yes
+398,Kazakhstan,No,Yes,No,No,No
+404,Kenya,No,No,No,Yes,Yes
+296,Kiribati,Yes,No,Yes,No,Yes
+417,Kyrgyzstan,No,Yes,No,Yes,No
+418,Lao People's Democratic Republic,Yes,Yes,No,No,Yes
+426,Lesotho,Yes,Yes,No,Yes,Yes
+430,Liberia,Yes,No,No,Yes,Yes
+450,Madagascar,Yes,No,No,Yes,Yes
+454,Malawi,Yes,Yes,No,Yes,Yes
+462,Maldives,No,No,Yes,No,Yes
+466,Mali,Yes,Yes,No,Yes,Yes
+584,Marshall Islands,No,No,Yes,No,No
+474,Martinique,No,No,Yes,No,No
+478,Mauritania,Yes,No,No,Yes,Yes
+480,Mauritius,No,No,Yes,No,Yes
+583,Micronesia (Federated States of),No,No,Yes,No,No
+496,Mongolia,No,Yes,No,No,Yes
+500,Montserrat,No,No,Yes,No,No
+504,Morocco,No,No,No,No,Yes
+508,Mozambique,Yes,No,No,Yes,Yes
+104,Myanmar,Yes,No,No,No,Yes
+516,Namibia,No,No,No,No,Yes
+520,Nauru,No,No,Yes,No,No
+524,Nepal,Yes,Yes,No,Yes,Yes
+540,New Caledonia,No,No,Yes,No,No
+558,Nicaragua,No,No,No,Yes,No
+562,Niger,Yes,Yes,No,Yes,Yes
+566,Nigeria,No,No,No,No,No
+570,Niue,No,No,Yes,No,No
+807,North Macedonia,No,Yes,No,No,No
+580,Northern Mariana Islands,No,No,Yes,No,No
+586,Pakistan,No,No,No,No,Yes
+585,Palau,No,No,Yes,No,No
+598,Papua New Guinea,No,No,Yes,No,No
+600,Paraguay,No,Yes,No,No,No
+604,Peru,No,No,No,No,Yes
+630,Puerto Rico,No,No,Yes,No,No
+498,Republic of Moldova,No,Yes,No,No,No
+646,Rwanda,Yes,Yes,No,Yes,Yes
+659,Saint Kitts and Nevis,No,No,Yes,No,Yes
+662,Saint Lucia,No,No,Yes,No,Yes
+670,Saint Vincent and the Grenadines,No,No,Yes,No,Yes
+882,Samoa,No,No,Yes,No,No
+678,Sao Tome and Principe,Yes,No,Yes,Yes,Yes
+686,Senegal,Yes,No,No,Yes,Yes
+690,Seychelles,No,No,Yes,No,No
+694,Sierra Leone,Yes,No,No,Yes,Yes
+702,Singapore,No,No,Yes,No,No
+534,Sint Maarten (Dutch part),No,No,Yes,No,No
+90,Solomon Islands,Yes,No,Yes,Yes,Yes
+706,Somalia,Yes,No,No,Yes,Yes
+728,South Sudan,Yes,Yes,No,Yes,Yes
+144,Sri Lanka,No,No,No,No,Yes
+729,Sudan,Yes,No,No,Yes,Yes
+740,Suriname,No,No,Yes,No,No
+760,Syrian Arab Republic,No,No,No,Yes,No
+762,Tajikistan,No,Yes,No,Yes,No
+626,Timor-Leste,Yes,No,Yes,No,Yes
+768,Togo,Yes,No,No,Yes,Yes
+776,Tonga,No,No,Yes,No,No
+780,Trinidad and Tobago,No,No,Yes,No,Yes
+788,Tunisia,No,No,No,No,Yes
+795,Turkmenistan,No,Yes,No,No,No
+796,Turks and Caicos Islands,No,No,Yes,No,No
+798,Tuvalu,Yes,No,Yes,No,Yes
+800,Uganda,Yes,Yes,No,Yes,Yes
+834,United Republic of Tanzania,Yes,No,No,Yes,Yes
+850,United States Virgin Islands,No,No,Yes,No,No
+860,Uzbekistan,No,Yes,No,Yes,No
+548,Vanuatu,Yes,No,Yes,No,Yes
+862,Venezuela (Bolivarian Republic of),No,No,No,No,Yes
+704,Viet Nam,No,No,No,Yes,No
+887,Yemen,Yes,No,No,Yes,Yes
+894,Zambia,Yes,Yes,No,No,Yes
+716,Zimbabwe,No,Yes,No,Yes,No

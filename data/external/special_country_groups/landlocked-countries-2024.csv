@@ -1,0 +1,44 @@
+"country","LandlockedCountries","region","BorderingCountries","BorderingCountriesCount"
+"Ethiopia","yes","Africa","Djibouti, Eritrea, Kenya, Somalia, South Sudan, Sudan",6
+"Uganda","yes","Africa","DR Congo, Kenya, Rwanda, South Sudan, Tanzania",5
+"Afghanistan","yes","Asia","China, Iran, Pakistan, Tajikistan, Turkmenistan, Uzbekistan",6
+"Uzbekistan","yes","Asia","Afghanistan, Kazakhstan, Kyrgyzstan, Tajikistan, Turkmenistan",5
+"Nepal","yes","Asia","China, India",2
+"Niger","yes","Africa","Algeria, Benin, Burkina Faso, Chad, Libya, Mali, Nigeria",7
+"Mali","yes","Africa","Algeria, Burkina Faso, Ivory Coast, Guinea, Mauritania, Niger, Senegal",7
+"Burkina Faso","yes","Africa","Benin, Ivory Coast, Ghana, Mali, Niger, Togo",6
+"Malawi","yes","Africa","Mozambique, Tanzania, Zambia",3
+"Zambia","yes","Africa","Angola, Botswana, DR Congo, , Malawi, Mozambique, Namibia, Tanzania, Zimbabwe",8
+"Kazakhstan","yes","Asia","China, Kazakhstan, Tajikistan, Uzbekistan",4
+"Chad","yes","Africa","Cameroon, Central African Republic, Libya, Niger, Nigeria, Sudan",6
+"Zimbabwe","yes","Africa","Botswana, Mozambique, South Africa, Zambia",4
+"Rwanda","yes","Africa","Burundi, DR Congo, Tanzania, Uganda",4
+"Burundi","yes","Africa","DR Congo, Rwanda, Tanzania",3
+"Bolivia","yes","South America","Argentina, Brazil, Chile, Paraguay, Peru",5
+"South Sudan","yes","Africa","Central African Republic, DR Congo, , Ethiopia, Kenya, Sudan, Uganda",6
+"Czech Republic","yes","Europe","Austria, Germany, Poland, Slovakia",4
+"Azerbaijan","yes","Asia","Armenia, Georgia, Iran, Russia, Turkey",5
+"Tajikistan","yes","Asia","Afghanistan, China, Kyrgyzstan, Uzbekistan",4
+"Hungary","yes","Europe","Austria, Croatia, Romania, Serbia, Slovakia, Slovenia, Ukraine",7
+"Belarus","yes","Europe","Latvia, Lithuania, Poland, Russia, Ukraine",5
+"Austria","yes","Europe","Czechia, Germany, Hungary, taly, Liechtenstein, Slovakia, Slovenia, Switzerland",8
+"Switzerland","yes","Europe","Austria, France, Germany, Italy, Liechtenstein",5
+"Laos","yes","Asia","China, Cambodia, Myanmar, Thailand, Vietnam",5
+"Serbia","yes","Europe","Albania, Bosnia and Herzegovina, Bulgaria, Croatia, Hungary, Montenegro, North Macedonia, Romania",8
+"Paraguay","yes","South America","Argentina, Bolivia, Brazil",3
+"Kyrgyzstan","yes","Asia","China, Kazakhstan, Tajikistan, Uzbekistan",4
+"Turkmenistan","yes","Asia","Afghanistan, Iran, Kazakhstan, Uzbekistan",4
+"Central African Republic","yes","Africa","Cameroon, Chad, Republic of the Congo, DR Congo, South Sudan, Sudan",6
+"Slovakia","yes","Europe","Austria, Czech Republic, Hungary, Poland, Ukraine",5
+"Mongolia","yes","Asia","China, Russia",2
+"Moldova","yes","Europe","Romania, Ukraine",2
+"Armenia","yes","Asia","Azerbaijan, Georgia, Iran, Turkey",4
+"Botswana","yes","Africa","Namibia, South Africa, Zambia, Zimbabwe",4
+"Lesotho","yes","Africa","South Africa",1
+"Eswatini","yes","Africa","Mozambique, South Africa",2
+"Bhutan","yes","Asia","China, India",2
+"Luxembourg","yes","Europe","Belgium, Germany, France",3
+"Andorra","yes","Europe","France, Spain",2
+"Liechtenstein","yes","Europe",,
+"San Marino","yes","Europe","Italy",1
+"Vatican City","yes","Europe",,
