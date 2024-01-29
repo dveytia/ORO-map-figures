@@ -38,9 +38,9 @@ id;code;alpha2;alpha3;name_fr;name_en;R5.2;R32
 37;124;CA;CAN;Canada;Canada;OECD;CAN
 38;132;CV;CPV;Cap-vert;Cape Verde;MAF;SSA-L
 39;136;KY;CYM;’_les Ca’Àmanes;Cayman Islands;;
-40;140;CF;CAF;R’©publique Centrafricaine;Central African;MAF;SSA-L
+40;140;CF;CAF;R’©publique Centrafricaine;Central African Republic;MAF;SSA-L
 41;144;LK;LKA;Sri Lanka;Sri Lanka;ASIA;OAS-M
-42;148;TD;TCD;Tchad;Tchad;MAF;SSA-L
+42;148;TD;TCD;Tchad;Chad-;MAF;SSA-L
 43;152;CL;CHL;Chili;Chile;LAM;LAM-M
 44;156;CN;CHN;Chine;China;ASIA;CHN
 45;158;TW;TWN;Ta’Àwan;Taiwan;ASIA;TWN
@@ -72,7 +72,7 @@ id;code;alpha2;alpha3;name_fr;name_en;R5.2;R32
 71;239;GS;SGS;G’©orgie du Sud et les ’_les Sandwich du Sud;South Georgia and the South Sandwich Islands;;
 72;242;FJ;FJI;Fidji;Fiji;ASIA;OAS-L
 73;246;FI;FIN;Finlande;Finland;OECD;EU15
-74;248;AX;ALA;’_les ’Äland;’Äland Islands;;
+74;248;AX;ALA;’_les ’Äland;≈land Islands;;
 75;250;FR;FRA;France;France;OECD;EU15
 76;254;GF;GUF;Guyane Fran’_aise;French Guiana;LAM;LAM-M
 77;258;PF;PYF;Polyn’©sie Fran’_aise;French Polynesia;ASIA;OAS-M
@@ -156,7 +156,7 @@ id;code;alpha2;alpha3;name_fr;name_en;R5.2;R32
 154;548;VU;VUT;Vanuatu;Vanuatu;ASIA;OAS-L
 155;554;NZ;NZL;Nouvelle-Z’©lande;New Zealand;OECD;ANUZ
 156;558;NI;NIC;Nicaragua;Nicaragua;LAM;LAM-L
-157;562;NE;NER;Niger;Niger;MAF;SSA-L
+157;562;NE;NER;Niger;Niger-;MAF;SSA-L
 158;566;NG;NGA;Nig’©ria;Nigeria;MAF;SSA-L
 159;570;NU;NIU;Niu’©;Niue;;
 160;574;NF;NFK;’_le Norfolk;Norfolk Island;;
