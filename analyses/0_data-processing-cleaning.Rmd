@@ -209,7 +209,7 @@ DBI::dbDisconnect(dbcon)
 dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, "all_tables_v4.sqlite"), create=FALSE)
 
 # Write over old tables
-dbWriteTable(conn=dbcon, name="geoparsed-text_shp_df_matches", value=shp_df_matches, append=FALSE, overwrite = TRUE)
+dbWriteTable(conn=dbcon, name="geoparsed-text_shp_df_matches", value=shp_df_matches2, append=FALSE, overwrite = TRUE)
 
 dbWriteTable(conn=dbcon, name="shp_grid_df", value=shp_grid_df, append=FALSE, overwrite = TRUE)
 
