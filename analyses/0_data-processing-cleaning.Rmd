@@ -220,6 +220,48 @@ DBI::dbDisconnect(dbcon)
 ```
 
 
+## Clean name matching errors - v5
+
+This section will clean the bad place matches from the geoparsing tables.
+
+Steps to clean:
+1. Remove matches where the word is 2-characters, except UK and US
+2. Remove text between copyright symbol and next period (get rid of publisher matching)
+3. Remove land matches x distance from the coast when the spatial scale of the match is sub-national
+4. Remove affiliation text from abstract, and any resulting word matches
+5. Remove word matches that are a complete word in the English language
+6. Weight match by country_conf value (0.6 - 1)
+
+```{r load data}
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, "all_tables_v4.sqlite"), create=FALSE)
+
+geoparsedText <- tbl(dbcon, "geoparsed_text")
+shp_df_matches <- tbl(dbcon, "geoparsed-text_shp_df_matches")
+shp_df_sum <- tbl(dbcon, "geoparsed-text_grid-sums")
+uniquerefs <- tbl(dbcon, "uniquerefs")
+
+```
+
+
+```{r steps for cleaning}
+
+
+```
+
+```{r Add fixes to new sqlite database v5}
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, "all_tables_v5.sqlite"), create=FALSE)
+
+# Write over old tables
+dbWriteTable(conn=dbcon, name="geoparsed_text", value=geoparsedText, append=FALSE, overwrite = TRUE)
+
+dbWriteTable(conn=dbcon, name="geoparsed-text_shp_df_matches", value=shp_df_matches2, append=FALSE, overwrite = TRUE)
+
+dbWriteTable(conn=dbcon, name="geoparsed-text_grid-sums", value=shp_df_sum, append=FALSE, overwrite = TRUE)
+
+
+DBI::dbDisconnect(dbcon)
+```
+
 
 
 
