@@ -225,12 +225,21 @@ DBI::dbDisconnect(dbcon)
 This section will clean the bad place matches from the geoparsing tables.
 
 Steps to clean:
-1. Remove matches where the word is 2-characters, except UK and US
+1. Remove acronym matches where the word matched is all capitalized letters, except UK and US
 2. Remove text between copyright symbol and next period (get rid of publisher matching)
 3. Remove land matches x distance from the coast when the spatial scale of the match is sub-national
 4. Remove affiliation text from abstract, and any resulting word matches
 5. Remove word matches that are a complete word in the English language
-6. Weight match by country_conf value (0.6 - 1)
+6. Weight match by country_conf value (0.6 - 1)** -> consider removing low values using cluster analysis altogether
+
+
+Notes on no. 3: 
+There are several definitions we can use to identify coastal land (from least to most conservative):
+a. Within 100 km from the land-sea interface (WRI 2000,Burke et al. 2001)
+b. Landward area contained within 100 m elevation of sea level (Nicholls and Small 2002)
+c. Landward area contained within the 200 m land elevation contour ((Land-ocean interaction in the coastal zone programme -- now Future Earth Coasts)[https://www.researchgate.net/publication/226867603_The_Coastal_Zone_-_a_Domain_of_Global_Interactions], Pernettaand Milliman 1995). This is designed to capture the area "extending from the coastal plains to the outer edge of the continental shelves, approximately matching the region that has been alternatively flooded and exposed during the sea level fluctuations of the late Quaternary period”(Holligan and de Boois 1993). 
+
+I suggest to take the conservative approach of option "c" and do landward area within 200 m land elevation contour. That said, if it is too complicated/time consuming, then option "a" looks easier -- we could make the argument that we extend it to 200 km from coast because given sea level rise locations further inland may be concerned with coastal research? 
 
 ```{r load data}
 dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, "all_tables_v4.sqlite"), create=FALSE)

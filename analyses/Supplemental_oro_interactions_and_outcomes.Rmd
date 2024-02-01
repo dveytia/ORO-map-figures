@@ -145,6 +145,134 @@ dev.off()
 
 # Proportions of outcome type by ORO
 
+## In total
+
+
+```{r Calculate percent contribution of different outcomes in total}
+## Get data for productions
+
+# Relevant articles
+predRel <- tbl(dbcon, "pred_relevance") %>%
+  filter(0.5 <= relevance_mean) %>%
+  select(analysis_id)
+
+# ORO type
+predType <- tbl(dbcon, "pred_oro_type_long") %>%
+  filter(0.5 <= mean) %>%
+  select(analysis_id, oro_type)
+
+# Outcomes
+predMit <- tbl(dbcon, "pred_climate_mitigation") %>% 
+  rename(Mitigation = `0 - relevance - mean_prediction`) %>%
+  select(analysis_id, Mitigation) 
+
+predAdapt <- tbl(dbcon, "pred_adapt_to_threat") %>%
+  select(analysis_id, `adapt_to_threat.Human - mean_prediction`,
+         `adapt_to_threat.Natural - mean_prediction`) %>% 
+  rename(`Human adaptation` = `adapt_to_threat.Human - mean_prediction`,
+         `Natural adaptation` = `adapt_to_threat.Natural - mean_prediction`) %>% 
+  select(analysis_id, `Human adaptation`, `Natural adaptation`)
+
+
+## The problem here is that Full joining will delete pred Mit -- need to do rbind instead so each row is unique analysis id x outcome, because > 1 outcome can be predicted for each analysis id
+predOutcome <- full_join(predMit, predAdapt)
+
+
+
+## Calculations for plotting
+
+# Join datasets for relevance, orotype and outcome predictions
+typeOutcomeDf <- predRel %>%
+  inner_join(predType, by ="analysis_id") %>%
+  inner_join(predOutcome, by = "analysis_id") %>%
+  # For each ORO type, sum the number of predictions for each outcome type
+  group_by(oro_type) %>%
+  summarise(
+    Mitigation = sum(0.5 <= Mitigation, na.rm=TRUE),
+    `Human adaptation` = sum(0.5 <= `Human adaptation`, na.rm=TRUE),
+    `Natural adaptation` = sum(0.5 <= `Natural adaptation`, na.rm=TRUE),
+    oro_total = n()
+  ) %>%
+  collect()
+
+# Also calcuate the total number of outcomes (could be > than number of papers because > 1 outcome/paper)
+typeOutcomeDf <- typeOutcomeDf %>%
+  mutate(outcome_total = rowSums(.[2:4]))
+  
+
+# Melt dataframe
+typeOutcomeDf <- reshape2::melt(typeOutcomeDf, 
+                               id.vars = c("oro_type","oro_total","outcome_total"),
+                               variable.name = "outcome_type", 
+                               value.name = "outcome_sum")
+
+# Calculate outcome sums as a percent of total
+typeOutcomeDf$outcome_percent <- round(typeOutcomeDf$outcome_sum/typeOutcomeDf$outcome_total*100)
+
+
+
+## Factor aesthetics
+# Factor oro_type columns for both outcomes and totals dataframes 
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+
+outcomeAES <- factor_aes[which(factor_aes$variable == "outcome_type"),]
+outcomeAES <- outcomeAES[order(outcomeAES$order,decreasing = FALSE),]
+
+typeOutcomeDf <- typeOutcomeDf %>%
+  left_join(typeAES %>%
+          rename(oro_type=level) %>%
+          select(oro_type, order), by="oro_type") %>%
+  mutate(oro_type = factor(oro_type, levels = typeAES$level, labels = typeAES$label),
+         order = factor(order, levels = typeAES$order),
+         outcome_type = factor(outcome_type, 
+                              levels = outcomeAES$level,
+                              labels = outcomeAES$label)) #%>%
+  #left_join(outcomeAES %>% select(label, colour) %>% rename(outcome_type = label), by = "outcome_type")
+
+
+head(typeOutcomeDf)
+```
+
+
+
+```{r plot as a proportion of total studies}
+outcomeProportion_ggp <- ggplot(typeOutcomeDf, aes(x=order, y=outcome_percent))+
+  # plot bars number of model predictions
+  geom_col(position = "stack", aes(fill = outcome_type))+
+  geom_text(aes(x=order,label = outcome_total), y=107, size=3, col="black", inherit.aes = FALSE, check_overlap = TRUE)+ 
+  
+  # Add vertical lines to separate branches
+  geom_vline(xintercept = c(3.5,5.5))+
+  
+  # Format scales
+  scale_fill_manual(name = "Outcome type",
+                    values = as.vector(outcomeAES$colour))+
+  scale_x_discrete(limits = levels(typeOutcomeDf$order), 
+                    labels = levels(typeOutcomeDf$oro_type))+
+  ylim(c(0,110))+
+  
+  labs(y="Percent contribution")+
+  theme(
+    panel.background = element_rect(fill="white",colour = "black"),
+    panel.grid.major = element_blank(),
+    axis.text.x = element_text(angle=45, hjust=1,size=10),
+    axis.title.x = element_blank(),
+    plot.margin = unit(c(0.15,0.15,0.5,1),'cm'),
+    legend.position = "bottom"
+  )
+
+outcomeProportion_ggp
+```
+
+```{r write figure of outcome type distribution}
+ggsave(filename = here::here("figures/supplemental/outcomesBarPlot.pdf"),plot = outcomeProportion_ggp,width = 7,height=5, units='in')
+```
+
+
+
+## By Year
+
 ```{r Calculate percent contribution of different outcomes by year}
 ## Get data for productions
 
@@ -269,39 +397,26 @@ SFig_outcomeYear_A
 
 ```
 
-```{r}
-## Doesn't add up will have to re-calculate
+```{r corresponding doughnut plots of overall proportions}
 
-typeOutcomeDf <- typeOutcomeDfYear %>%
-  group_by(oro_type, outcome_type) %>%
-  summarise(oro_total = sum(oro_total),
-            outcome_sum = sum(outcome_sum)) %>%
-  mutate(outcome_percent = outcome_sum/oro_total*100) %>%
+SFig_outcomeYear_B <- typeOutcomeDf %>%
   arrange(oro_type, outcome_type) %>%
   group_by(oro_type) %>%
   mutate(ymax = cumsum(outcome_percent)) %>% 
-  mutate(#ymax = ifelse(method_type == "Other", 100, ymax),
-         ymin = lag(ymax, default = 0))
-
-
-SFig_methodYear_B <- typeMethodDf %>%
-  arrange(oro_type, method_type) %>%
-  group_by(oro_type) %>%
-  mutate(ymax = cumsum(method_percent)) %>% 
-  mutate(ymax = ifelse(method_type == "Other", 100, ymax),
+  mutate(ymax = ifelse(outcome_type == "Other", 100, ymax),
          ymin = lag(ymax, default = 0)) %>% 
   ggplot()+
   facet_grid(rows = vars(oro_type))+
-  geom_rect(aes(ymax = ymax, ymin = ymin, xmax = 4, xmin = 3, fill = method_type))+
+  geom_rect(aes(ymax = ymax, ymin = ymin, xmax = 4, xmin = 3, fill = outcome_type))+
   # geom_text(data = oroTotals, aes(x=3,label = oroTotal), y=0, size=2, col="black", inherit.aes = FALSE,vjust = 1, hjust=0.5)+ 
   xlim(c(2,4))+
   coord_polar(theta = "y")+
   
   # Format scales
-  scale_fill_manual(name = "Method type",
-                    values = as.vector(methodAES$colour))+
-  # scale_x_discrete(limits = levels(typeMethodDf$order), 
-  #                   labels = levels(typeMethodDf$oro_type))+
+  scale_fill_manual(name = "Outcome type",
+                    values = as.vector(outcomeAES$colour))+
+  # scale_x_discrete(limits = levels(typeOutcomeDf$order), 
+  #                   labels = levels(typeOutcomeDf$oro_type))+
   # ylim(c(0,105))+
   # guides(fill=guide_legend(ncol=2))+
   
@@ -320,9 +435,21 @@ SFig_methodYear_B <- typeMethodDf %>%
     legend.position = "right"
   )
 
-SFig_methodYear_B
+SFig_outcomeYear_B
 
 
+```
+
+
+```{r save outcome type hovmoller doughnut plot}
+require(cowplot)
+
+pdf(file = here::here("figures/supplemental/outcomeHovmollerDoughnut.pdf"),
+    width = 9, height = 7)
+plot_grid(SFig_outcomeYear_A,
+          SFig_outcomeYear_B+theme(plot.margin = unit(c(0,0,2.75,0), "cm")), 
+          rel_widths = c(1,0.5), rel_heights = c(1,0.2), ncol=2) #labels = list("a.","b."), label_size = 17
+while (!is.null(dev.list())) dev.off()
 ```
 
 
