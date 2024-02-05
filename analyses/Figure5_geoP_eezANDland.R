@@ -112,7 +112,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   
   ## ---- FORMAT DATA
   
-    # --- Shapefile of grid cells the country & administration they belongs to.
+    # --- Shapefile of grid cells with the country & administration they belong to.
     grid_sf <- tbl(dbcon, "grid_df_res2.5") |> collect() |> 
       sf::st_as_sf(coords = c("LON", "LAT"), crs = 4326)
     
@@ -151,16 +151,28 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       dplyr::select(analysis_id, mitigation) |> 
       # Select only relevant articles and get there shp_id
       left_join(shp_df_matches |> distinct(grid_df_id, analysis_id, shp_id, place), by = "analysis_id") |>
-      right_join(grid_df_eez_land, by = "grid_df_id", copy = TRUE) |>  collect()
+      right_join(grid_df_eez_land, by = "grid_df_id", copy = TRUE) |>  
       filter(! is.na(analysis_id)) |> 
+      mutate(country_id = case_when(TERRITORY1 == "Greenland" ~ "Denmark",
+                                    TRUE ~ country_id)) |> 
       distinct(analysis_id, TERRITORY1, country_id) |>
       collect()
     
-    mitifation_geop_paper_country <- mitigation_grid_df |> 
+    mitigation_geop_paper_country <- mitigation_grid_df |> 
       group_by(TERRITORY1, country_id) |> 
       summarise(n_geop_paper = n()) 
     
-    subset_data35143 <- sf::st_as_sf(mitigation_grid_df |> filter(analysis_id == 35143), coords = c("LON", "LAT"), crs = 4326) # UK
+    ## Select the 100 papers of the countries with the least number of paper
+    bottom_countries_papers <- mitigation_geop_paper_country |> 
+      ungroup() |> 
+      arrange(n_geop_paper) |> 
+      filter(cumsum(n_geop_paper) > 150 & cumsum(n_geop_paper) < 250) |> # to have ~ 100 papers. length(unique(bottom_countries_papers$analysis_id))
+      left_join(mitigation_grid_df |>  dplyr::select(-country_id), by = "TERRITORY1") |> 
+      distinct(analysis_id, .keep_all = TRUE) |> 
+      arrange(analysis_id) 
+      
+    length(unique(bottom_countries_papers$analysis_id))
+    
     subset_data527   <- sf::st_as_sf(mitigation_grid_df |> filter(analysis_id == 527), coords = c("LON", "LAT"), crs = 4326) # UK
     subset_data1820  <- sf::st_as_sf(mitigation_grid_df |> filter(analysis_id == 1820), coords = c("LON", "LAT"), crs = 4326) # UK
     subset_data4605  <- sf::st_as_sf(mitigation_grid_df |> filter(analysis_id == 4605), coords = c("LON", "LAT"), crs = 4326) # France
