@@ -1,0 +1,457 @@
+---
+title: "Supplemental_oro_interactions_and_outcomes"
+author: "Devi Veytia"
+date: "2024-01-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load libraries}
+library(dplyr)
+library(dbplyr)
+library(R.utils)
+library(RSQLite)
+library(ComplexUpset)
+library(ggplot2)
+
+```
+
+```{r Get the latest version of sqlite database and connect}
+sqliteDir <- here::here("data/sqlite-databases")
+sqliteFiles <- dir(sqliteDir)
+sqliteVersions <- as.numeric(gsub(".sqlite","",substring(sqliteFiles, regexpr("_v", sqliteFiles) + 2)))
+latestVersion <- sqliteFiles[which.max(sqliteVersions)]
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+```
+
+
+```{r import common aesthetics}
+factor_aes <- readxl::read_excel(here::here("R/factor_aesthetics.xlsx"))
+
+```
+
+
+# Upset plot of ORO-ORO interactions
+
+From this can safely conclude that 2D interaciton matrix is enough -- the three way doesn't reveal much.
+Also, links between c02 removal and conservation, as well as conservation and built infrastructure and tech, and increase efficiency and MRE.
+
+```{r calculate oro-oro interaction sizes}
+predRel <- tbl(dbcon, "pred_relevance") %>%
+  filter(0.5 <= relevance_mean) %>%
+  select(analysis_id)
+predType <- tbl(dbcon, "pred_oro_type_long") %>%
+  filter(0.5 <= mean) %>%
+  select(analysis_id, oro_type)
+
+## Join together to get relevance preditions for all included
+oroTypeDf <- predRel %>%
+  inner_join(predType, by ="analysis_id") %>% 
+  collect()
+
+# Format aesthetics for plotting
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+
+oroTypeDf <- oroTypeDf %>%
+  mutate(oro_type = factor(oro_type, levels = typeAES$level, labels = typeAES$label))
+
+# format as tabular data
+oroTypeDf_wide <- oroTypeDf %>%
+  select(analysis_id, oro_type) %>%
+  mutate(count = 1) %>%
+  reshape2::dcast(analysis_id ~ oro_type, drop=FALSE, value.var = "count")
+
+upsetCols <- typeAES %>%
+  rename(set = label, fill = colour) %>%
+  select(set, fill)
+
+
+# Also calculate interaction matrix
+oroTypeDf_mat <- crossprod(table(oroTypeDf[,c("analysis_id","oro_type")]))
+
+```
+
+```{r save upset plot}
+pdf(here::here("figures/supplemental/oroInteractionsUpsetPlot.pdf"), width = 10, height=5)
+
+upset(
+  data=oroTypeDf_wide,
+  intersect = rev(colnames(oroTypeDf_wide)[colnames(oroTypeDf_wide) != "analysis_id"]),
+  sort_sets = FALSE,
+  base_annotations = list('Intersection size' = intersection_size(text = list(size=2.5))), #, vjust=-0.1, hjust=-0.1, angle=45
+  set_sizes = (upset_set_size(geom = geom_bar(fill = "white"))+
+                 geom_text(aes(label=..count..), hjust=1.1, stat='count', size=2.5, col="white")+
+                 expand_limits(y=30000)+
+                 theme(axis.text.x = element_text(angle=90))),
+  stripes = rev(typeAES$colour),
+  sort_intersections = 'ascending',
+  sort_intersections_by = c("degree","cardinality"),
+  group_by = "degree",
+  min_degree = 2,
+  # highlight some interesting interactions
+  # links between c02 removal and conservation, as well as conservation and built infrastructure and tech, and increase efficiency and MRE
+  queries = list(
+    upset_query(intersect = c("CO2 removal or storage", "Conservation"), color = "orange", fill="orange"),
+    upset_query(intersect = c("Built infrastructure & technology", "Conservation"), color = "orange", fill="orange"),
+    upset_query(intersect = c("Marine renewable energy", "Increase efficiency"), color = "orange", fill="orange")
+  )
+  # queries = list(
+  #   # Colour set bars
+  #   upset_query(set = paste(upsetCols[1,1]), fill = paste(upsetCols[1,2])),
+  #   upset_query(set = paste(upsetCols[2,1]), fill = paste(upsetCols[2,2])),
+  #   upset_query(set = paste(upsetCols[3,1]), fill = paste(upsetCols[3,2])),
+  #   upset_query(set = paste(upsetCols[4,1]), fill = paste(upsetCols[4,2])),
+  #   upset_query(set = paste(upsetCols[5,1]), fill = paste(upsetCols[5,2])),
+  #   upset_query(set = paste(upsetCols[6,1]), fill = paste(upsetCols[6,2])),
+  #   upset_query(set = paste(upsetCols[7,1]), fill = paste(upsetCols[7,2]))
+  # )
+)
+
+dev.off()
+```
+
+
+```{r save 2D upset plot}
+pdf(here::here("figures/supplemental/oroInteractionsUpsetPlot2D.pdf"), width = 10, height=5)
+
+upset(
+  data=oroTypeDf_wide,
+  intersect = rev(colnames(oroTypeDf_wide)[colnames(oroTypeDf_wide) != "analysis_id"]),
+  sort_sets = FALSE,
+  sort_intersections = 'descending',
+  sort_intersections_by = c("degree","cardinality"),
+  group_by = "degree",
+  min_degree = 2,
+  max_degree = 2,
+  queries = list(
+    # Colour set bars
+    upset_query(set = paste(upsetCols[1,1]), fill = paste(upsetCols[1,2])),
+    upset_query(set = paste(upsetCols[2,1]), fill = paste(upsetCols[2,2])),
+    upset_query(set = paste(upsetCols[3,1]), fill = paste(upsetCols[3,2])),
+    upset_query(set = paste(upsetCols[4,1]), fill = paste(upsetCols[4,2])),
+    upset_query(set = paste(upsetCols[5,1]), fill = paste(upsetCols[5,2])),
+    upset_query(set = paste(upsetCols[6,1]), fill = paste(upsetCols[6,2])),
+    upset_query(set = paste(upsetCols[7,1]), fill = paste(upsetCols[7,2]))
+  )
+)
+
+dev.off()
+```
+
+
+# Proportions of outcome type by ORO
+
+## In total
+
+
+```{r Calculate percent contribution of different outcomes in total}
+## Get data for productions
+
+# Relevant articles
+predRel <- tbl(dbcon, "pred_relevance") %>%
+  filter(0.5 <= relevance_mean) %>%
+  select(analysis_id)
+
+# ORO type
+predType <- tbl(dbcon, "pred_oro_type_long") %>%
+  filter(0.5 <= mean) %>%
+  select(analysis_id, oro_type)
+
+# Outcomes
+predMit <- tbl(dbcon, "pred_climate_mitigation") %>% 
+  rename(Mitigation = `0 - relevance - mean_prediction`) %>%
+  select(analysis_id, Mitigation) 
+
+predAdapt <- tbl(dbcon, "pred_adapt_to_threat") %>%
+  select(analysis_id, `adapt_to_threat.Human - mean_prediction`,
+         `adapt_to_threat.Natural - mean_prediction`) %>% 
+  rename(`Human adaptation` = `adapt_to_threat.Human - mean_prediction`,
+         `Natural adaptation` = `adapt_to_threat.Natural - mean_prediction`) %>% 
+  select(analysis_id, `Human adaptation`, `Natural adaptation`)
+
+
+## The problem here is that Full joining will delete pred Mit -- need to do rbind instead so each row is unique analysis id x outcome, because > 1 outcome can be predicted for each analysis id
+predOutcome <- full_join(predMit, predAdapt)
+
+
+
+## Calculations for plotting
+
+# Join datasets for relevance, orotype and outcome predictions
+typeOutcomeDf <- predRel %>%
+  inner_join(predType, by ="analysis_id") %>%
+  inner_join(predOutcome, by = "analysis_id") %>%
+  # For each ORO type, sum the number of predictions for each outcome type
+  group_by(oro_type) %>%
+  summarise(
+    Mitigation = sum(0.5 <= Mitigation, na.rm=TRUE),
+    `Human adaptation` = sum(0.5 <= `Human adaptation`, na.rm=TRUE),
+    `Natural adaptation` = sum(0.5 <= `Natural adaptation`, na.rm=TRUE),
+    oro_total = n()
+  ) %>%
+  collect()
+
+# Also calcuate the total number of outcomes (could be > than number of papers because > 1 outcome/paper)
+typeOutcomeDf <- typeOutcomeDf %>%
+  mutate(outcome_total = rowSums(.[2:4]))
+  
+
+# Melt dataframe
+typeOutcomeDf <- reshape2::melt(typeOutcomeDf, 
+                               id.vars = c("oro_type","oro_total","outcome_total"),
+                               variable.name = "outcome_type", 
+                               value.name = "outcome_sum")
+
+# Calculate outcome sums as a percent of total
+typeOutcomeDf$outcome_percent <- round(typeOutcomeDf$outcome_sum/typeOutcomeDf$outcome_total*100)
+
+
+
+## Factor aesthetics
+# Factor oro_type columns for both outcomes and totals dataframes 
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+
+outcomeAES <- factor_aes[which(factor_aes$variable == "outcome_type"),]
+outcomeAES <- outcomeAES[order(outcomeAES$order,decreasing = FALSE),]
+
+typeOutcomeDf <- typeOutcomeDf %>%
+  left_join(typeAES %>%
+          rename(oro_type=level) %>%
+          select(oro_type, order), by="oro_type") %>%
+  mutate(oro_type = factor(oro_type, levels = typeAES$level, labels = typeAES$label),
+         order = factor(order, levels = typeAES$order),
+         outcome_type = factor(outcome_type, 
+                              levels = outcomeAES$level,
+                              labels = outcomeAES$label)) #%>%
+  #left_join(outcomeAES %>% select(label, colour) %>% rename(outcome_type = label), by = "outcome_type")
+
+
+head(typeOutcomeDf)
+```
+
+
+
+```{r plot as a proportion of total studies}
+outcomeProportion_ggp <- ggplot(typeOutcomeDf, aes(x=order, y=outcome_percent))+
+  # plot bars number of model predictions
+  geom_col(position = "stack", aes(fill = outcome_type))+
+  geom_text(aes(x=order,label = outcome_total), y=107, size=3, col="black", inherit.aes = FALSE, check_overlap = TRUE)+ 
+  
+  # Add vertical lines to separate branches
+  geom_vline(xintercept = c(3.5,5.5))+
+  
+  # Format scales
+  scale_fill_manual(name = "Outcome type",
+                    values = as.vector(outcomeAES$colour))+
+  scale_x_discrete(limits = levels(typeOutcomeDf$order), 
+                    labels = levels(typeOutcomeDf$oro_type))+
+  ylim(c(0,110))+
+  
+  labs(y="Percent contribution")+
+  theme(
+    panel.background = element_rect(fill="white",colour = "black"),
+    panel.grid.major = element_blank(),
+    axis.text.x = element_text(angle=45, hjust=1,size=10),
+    axis.title.x = element_blank(),
+    plot.margin = unit(c(0.15,0.15,0.5,1),'cm'),
+    legend.position = "bottom"
+  )
+
+outcomeProportion_ggp
+```
+
+```{r write figure of outcome type distribution}
+ggsave(filename = here::here("figures/supplemental/outcomesBarPlot.pdf"),plot = outcomeProportion_ggp,width = 7,height=5, units='in')
+```
+
+
+
+## By Year
+
+```{r Calculate percent contribution of different outcomes by year}
+## Get data for productions
+
+# All metadata
+uniquerefs <- tbl(dbcon, "uniquerefs")
+
+# Relevant articles
+predRel <- tbl(dbcon, "pred_relevance") %>%
+  filter(0.5 <= relevance_mean) %>%
+  select(analysis_id)
+
+# ORO type
+predType <- tbl(dbcon, "pred_oro_type_long") %>%
+  filter(0.5 <= mean) %>%
+  select(analysis_id, oro_type)
+
+# Outcomes
+predMit <- tbl(dbcon, "pred_climate_mitigation") %>% 
+  #filter(0.5 <= `0 - relevance - mean_prediction`) %>%
+  #mutate(outcome = paste("Mitigation")) %>%
+  #select(analysis_id, outcome) %>%
+  rename(Mitigation = `0 - relevance - mean_prediction`) %>%
+  select(analysis_id, Mitigation) 
+
+predAdapt <- tbl(dbcon, "pred_adapt_to_threat") %>%
+  select(analysis_id, `adapt_to_threat.Human - mean_prediction`,
+         `adapt_to_threat.Natural - mean_prediction`) %>% 
+  rename(`Human adaptation` = `adapt_to_threat.Human - mean_prediction`,
+         `Natural adaptation` = `adapt_to_threat.Natural - mean_prediction`) %>% 
+  # collect()%>%
+  # reshape2::melt(id.vars = "analysis_id", #measure.vars = c("Human_adaptation","Natural_adaptation"), 
+  #                variable.name = "outcome", value.name = "mean_prediction") %>% 
+  # filter(0.5 <= mean_prediction) %>%
+  # select(analysis_id, outcome) 
+  select(analysis_id, `Human adaptation`, `Natural adaptation`)
+
+#predOutcome <- rbind(predMit, predAdapt)
+predOutcome <- full_join(predMit, predAdapt)
+
+
+
+## Calculations for plotting
+
+# Join datasets for relevance, orotype and outcome predictions
+typeOutcomeDfYear <- predRel %>%
+  inner_join(predType, by ="analysis_id") %>%
+  inner_join(predOutcome, by = "analysis_id") %>%
+  inner_join(uniquerefs %>% select(analysis_id, year) %>% filter(!is.na(year)), by = "analysis_id") %>%
+  # For each ORO type and year, sum the number of predictions for each outcome type
+  group_by(oro_type, year) %>%
+  summarise(
+    Mitigation = sum(0.5 <= Mitigation, na.rm=TRUE),
+    `Human adaptation` = sum(0.5 <= `Human adaptation`, na.rm=TRUE),
+    `Natural adaptation` = sum(0.5 <= `Natural adaptation`, na.rm=TRUE),
+    oro_total = n()
+  ) %>%
+  collect()
+
+# Melt dataframe
+typeOutcomeDfYear <- reshape2::melt(typeOutcomeDfYear, 
+                               id.vars = c("oro_type","year", "oro_total"),
+                               variable.name = "outcome_type", 
+                               value.name = "outcome_sum")
+
+# Calculate outcome sums as a percent of total
+typeOutcomeDfYear$outcome_percent <- round(typeOutcomeDfYear$outcome_sum/typeOutcomeDfYear$oro_total*100)
+
+
+
+## Factor aesthetics
+# Factor oro_type columns for both outcomes and totals dataframes 
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+
+outcomeAES <- factor_aes[which(factor_aes$variable == "outcome_type"),]
+outcomeAES <- outcomeAES[order(outcomeAES$order,decreasing = FALSE),]
+
+typeOutcomeDfYear <- typeOutcomeDfYear %>%
+  # merge(typeAES %>%
+  #         rename(oro_type=level) %>%
+  #         select(oro_type, order), by="oro_type") %>%
+  mutate(oro_type = factor(oro_type, levels = typeAES$level, labels = typeAES$label),
+         outcome_type = factor(outcome_type, 
+                              levels = outcomeAES$level,
+                              labels = outcomeAES$label),
+         year = as.Date(paste0(year,"-01-01")))
+
+
+
+```
+
+```{r Hovmoller plot showing the % contributions through time does not reveal much temporal variation}
+
+SFig_outcomeYear_A <- ggplot(data=typeOutcomeDfYear %>% filter(as.Date("1980-01-01") <= year) %>%
+                            mutate(oro_total_year = nlevels(typeOutcomeDfYear$outcome_type)+1))+
+  facet_grid(rows=vars(oro_type),labeller = label_wrap_gen(width=15))+
+  geom_tile(aes(x=year, y=as.factor(as.numeric(outcome_type)), fill=outcome_percent))+
+  scale_fill_distiller(name="% contribution", palette = "Blues", direction = 1)+
+  # new_scale_fill()+
+  # geom_tile(aes(x=year, fill = oro_total, y=oro_total_year))+
+  # scale_fill_viridis_c(name="N articles", option = "magma")+
+  geom_hline(yintercept=nlevels(typeOutcomeDfYear$outcome_type)+0.5)+
+  geom_text(aes(x=year, label=formatC(oro_total, format = "d", big.mark=",")),
+            y=nlevels(typeOutcomeDfYear$outcome_type)+1,
+            size = 2, angle=90, hjust=0)+
+  
+  scale_y_discrete(name = "Outcome type",
+                   limits = factor(seq(1, nlevels(typeOutcomeDfYear$outcome_type)+2)),
+                   labels = c(levels(typeOutcomeDfYear$outcome_type), "N articles",""))+
+
+  scale_x_date(name = "Year")+
+  
+  theme_bw()+
+  theme(
+    panel.grid.major = element_blank(),
+    legend.position = "bottom",
+    axis.ticks.y = element_blank(),
+    strip.text = element_text(size=6)
+  )
+  
+SFig_outcomeYear_A
+
+```
+
+```{r corresponding doughnut plots of overall proportions}
+
+SFig_outcomeYear_B <- typeOutcomeDf %>%
+  arrange(oro_type, outcome_type) %>%
+  group_by(oro_type) %>%
+  mutate(ymax = cumsum(outcome_percent)) %>% 
+  mutate(ymax = ifelse(outcome_type == "Other", 100, ymax),
+         ymin = lag(ymax, default = 0)) %>% 
+  ggplot()+
+  facet_grid(rows = vars(oro_type))+
+  geom_rect(aes(ymax = ymax, ymin = ymin, xmax = 4, xmin = 3, fill = outcome_type))+
+  # geom_text(data = oroTotals, aes(x=3,label = oroTotal), y=0, size=2, col="black", inherit.aes = FALSE,vjust = 1, hjust=0.5)+ 
+  xlim(c(2,4))+
+  coord_polar(theta = "y")+
+  
+  # Format scales
+  scale_fill_manual(name = "Outcome type",
+                    values = as.vector(outcomeAES$colour))+
+  # scale_x_discrete(limits = levels(typeOutcomeDf$order), 
+  #                   labels = levels(typeOutcomeDf$oro_type))+
+  # ylim(c(0,105))+
+  # guides(fill=guide_legend(ncol=2))+
+  
+  # labs(y="Percent contribution")+
+  theme(
+    panel.background = element_rect(fill="white",colour = "white"),
+    panel.grid.major = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.title.y = element_blank(),
+    strip.background = element_blank(),
+    strip.text = element_blank(),
+    legend.position = "right"
+  )
+
+SFig_outcomeYear_B
+
+
+```
+
+
+```{r save outcome type hovmoller doughnut plot}
+require(cowplot)
+
+pdf(file = here::here("figures/supplemental/outcomeHovmollerDoughnut.pdf"),
+    width = 9, height = 7)
+plot_grid(SFig_outcomeYear_A,
+          SFig_outcomeYear_B+theme(plot.margin = unit(c(0,0,2.75,0), "cm")), 
+          rel_widths = c(1,0.5), rel_heights = c(1,0.2), ncol=2) #labels = list("a.","b."), label_size = 17
+while (!is.null(dev.list())) dev.off()
+```
+
+
+
+

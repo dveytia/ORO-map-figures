@@ -12,8 +12,9 @@ oroAffiliations |>
 tmp = mitPubs |> 
   filter(analysis_id == 293101) ; tmp$affiliation
 
-test <- uniquerefs |> 
-  filter(analysis_id == 36439) |> collect() ; test$affiliation
+testX <- uniquerefs |> 
+  collect() |> 
+  filter(analysis_id == 332827) ; testX$doi ; testX$title ; testX$author ; testX$affiliation ; testX$abstract
 
 tmp2 = NA_country_ada2 |> 
   filter(stringr::str_detect(affiliation, pattern = "Korea \\(the Republic of\\)") == TRUE)
@@ -25,6 +26,10 @@ test2 <- raster::shapefile(here::here("data", "external", "eez_shp", "eez_bounda
 raster::plot(test)
 raster::plot(test2)
 
+
+tmp_x <- tbl(dbcon, "geoparsed-text_shp_df_matches") |> 
+  filter(analysis_id == 387040) |> 
+  collect()
 
 
 
