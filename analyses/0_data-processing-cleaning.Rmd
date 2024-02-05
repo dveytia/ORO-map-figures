@@ -244,7 +244,7 @@ I suggest to take the conservative approach of option "c" and do landward area w
 ```{r load data}
 dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, "all_tables_v4.sqlite"), create=FALSE)
 
-geoparsedText <- tbl(dbcon, "geoparsed_text")
+geoparsedText <- tbl(dbcon, "geoparsed_text") 
 shp_df_matches <- tbl(dbcon, "geoparsed-text_shp_df_matches")
 shp_df_sum <- tbl(dbcon, "geoparsed-text_grid-sums")
 uniquerefs <- tbl(dbcon, "uniquerefs")
@@ -254,6 +254,27 @@ uniquerefs <- tbl(dbcon, "uniquerefs")
 
 ```{r steps for cleaning}
 
+### Note N°1: Capital letter filtering
+
+  ## Extract world cities and countries names
+  library(maps)
+  cities <- as.data.frame(world.cities) 
+  
+  ## Filter rows if the word match in capital letter
+  word_in_capital_letters_TRUE <- tbl(dbcon, "geoparsed_text") |>  
+    dplyr::select(analysis_id, word, country_predicted, place_name) |> 
+    collect() |> 
+    # Filter row with a matching pattern in CAPITAL letters
+    filter(stringr::str_detect(word, pattern = "^[[:upper:][:space:]]+$")) |> 
+    mutate(word_title = stringr::str_to_title(word),
+           # New column to identify CAPITAL letters patterns that are country names
+           id_country = countrycode(sourcevar   = word,
+                                    origin      = "country.name",
+                                    destination = "country.name"),
+           # New column to identify CAPITAL letters patterns that are city names
+           city_T_F  = word_title %in% cities$name) |> 
+    # Filter rows whose the column word corresponds to a country OR city name
+    filter(!is.na(id_country) | city_T_F == TRUE)
 
 ```
 
