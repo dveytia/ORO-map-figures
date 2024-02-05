@@ -8,7 +8,7 @@
 #'
 #'
 #' @examples
-univariate_map <- function(data_map, color_scale, second.var, midpoint, title_color, title_size, show.legend, name = NULL){
+univariate_map <- function(data_map, eez = NULL, color_scale, second.var, midpoint, title_color, title_size, show.legend, name = NULL){
   
   ### Produce the map
   map <- ggplot2::ggplot() +
@@ -74,12 +74,13 @@ univariate_map <- function(data_map, color_scale, second.var, midpoint, title_co
                    legend.key           = element_rect(color = "white"),
                    legend.text        = ggplot2::element_text(size = 12))
   
+  
   if(!is.null(midpoint)){
     map <- map + 
-      ggplot2::scale_fill_gradient2(low = "darkred", 
-                                    high = "darkblue",
-                                    mid = "white",
-                                    midpoint = 0,
+      ggplot2::scale_fill_gradient2(low  = color_scale[1], 
+                                    high = color_scale[3],
+                                    mid  = color_scale[2],
+                                    midpoint = midpoint,
                                     na.value = "grey80")
   }
   
@@ -91,9 +92,29 @@ univariate_map <- function(data_map, color_scale, second.var, midpoint, title_co
                                     na.value = "grey80") 
   }
   
+  
+  if(!is.null(eez)){
+    
+    map <- map + 
+      
+      # ggnewscale::new_scale_fill() +
+      
+      ggplot2::geom_sf(data    = eez,
+                       mapping = ggplot2::aes(fill     = layer,
+                                              geometry = geometry),
+                       color   = "grey10",
+                       size    = 0.1,
+                       show.legend = FALSE) +
+      
+      ggplot2::scale_fill_gradientn(colors   = color_scale,
+                                    # values   = vals_colors_scale,
+                                    na.value = "grey80")
+    
+  }
+  
   if(!is.null(second.var)){
     map <- map +
-      stat_sf_coordinates(data        = data_map$data,
+      stat_sf_coordinates(data        = data_map$data |> filter(! group_land %in% c("Island", "AMUNRC")),
                           mapping     = aes(size = get(second.var)),
                           colour      = "darkblue",
                           # fill        = "grey90",
@@ -130,66 +151,104 @@ univariate_map <- function(data_map, color_scale, second.var, midpoint, title_co
 #' @export
 #'
 #' @examples
-biplot_fig2c <- function(data, xlab, ylab, color_scale, vals_colors_scale, log.transf, quant.prob, name = NULL){
+biplot_fig2c <- function(data, var.x, var.y, var.col, var.shape, xlab, ylab, one_one_line, color_scale, color_title, log.transf, quant.prob, name = NULL){
   
-  data <- data |> filter(!is.na(dominant_ORO) & !is.na(Count_ORO) & !is.na(Record.Count))
+  # data <- data |> filter(!is.na(dominant_ORO) & !is.na(Count_ORO) & !is.na(Record.Count))
     
   ### Log transformation if wanted
   if(log.transf == TRUE){
     data <- data |> 
-      mutate(Count_ORO    = log(Count_ORO+1),
-             Record.Count = log(Record.Count+1))
-  }
+      mutate(var_x = log(get(var.x)+1),
+             var_y = log(get(var.y)+1)) |> 
+      ungroup()
+  } else {data <- data |> rename(var_x = all_of(var.x), var_y = all_of(var.y)) |>  ungroup()}
   
   ### Residuals
   data <- data |> 
-    mutate(residuals = resid(lm(Count_ORO ~ Record.Count, data = cur_data())),
+    mutate(residuals = resid(lm(var_y ~ var_x, data = cur_data())),
            labels    = abs(residuals) >= quantile(abs(residuals), prob = quant.prob))
   
-
+  
+  data$labelsFR <- FALSE
+  data$labelsFR[data$country == "France"] <- TRUE
   
   plot <- ggplot(data    = data, 
-                 mapping = aes(x = Record.Count, 
-                               y = Count_ORO)) +
-    geom_point(mapping = aes(color = layer)) +
+                 mapping = aes(x = var_x, 
+                               y = var_y)) +
+    geom_point(mapping = aes(color = get(var.col)), size = 2.5) + # , shape = get(var.shape)
     geom_smooth(method  = lm, 
                 col     = "grey10") +
     
-    ylim(c(0, max(data$Count_ORO))) +
+  
+    # ylim(c(0, max(data$Count_ORO))) +
 
     xlab(label = xlab) +
     ylab(label = ylab) +
     geom_text_repel(data         = filter(data, labels == TRUE), 
-                    mapping      = aes(label = Country, color = layer),
+                    mapping      = aes(label = country), # 
                     max.overlaps = 100,
+                    size   = 5,
                     show.legend  = FALSE,
                     min.segment.length = 0.1) +
-    # scale_color_manual(values = color_scale, 
-    #                    name   = "ORO branch:",
-    #                    labels = c("Adaptation", "50/50", "Mitigation")) +
-    scale_color_gradientn(name = "% mit. ORO",
-                          colors   = color_scale,
-                          values   = vals_colors_scale,
-                          na.value = "grey80") +
+    
+    geom_text_repel(data         = filter(data, labelsFR == TRUE), 
+                    mapping      = aes(label = country), # 
+                    # color = "darkred",
+                    max.overlaps = 100,
+                    size   = 10,
+                    show.legend  = FALSE,
+                    min.segment.length = 0.1) +
+    
+    scale_color_manual(values = c("SIDS" = "#0fbcd6",
+                                 "Land-locked" = "#b36705",
+                                 "Coastal" = "#3f47e8"),
+                      name = NULL) +
+
+    # scale_shape_manual(name = NULL, 
+    #                    values = c("Land-locked" = 15,
+    #                               "Coastal"     = 16,
+    #                               "SIDS"        = 17)) +
+    
+    # scale_color_gradientn(colors   = color_scale,
+    #                       na.value = "grey80") +
     theme_bw() +
-    guides(size = "none", color = guide_colourbar(title.position = "top", barwidth = 8, barheight = 0.7)) +
-    theme(legend.position = c(0.15,0.9),
-          axis.text.x     = element_text(size = 11),
-          axis.text.y     = element_text(size = 11),
-          axis.title.x    = element_text(size = 13),
-          axis.title.y    = element_text(size = 13),
-          legend.text     = element_text(size = 12),
-          legend.title    = element_text(size  = 13, 
+    
+    # guides(size = "none", color = guide_colourbar(title.position = "top", barwidth = 8, barheight = 0.7)) +
+    guides(color = ggplot2::guide_legend(title.position = "top", title.hjust = 0.5, ncol = 1, override.aes = list(size = 6, fill = "transparent"))) +
+           # color = "none") +
+           # color = ggplot2::guide_colourbar(title = color_title, title.position = "top", barwidth = 0.7)) +
+    # 
+    theme(axis.text.x     = element_text(size = 12),
+          axis.text.y     = element_text(size = 12),
+          axis.title.x    = element_text(size = 14),
+          axis.title.y    = element_text(size = 14),
+          legend.text     = element_text(size = 25,
+                                         face  = "bold"),
+          legend.title    = element_text(size  = 14, 
                                          face  = "bold", 
                                          hjust = 0.5, 
                                          vjust = 0.5),
+                                         # angle = -90),
           legend.title.align = 0.5, 
+          legend.position    = c(0.17,0.90), # "right" 
           legend.direction   = "horizontal") 
-    
   
+  if(one_one_line == TRUE){plot <- plot + geom_abline(slope = 1, linetype = "dotted")}
+  
+  # if(length(color_scale) == 3){
+    # plot <- plot +
+      # scale_fill_gradient2(low  = color_scale[1], 
+      #                      high = color_scale[3],
+      #                      mid  = color_scale[2],
+      #                      midpoint = 0.5,
+      #                      na.value = "grey80")
+    
+
+    # }
+    
   if(! is.null(name)) {
     
-    ggplot2::ggsave(here::here("figures", paste0(name, ".jpeg")), width = 7, height = 5, device = "jpeg")
+    ggplot2::ggsave(here::here("figures", paste0(name, ".jpeg")), width = 9, height = 5, device = "jpeg")
     
   }
   
@@ -479,7 +538,7 @@ bivariate_map <- function(data_map, data_map_univ, data_world, color, univariate
 #' @export
 #'
 #' @examples
-donuts_plots <- function(data){
+donuts_plots <- function(data, group){
   
   ### Quartiles
   GDP_quartiles <- quantile(data$GDP_per_capita, probs = seq(0, 1, 0.25), na.rm = TRUE)
@@ -489,25 +548,66 @@ donuts_plots <- function(data){
   
   
   ### Format Data
-  data_grp <- data |> 
-    filter(! is.na(group)) |> 
-    group_by(group, oro_type) |> 
-    summarise(n_mean = sum(n_mean, na.rm = TRUE)) |> 
-    mutate(n_paper_tot = case_when(group == 1 ~ sum(n_mean[group == 1], na.rm = TRUE),
-                                   group == 2 ~ sum(n_mean[group == 2], na.rm = TRUE),
-                                   group == 3 ~ sum(n_mean[group == 3], na.rm = TRUE),
-                                   group == 4 ~ sum(n_mean[group == 4], na.rm = TRUE)),
-           contrib     = (n_mean/n_paper_tot)*100) |>
-    group_split(group)
+  if(group == "sids"){
+    
+    data_grp <- data |> 
+      # filter(! is.na(group)) |> 
+      group_by(group_land, oro_type) |> 
+      summarise(n_mean = sum(n_mean, na.rm = TRUE)) |> 
+      mutate(n_paper_tot = case_when(group_land == "Coastal" ~ sum(n_mean[group_land == "Coastal"], na.rm = TRUE),
+                                     group_land == "SIDS" ~ sum(n_mean[group_land == "SIDS"], na.rm = TRUE),
+                                     group_land == "Land-locked" ~ sum(n_mean[group_land == "Land-locked"], na.rm = TRUE),
+                                     group_land == "AMUNRC" ~ sum(n_mean[group_land == "AMUNRC"], na.rm = TRUE)),
+             contrib     = (n_mean/n_paper_tot)*100) |>
+      group_split(group_land)
+    
+  }
+  
+  if(group == "gdp"){
+    
+    data_grp <- data |> 
+      filter(! is.na(group)) |>
+      group_by(group, oro_type) |> 
+      summarise(n_mean = sum(n_mean, na.rm = TRUE),
+                group  = unique(group)) |> 
+      mutate(n_paper_tot = case_when(group == 4 ~ sum(n_mean[group == 4], na.rm = TRUE),
+                                     group == 3 ~ sum(n_mean[group == 3], na.rm = TRUE),
+                                     group == 2 ~ sum(n_mean[group == 2], na.rm = TRUE),
+                                     group == 1 ~ sum(n_mean[group == 1], na.rm = TRUE)),
+             contrib     = (n_mean/n_paper_tot)*100) |>
+      group_split(group)
+    
+  }
+  
+  
+  if(group == "continent"){
+    
+    data_grp <- data |> 
+      # filter(! is.na(group)) |>
+      group_by(continent, oro_type) |> 
+      summarise(n_mean = sum(n_mean, na.rm = TRUE)) |> 
+      mutate(n_paper_tot = case_when(continent == "North America" ~ sum(n_mean[continent == "North America"], na.rm = TRUE),
+                                     continent == "Europe" ~ sum(n_mean[continent == "Europe"], na.rm = TRUE),
+                                     continent == "Asia" ~ sum(n_mean[continent == "Asia"], na.rm = TRUE),
+                                     continent == "South America" ~ sum(n_mean[continent == "South America"], na.rm = TRUE),
+                                     continent == "Africa" ~ sum(n_mean[continent == "Africa"], na.rm = TRUE),
+                                     continent == "Oceania" ~ sum(n_mean[continent == "Oceania"], na.rm = TRUE)),
+             contrib     = (n_mean/n_paper_tot)*100) |>
+      group_split(continent)
+    
+  }
+  
+
   
 
   ### Plot data
   plot_ls <- lapply(data_grp, function(x){
     
     x_plot <- x |> 
+      # mutate(oro_type = factor(oro_type, levels = c("Mitigation", "Natural resilience", "Societal adaptation")),
       mutate(oro_type = factor(oro_type, levels = c("Marine renewable energy",
                                                     "CO2 removal or storage",
-                                                    "Increase efficiency",                               
+                                                    "Increase efficiency",
                                                     "Conservation",
                                                     "Human assisted evolution",
                                                     "Built infrastructure & technology",
@@ -523,11 +623,14 @@ donuts_plots <- function(data){
       scale_fill_manual(name   = NULL,
                         values = c("Marine renewable energy"            = "#026996",
                                    "CO2 removal or storage"             = "#0688c2",
-                                   "Increase efficiency"                = "#9ed7f0",                               
+                                   "Increase efficiency"                = "#9ed7f0",
                                    "Conservation"                       = "#078257",
                                    "Human assisted evolution"           = "#43b08a",
                                    "Built infrastructure & technology"  = "#600787",
                                    "Socio-institutional"                = "#ad5ad1")) +
+                        # values = c("Mitigation" = "#35a7d9", 
+                        #            "Natural resilience" = "forestgreen", 
+                        #            "Societal adaptation" = "#7670a8")) +
       scale_x_discrete(limits = c(" ", "Type")) +
       coord_polar("y") +
       theme_void()
@@ -549,7 +652,7 @@ donuts_plots <- function(data){
 #' @export
 #'
 #' @examples
-barplots_gdp <- function(data){
+barplots_gdp <- function(data, group = FALSE){
   
   
     ### Quartiles
@@ -561,65 +664,187 @@ barplots_gdp <- function(data){
       left_join(data, by = "country_aff")
     
     ### Format data
-    val_order <- data |> 
-      group_by(country) |> 
-      summarise(n_mean = sum(n_mean),
-                group  = unique(group)) |> 
-      arrange(-group, -n_mean) |> 
-      ungroup() |> 
-      mutate(valueOrder = as.factor(row_number())) |> 
-      select(-n_mean)
+    if(group == "sids"){
+      
+      val_order <- data |> 
+        group_by(country) |> 
+        summarise(GDP_per_capita = unique(GDP_per_capita),
+                  group_land  = unique(group_land)) |>
+        arrange(group_land, -GDP_per_capita) |> 
+        ungroup() |> 
+        mutate(valueOrder = as.factor(row_number())) |> 
+        select(-GDP_per_capita) |> 
+        filter(group_land != "AMUNRC")
+        
+        ### Horizontal lines for quartiles
+        vline1 <- length(unique(val_order$country[val_order$group_land == "Coastal"])) + 0.5
+        vline2 <- length(unique(val_order$country[val_order$group_land == "Land-locked"])) + vline1 
+        
+        val_order <- select(val_order, -group_land)
     
+    }
+    
+    if(group == "gdp"){
+      
+      val_order <- data |> 
+        group_by(country) |> 
+        summarise(GDP_per_capita = unique(GDP_per_capita),
+                  group  = unique(group)) |>
+        arrange(-group, -GDP_per_capita) |>
+        ungroup() |> 
+        mutate(valueOrder = as.factor(row_number())) |> 
+        select(-GDP_per_capita) 
+      
+      ### Horizontal lines for quartiles
+      vline1 <- length(unique(val_order$country[val_order$group == 4])) + 0.5
+      vline2 <- length(unique(val_order$country[val_order$group == 3])) + vline1 
+      vline3 <- length(unique(val_order$country[val_order$group == 2])) + vline2
+      
+      val_order <- select(val_order, -group)
+      
+      
+    }
+    
+    if(group == "continent"){
+      
+      val_order <- data |> 
+        group_by(country) |> 
+        summarise(GDP_per_capita = unique(GDP_per_capita),
+                  continent  = unique(continent)) |>
+        arrange(continent, -GDP_per_capita) |>
+        ungroup() |> 
+        mutate(valueOrder = as.factor(row_number())) |> 
+        select(-GDP_per_capita) 
+      
+      ### Horizontal lines for quartiles
+      vline1 <- length(unique(val_order$country[val_order$continent == "North America"])) + 0.5
+      vline2 <- length(unique(val_order$country[val_order$continent == "Europe"])) + vline1 
+      vline3 <- length(unique(val_order$country[val_order$continent == "Asia"])) + vline2
+      vline4 <- length(unique(val_order$country[val_order$continent == "Oceania"])) + vline3 
+      vline5 <- length(unique(val_order$country[val_order$continent == "Africa"])) + vline4
+      
+      val_order <- select(val_order, -continent)
+      
+      
+    }
+    
+    if(group == FALSE){
+        
+        val_order <- data |> 
+          group_by(country) |> 
+          # summarise(n_mean = sum(n_mean),
+          #           group  = unique(group)) |> 
+          # arrange(-group, -n_mean) |> 
+          summarise(GDP_per_capita = unique(GDP_per_capita)) |>
+          arrange(-GDP_per_capita) |> 
+          ungroup() |> 
+          mutate(valueOrder = as.factor(row_number())) |> 
+          select(-GDP_per_capita)
+    }
 
-    data_arrange <- left_join(data, val_order |> select(-group), by = "country") |> 
-      filter(!is.na(country)) 
-    
-    ### Horizontal lines for quartiles
-    vline1 <- length(unique(val_order$country[val_order$group == 4])) + 0.5
-    vline2 <- length(unique(val_order$country[val_order$group == 3 | val_order$group == 4])) + 0.5
-    vline3 <- length(unique(val_order$country[val_order$group == 4 | val_order$group == 3 | val_order$group == 2])) + 0.5
+    data_arrange <- left_join(data, val_order, by = "country") |> 
+      filter(!is.na(country)) |> 
+      # mutate(oro_branch = factor(oro_branch, levels = c("# ORO pubs", "Mitigation", "Natural resilience", "Societal adaptation")),
+      mutate(oro_branch = factor(oro_branch, levels = rev(c("# ORO pubs", 
+                                                        "Marine renewable energy",
+                                                        "CO2 removal or storage",
+                                                        "Increase efficiency",
+                                                        "Conservation",
+                                                        "Human assisted evolution",
+                                                        "Built infrastructure & technology",
+                                                        "Socio-institutional"))),
+             panel = factor(panel, levels = c("Total number of articles", "% of total"))) |> 
+      filter(!is.na(valueOrder))
     
 
     ### Plot data
-    plot <- ggplot(data_arrange, aes(x = valueOrder, y = n_mean, fill = GDP_per_capita)) +
+    plot <- ggplot(data_arrange, aes(x = valueOrder, y = n_mean, fill = oro_branch)) +
       
       # Bars
-      geom_col(position = position_dodge(), show.legend = TRUE) +
-      geom_errorbar(aes(ymin = n_lower, ymax = n_upper),
-                    position = position_dodge(0.9),
-                    width = .2) +
+      # geom_col(position = position_dodge(), show.legend = TRUE) +
+      geom_col() +
+      # geom_errorbar(data     = data_arrange |>  filter(panel == "# ORO pubs"),
+      #               mapping  = aes(ymin = n_lower, ymax = n_upper),
+      #               position = position_dodge(0.9),
+      #               width    = .2) +
+      geom_errorbar(data     = data_arrange |>  filter(panel == "# ORO pubs"),
+                    mapping  = aes(ymin = n_lower, ymax = n_upper)) +
       
       # geom_vline(xintercept = c(0.25*n_country, 0.5*n_country, 0.75*n_country)) +
-      geom_vline(xintercept = c(vline1, vline2, vline3)) +
       
-      scale_x_discrete(labels = gsub("_"," ", unique(data_arrange$code[order(data_arrange$valueOrder)]))) +
+      scale_x_discrete(labels = gsub("_"," ", unique(data_arrange$iso_code[order(data_arrange$valueOrder)]))) +
       
-      facet_grid(oro_branch ~ ., scales = "free_y") +
+      # facet_grid(oro_branch ~ ., 
+      #            scales = "free_y") +
+      
+      facet_grid(panel ~ ., 
+                 scales = "free_y",
+                 switch = "y") +
       
       # Colors
-      scale_fill_viridis_c(name = "GDP per capita ($)", option = "magma", direction = -1) +
+      scale_fill_manual(name = "ORO branch",
+                        # values = c("# ORO pubs" = "grey20",
+                        #            "Mitigation" = "#35a7d9",
+                        #            "Natural resilience" = "forestgreen",
+                        #            "Societal adaptation" = "#7670a8"),
+                        values = c("# ORO pubs" = "grey20",
+                                   "Marine renewable energy"            = "#026996",
+                                   "CO2 removal or storage"             = "#0688c2",
+                                   "Increase efficiency"                = "#9ed7f0",
+                                   "Conservation"                       = "#078257",
+                                   "Human assisted evolution"           = "#43b08a",
+                                   "Built infrastructure & technology"  = "#600787",
+                                   "Socio-institutional"                = "#ad5ad1"),
+                        # limits = c("Mitigation", "Natural resilience", "Societal adaptation"))+
+                        limits = c("Marine renewable energy","CO2 removal or storage","Increase efficiency",
+                                   "Conservation","Human assisted evolution","Built infrastructure & technology","Socio-institutional"),
+                        labels = c("Marine renewable energy"            = "MRE",
+                                   "CO2 removal or storage"             = "CO2 removal & storage",
+                                   "Increase efficiency"                = "Increase efficiency",
+                                   "Conservation"                       = "Conservation",
+                                   "Human assisted evolution"           = "Human assisted  evolution",
+                                   "Built infrastructure & technology"  = "Built infrastructure & technology",
+                                   "Socio-institutional"                = "Socio-institutional")) +
+                        # labels = c("# ORO pubs" = "#",
+                        #            "Mitigation" = "Mitigation",
+                        #            "Natural resilience" = "Natural resilience",
+                        #            "Societal adaptation" = "Societal adaptation")) +
       
       
-      labs(y = "# ORO articles", x = NULL) +
+      labs(y = NULL, x = NULL) +
+     
       theme_bw() +
       
-      guides(size = "none", fill = guide_colourbar(title.position = "top", barwidth = 8, barheight = 0.7, direction = "horizontal")) +
-      
-      theme(axis.text.x     = element_text(size = 8, angle = 60, hjust = 1, vjust = 1.1), # , vjust = 0.5
+      # guides(size = "none", fill = guide_colourbar(title.position = "top")) + #  barwidth = 8, barheight = 0.7,direction = "horizontal"
+      guides(fill = guide_legend(nrow = 1)) +
+    
+      theme(axis.text.x     = element_text(size = 10, angle = 60, hjust = 1, vjust = 1.1), # , vjust = 0.5
             legend.position = "bottom",
-            legend.justification = "top")
+            axis.text.y     = element_text(size = 13),
+            strip.text.y    = element_text(size = 14),
+            # axis.title.x    = element_text(size = 13),
+            # axis.title.y    = element_text(size = 13),
+            legend.text     = element_text(size = 15),
+            legend.title    = element_text(size  = 15, face = "bold"),
+            strip.placement = "outside", 
+            strip.background.y = element_rect(color = NA,  fill=NA),
+            legend.justification = "top") ; plot
             # strip.background = element_rect(fill = c("#35a7d9", "forestgreen", "#7670a8")))
     
+    if(group == "sids"){ plot <- plot + geom_vline(xintercept = c(vline1, vline2))}
+    if(group == "gdp"){ plot <- plot + geom_vline(xintercept = c(vline1, vline2, vline3))}
+    if(group == "continent"){ plot <- plot + geom_vline(xintercept = c(vline1, vline2, vline3, vline4, vline5))}
+    
     ### Change strips backgrounds
-    fill_colors = c("#35a7d9", "forestgreen", "#7670a8")
-    plot2 <- ggplot2::ggplot_gtable(ggplot2::ggplot_build(plot))
-    strips <- which(startsWith(plot2$layout$name,'strip'))
-    
-    for (s in seq_along(strips)) {
-      plot2$grobs[[strips[s]]]$grobs[[1]]$children[[1]]$gp$fill <- fill_colors[s]
-    }
-    
-    plot(plot2)
+    # fill_colors = c("white","#35a7d9", "forestgreen", "#7670a8")
+    # plot2 <- ggplot2::ggplot_gtable(ggplot2::ggplot_build(plot))
+    # strips <- which(startsWith(plot2$layout$name,'strip'))
+    # 
+    # for (s in seq_along(strips)) {
+    #   plot2$grobs[[strips[s]]]$grobs[[1]]$children[[1]]$gp$fill <- fill_colors[s]
+    # }
+    # 
+    # plot(plot2)
     
     # if(label_x == FALSE){
     #   
@@ -652,6 +877,6 @@ barplots_gdp <- function(data){
     #   cowplot::draw_plot(plot_nat,    x = 0.0, y = 0.45, width = 1, height = 0.275) +
     #   cowplot::draw_plot(plot_ada,    x = 0.0, y = 0.00, width = 1, height = 0.45)
       
-  return(plot2)
+  return(plot)
 
 }
