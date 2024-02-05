@@ -51,6 +51,54 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                                          origin      = "country.name",
                                          destination = "iso3c"))
   
+
+                  # iso_code = case_when(is.na(iso_code) ~ iso_code_country, TRUE ~ iso_code))
+  # --- LDC = Least Developed Countries
+  # --- LLCD = Land Locked Developing Countries
+  # --- SIDS = Small Island Developing States
+  landlocked <- read.csv(file = here::here("data", "external", "special_country_groups", "landlocked-countries-2024.csv"), sep = ",") |> 
+    dplyr::select(country, LandlockedCountries) |> 
+    rename(Country    = country, 
+           group_land = LandlockedCountries) |> 
+    mutate(iso_code = countrycode(sourcevar   = Country,
+                                  origin      = "country.name",
+                                  destination = "iso3c"),
+           group_land = case_when(group_land == "yes" ~ "Land-locked",
+                                  TRUE ~ "NA"))
+  
+  AMUNRC <- c("American Samoa", "Anguilla", "Aruba", "Bermuda", "British", "Virgin Islands", "Cayman Islands", "Commonwealth of Northern Marianas",
+              "Curacao", "French Polynesia", "Guadeloupe", "Guam", "Martinique", "Montserrat", "New Caledonia", "Puerto Rico", "Sint Maarten",
+              "Turks and Caicos Islands", "United States Virgin Islands")
+  
+  country_grp <- read.csv(file = here::here("data", "external", "special_country_groups", "special-country-groups.csv"), sep = ",") |> 
+    dplyr::select(Country, LLDC, SIDS) |> 
+    mutate(iso_code = countrycode(sourcevar   = Country,
+                                  origin      = "country.name",
+                                  destination = "iso3c"),
+           group_land = case_when(LLDC == "No" & SIDS == "Yes" ~ "SIDS",
+                                  LLDC == "Yes" & SIDS == "No" ~ "Land-locked",
+                                  TRUE ~ "Coastal")) |> 
+    dplyr::select(-LLDC, -SIDS) |> 
+    rbind(landlocked) |> 
+    distinct() |> 
+    mutate(group_land = case_when(Country %in% AMUNRC ~ "AMUNRC",
+                                  TRUE ~ group_land))
+  
+  eez_shp <- sf::st_read(here::here("data", "external", "eez_shp", "eez_v12.shp")) |>  # shape file of countrie's EEZ
+    dplyr::select(MRGID, POL_TYPE, TERRITORY1, SOVEREIGN1, ISO_SOV1) |> 
+    dplyr::rename(Country = SOVEREIGN1) |> 
+    dplyr::mutate(Country = countrycode(sourcevar   = ISO_SOV1,
+                                        origin      = "iso3c",
+                                        destination = "country.name"),
+                  # iso_code_country = countrycode(sourcevar   = Country,
+                  #                                origin      = "country.name",
+                  #                                destination = "iso3c"),
+                  iso_code = countrycode(sourcevar   = Country,
+                                         origin      = "country.name",
+                                         destination = "iso3c")) |> 
+    full_join(country_grp |>  dplyr::select(-iso_code), by = c("TERRITORY1" = "Country")) |> 
+    mutate(group_land = case_when(Country == "Cape Verde" ~"Island", TRUE ~ group_land))
+  
   ## ---- FORMAT DATA 
   
     # --- Subset to relevant rows and get the affiliation
@@ -95,16 +143,44 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     # --- Format the shapefile of the world countries polygon and bind data
     world_shp_boundaries <- format_shp_of_the_world(world_shp    = world_shp,
                                                     data_to_bind = ratio_ORO_totPub,
-                                                    PROJ         = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
-    tmp <- sf::st_drop_geometry(world_shp_boundaries)
+                                                    PROJ         = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs") |> 
+      left_join(country_grp |>  select(-Country), by = "iso_code") |> 
+      select(-country.y) |> 
+      rename(country = country.x) |> 
+      mutate(group_land = case_when(group_land %in% c("Land-locked", "SIDS", "Coastal") ~ group_land,
+                                    !is.na(group_land) & NA2_DESCRI != country ~ "Island",
+                                    is.na(group_land)  & NA2_DESCRI != country ~ "Island",
+                                    is.na(group_land)  & NA2_DESCRI == country ~ "Coastal"))
+    
+    eez_shp_islands <- full_join(eez_shp, ratio_ORO_totPub, by = "iso_code") |> 
+      # left_join(country_grp |>  select(-Country), by = "iso_code") |> 
+      mutate(country = str_replace_all(country, c("Côte d’Ivoire" = "Ivory Coast",
+                                                  "Congo - Brazzaville" = "Republic of the Congo",
+                                                  "Congo - Kinshasa"    = "Democratic Republic of the Congo",
+                                                  "Somalia"             = "Federal Republic of Somalia")),
+             group_land = case_when(group_land %in% c("Island", "Land-locked", "SIDS", "Coastal") ~ group_land,
+                                    !is.na(group_land) & TERRITORY1 != country ~ "Island",
+                                    is.na(group_land)  & TERRITORY1 != country ~ "Island",
+                                    is.na(group_land)  & TERRITORY1 == country ~ "Coastal")) |> 
+      filter(group_land %in% c("Island", "SIDS", "AMUNRC") & !is.na(MRGID) & !is.na(layer)) |>
+      # filter(group_land == "SIDS" & !is.na(MRGID) & !is.na(layer)) |>
+      filter(! TERRITORY1 %in% c("French Guiana", "Greenland")) |> 
+      sf::st_transform(crs = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+
+    tmp2 <- sf::st_drop_geometry(world_shp_boundaries) |>filter(group_land == "SIDS")
+    tmp2 <- sf::st_drop_geometry(eez_shp_islands)
+    tmp2 <- sf::st_drop_geometry(eez_shp)
+    length(unique(tmp2$TERRITORY1))
     
     # --- Format the data to produce the map
     data_2_map_panelA <- format_data2map(data = world_shp_boundaries,
                                          PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+
     
     
-  ## ---- PLOT PANEL A
+  ## ---- PLOT PANEL A without points
   panelA <- univariate_map(data_map          = data_2_map_panelA,
+                           eez               = eez_shp_islands,
                            color_scale       = viridis::magma(10, direction = -1),
                            midpoint          = NULL,
                            second.var        = NULL,
@@ -114,7 +190,9 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                            show.legend       = TRUE,
                            name              = "main/Fig2_panelA")
   
+  ## ---- PLOT PANEL A with points
   panelA <- univariate_map(data_map          = data_2_map_panelA,
+                           eez               = eez_shp_islands,
                            color_scale       = viridis::magma(10, direction = -1),
                            midpoint          = NULL,
                            second.var        = "Count_ORO",
@@ -122,7 +200,9 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                            title_color       = "#ORO/#O&C (%)",
                            title_size        = "#ORO paper",
                            show.legend       = TRUE,
-                           name              = "main/Fig2_panelA_points")
+                           name              = "main/Fig2_panelA_points_eez")
+  
+  test <- data_map$data |> filter(! group_land %in% c("Island", "AMUNRC")) |>  sf::st_drop_geometry()
 
 ### -----
 
@@ -159,21 +239,48 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
     # --- Ratio # of mitigation publications over # of adaptation publications
     ratio_mitig_adapt <- data_1stA_country_MA$oroAff_1stA |> 
-      group_by(country_aff) |> 
+      mutate(country_aff = countrycode(sourcevar   = country_aff,
+                                       origin      = "country.name",
+                                       destination = "country.name"),
+             iso_code = countrycode(sourcevar   = country_aff,
+                                    origin      = "country.name",
+                                    destination = "iso3c")) |>
+      group_by(country_aff, iso_code) |> 
       summarise(adaptation = sum(adaptation, na.rm = TRUE),
                 mitigation = sum(mitigation, na.rm = TRUE)) |> 
       mutate(ratio   = mitigation/adaptation,
              mit_ada = mitigation + adaptation,
              layer   = (mitigation/mit_ada)*100) |>  # % mitigation
-      rename(Country = country_aff) |> 
-      mutate(iso_code = countrycode(sourcevar   = Country,
-                                    origin      = "country.name",
-                                    destination = "iso3c")) 
+      rename(Country = country_aff) 
     
     # --- Format the shapefile of the world countries polygon and bind data
     world_shp_boundaries_MA <- format_shp_of_the_world(world_shp    = world_shp,
                                                        data_to_bind = ratio_mitig_adapt,
-                                                       PROJ         = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+                                                       PROJ         = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs") |> 
+      # replace_na(list(adaptation = 0, mitigation = 0, mit_ada = 0, ratio = 0)) |> 
+      left_join(country_grp |>  select(-Country), by = "iso_code") |> 
+      mutate(group_land = case_when(group_land %in% c("Land-locked", "SIDS", "Coastal") ~ group_land,
+                                    !is.na(group_land) & NA2_DESCRI != country ~ "Island",
+                                    is.na(group_land)  & NA2_DESCRI != country ~ "Island",
+                                    is.na(group_land)  & NA2_DESCRI == country ~ "Coastal"))
+    
+    eez_shp_islands_MA <- full_join(eez_shp |>  select(-Country), ratio_mitig_adapt, by = "iso_code") |> 
+      # left_join(country_grp |>  select(-Country), by = "iso_code") |> 
+      mutate(country = str_replace_all(Country, c("Côte d’Ivoire" = "Ivory Coast",
+                                                  "Congo - Brazzaville" = "Republic of the Congo",
+                                                  "Congo - Kinshasa"    = "Democratic Republic of the Congo",
+                                                  "Somalia"             = "Federal Republic of Somalia")),
+             group_land = case_when(group_land %in% c("Island", "Land-locked", "SIDS", "Coastal") ~ group_land,
+                                    !is.na(group_land) & TERRITORY1 != Country ~ "Island",
+                                    is.na(group_land)  & TERRITORY1 != Country ~ "Island",
+                                    is.na(group_land)  & TERRITORY1 == Country ~ "Coastal")) |> 
+      filter(group_land %in% c("Island", "SIDS", "AMUNRC") & !is.na(MRGID)) |>
+      # filter(group_land == "SIDS" & !is.na(MRGID) & !is.na(layer)) |>
+      filter(! TERRITORY1 %in% c("French Guiana", "Greenland")) |> 
+      sf::st_transform(crs = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+    
+    tmp <- sf::st_drop_geometry(world_shp_boundaries_MA)
+    tmp2 <- sf::st_drop_geometry(eez_shp_islands_MA)
     
     # --- Format the data to produce the map
     data_2_map_panelB <- format_data2map(data = world_shp_boundaries_MA,
@@ -181,32 +288,55 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
   ## ---- PLOT PANEL B
   panelB <- univariate_map(data_map          = data_2_map_panelB,
-                           color_scale       = c("#4c4680", "#7670a8", "white", "#35a7d9", "#197da8"),
-                           vals_colors_scale = c(0, 0.3, 0.5, 0.7, 1),
-                           legend            = "% mit. ORO",
+                           eez               = eez_shp_islands_MA,
+                           color_scale       = c("#4c4680","white", "#197da8"),
+                           second.var        = NULL,
+                           midpoint          = 0.5, 
+                           title_color       = "% mit. ORO",
+                           title_size        = NULL, 
                            show.legend       = TRUE,
-                           name              = "main/Fig2_panelB")
+                           name              = "main/Fig2_panelB_eez")
   
 ### -----
   
 ### ----- PANEL C -----
   
+  ## ---- LOAD DATA
+  income_grp <- readxl::read_xlsx(path = here::here("data", "external", "special_country_groups", "income_group.xlsx")) |> 
+    select(Economy, Code, `Income group`) |> 
+    rename(country      = Economy, 
+           iso_code     = Code,
+           group_income = `Income group`)
+  
+  
   ## ---- FORMAT DATA
   
     # --- Find the predominant ORO type (adaptation vs. mitigation)
     # --- And bind all data together
-    data_panelC <- ratio_mitig_adapt |> 
-      mutate(dominant_ORO = forcats::fct_relevel(case_when(layer >  50 ~ "Mitigation",
-                                                           layer == 50 ~ "50/50",
-                                                           layer <  50 ~ "Adaptation"),
-                                                 "Adaptation", "50/50", "Mitigation")) |> 
-      full_join(oceanClimate_byCountry, by = "Country") |> 
-      full_join(ORO_per_country, by = c("Country" = "country_aff"))
-  
+    data_panelC <- ratio_ORO_totPub |> 
+      rename(ORO_OC = layer) |> 
+      full_join(ratio_mitig_adapt |>  rename(perc_mit = layer), by = "iso_code") |> 
+      select(-Country, -ratio, -mit_ada) |> 
+      # left_join(income_grp |>  select(-country), by = "iso_code") |>
+      left_join(country_grp |> select(iso_code, group_land), by = "iso_code") |>
+      replace_na(list(group_land = "Coastal")) |>
+      filter(!is.na(country) & group_land != "AMUNRC" )
+      
+    # data_panelC <- world_shp_boundaries |> 
+    #   sf::st_drop_geometry() |> 
+    #   select(iso_code, Record.Count, Count_ORO, NA2_DESCRI, admin_iso, country, layer, group_land) |> 
+    #   rename(ORO_OC = layer) |> 
+    #   full_join(world_shp_boundaries_MA |> sf::st_drop_geometry() |>  
+    #               select(iso_code, mitigation, adaptation, admin_iso, layer) |> rename(perc_mit = layer), by = "admin_iso") |> 
+    #   filter(!is.na(country) & !is.na(group_land)) |> 
+    #   distinct(country, .keep_all = TRUE)
+    # # data_panelC_no0 <- filter(data_panelC, Record.Count > 0 & Count_ORO > 0)
+    
     # --- Remove NA and Data transformation if needed
     # --- Identify the points that are the farthest from the OLS
     hist(data_panelC_noNA$Record.Count) # Data skewed to the right => log10 transformation
     hist(data_panelC_noNA$Count_ORO) # Data skewed to the right => log10 transformation
+    
   
     # For some countries (e.g., Greenland), one ref identified in the mit_adap df.
     # But not selected in the oroAffiliations df because level of relevance too low.
@@ -214,82 +344,181 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
 
   ## ---- PLOT PANEL C
   panelC <- biplot_fig2c(data        = data_panelC,
+                         var.y       = "Count_ORO",
+                         var.x       = "Record.Count",
+                         var.col     = "ORO_OC",
+                         var.shape   = "group_land",
                          ylab        = "# ORO publication",
                          xlab        = "# O&C publication",
-                         color_scale       = c("#4c4680", "#7670a8", "grey70", "#35a7d9", "#197da8"),
-                         vals_colors_scale = c(0, 0.3, 0.5, 0.7, 1),
+                         one_one_line = FALSE,
+                         color_scale = viridis::magma(10, direction = -1),
+                         color_title = "#ORO/#O&C (%)",
                          log.transf  = TRUE,
-                         quant.prob  = 0.85, 
-                         name        = "main/Fig2_PanelC") ; panelC  
+                         quant.prob  = 0.90, 
+                         name        = "main/Fig2_PanelC2") ; panelC 
+  
+ 
 
   
 ### -----
-  
+
   
 ### ----- PANEL D -----
   
-  ## ---- LOAD DATA
-    
-    # --- LDC = Least Developed Countries
-    # --- LLCD = Land Locked Developing Countries
-    # --- SIDS = Small Island Developing States
-    landlocked <- read.csv(file = here::here("data", "external", "special_country_groups", "landlocked-countries-2024.csv"), sep = ",") |> 
-      select(country, LandlockedCountries) |> 
-      rename(Country    = country, 
-             group_land = LandlockedCountries) |> 
-      mutate(iso_code = countrycode(sourcevar   = Country,
-                                    origin      = "country.name",
-                                    destination = "iso3c"),
-             group_land = case_when(group_land == "yes" ~ "Land-locked",
-                                    TRUE ~ "NA"))
+  data_panelD <- filter(data_panelC, !is.na(perc_mit))
+  data_panelD2 <- data_panelD |> 
+    mutate(adaptation_log = log(adaptation + 1),
+           mitigation_log = log(mitigation + 1),
+           labels    = case_when(adaptation >= mitigation ~ "Adaptation",
+                                 TRUE ~ "Mitigation")) |> 
+    # group_income = factor(group_income, levels = c("High income", "Upper middle income", "Lower middle income", "Low income"))) |> 
+    ungroup()
   
-    country_grp <- read.csv(file = here::here("data", "external", "special_country_groups", "special-country-groups.csv"), sep = ",") |> 
-      select(Country, LLDC, SIDS) |> 
-      mutate(iso_code = countrycode(sourcevar   = Country,
-                                    origin      = "country.name",
-                                    destination = "iso3c"),
-             group_land = case_when(LLDC == "No" & SIDS == "Yes" ~ "SIDS",
-                                    LLDC == "Yes" & SIDS == "No" ~ "Land-locked",
-                                    TRUE ~ "Coastal")) |> 
-      select(-LLDC, -SIDS) |> 
-      rbind(landlocked) |> 
-      distinct()
-      
+  ## --- Donuts plots
+  n_LL = sum(data_panelD2$group_land == "Land-locked")
+  n_C = sum(data_panelD2$group_land == "Coastal")
+  n_SIDS = sum(data_panelD2$group_land == "SIDS")
+  
+  data_donut = data_panelD2 |> 
+    group_by(group_land, labels) |> 
+    summarise(count = n()) |> 
+    mutate(total_count = case_when(group_land == "Coastal" ~ n_C,
+                                   group_land == "SIDS" ~ n_SIDS,
+                                   TRUE ~ n_LL),
+           perc = (count/total_count)*100) |> 
+    group_split(group_land)
+  
+  panelD <- biplot_fig2c(data        = data_panelD,
+                         var.y       = "adaptation",
+                         var.x       = "mitigation",
+                         var.col     = "group_land",
+                         # var.shape   = "group_land",
+                         ylab        = "# ada. pubs",
+                         xlab        = "# mit. pubs",
+                         one_one_line = TRUE,
+                         # color_scale = c("#4c4680","white", "#197da8"),
+                         color_title = "#ORO/#O&C (%)",
+                         log.transf  = TRUE,
+                         quant.prob  = 0.90, 
+                         name        = "main/Fig2_PanelD_France") ; panelD 
+  
+  ggplot2::ggsave(here::here("figures", "main", "Fig2_PanelD_France2.jpeg"), width = 9, height = 7, device = "jpeg")
+  
+  plot_donuts_ls <- lapply(data_donut, function(x){
     
-    income_grp <- readxl::read_xlsx(path = here::here("data", "external", "special_country_groups", "income_group.xlsx")) |> 
-      select(Economy, Code, `Income group`) |> 
-      rename(country      = Economy, 
-             iso_code     = Code,
-             group_income = `Income group`)
+    x_plot <- x |> 
+      select(-group_land) |> 
+      mutate(Type     = "MitAda",
+             cat = factor(labels, levels = c("Mitigation", "Adaptation"))) |> 
+      arrange(cat) |> 
+      mutate(pos = round(cumsum(perc) - (0.5 * perc), 2))  
     
-    "Czech Republic"
+    ggplot(x_plot, aes(x = Type, y = perc, fill = labels)) +
+      geom_col(show.legend = F) +
+      geom_text(aes(label = paste0(round(perc, 1), "%"), x = Type, y = pos), size = 6, color = "white") +
+      # Colors
+      scale_fill_manual(name   = NULL,
+                        values = c("Adaptation"  = "#4c4680",
+                                   "Mitigation" = "#197da8")) +
+      scale_x_discrete(limits = c(" ", "MitAda")) +
+      coord_polar("y") +
+      theme_void()
+    
+  })
+  
+  legend = ggpubr::get_legend(
+    ggplot(data_donut[[1]], aes(x = labels, y = perc, fill = labels)) +
+      geom_col() +
+      scale_fill_manual(name = NULL, 
+                        values = c("Adaptation"  = "#4c4680",
+                                   "Mitigation" = "#197da8"),
+                        labels = c("Adaptation" = "Above (Adaptation)",
+                                   "Mitigation" = "Below (Mitigation)")) +
+      theme(legend.direction = "horizontal",
+            legend.text     = element_text(size = 16, face  = "bold"),
+            legend.background = element_blank()))
+    
+  
+  # --- Arrange plot
+  plot_final <- cowplot::ggdraw() +
+    cowplot::draw_plot(panelD, x = 0.0, y = 0.0, width = 0.60, height = 1.0) +
+    cowplot::draw_plot(plot_donuts_ls[[1]], x = 0.50, y = 0.45, width = 0.4, height = 0.4) +
+    cowplot::draw_plot(plot_donuts_ls[[2]], x = 0.70, y = 0.45, width = 0.4, height = 0.4) +
+    cowplot::draw_plot(plot_donuts_ls[[3]], x = 0.60, y = 0.05, width = 0.4, height = 0.4) +
+    cowplot::draw_text(text = c("Coastal", "Land-locked", "SIDS"),
+                       fontface = rep("bold", 3),
+                       color = c("#3f47e8", "#b36705", "#0fbcd6"),
+                       x = c(0.70, 0.90, 0.80), 
+                       y = c(0.47, 0.47, 0.06), size = 18) +
+                       # y = c(0.52, 0.52, 0.12), size = 16) +
+    cowplot::draw_text(text = "Percentage above the 1:1 line", x = 0.8, y = 0.95, size = 19, fontface = "bold") +
+    cowplot::draw_plot(legend, x = 0.65, y = 0.82, width = 0.3, height = 0.1) ; plot_final
+                       
+  # ggplot2::ggsave(plot = plot_final, here::here("figures", "main", "donuts_test.jpeg"), width = 15, height = 5, device = "jpeg")
+  # ggplot2::ggsave(plot = plot_final, here::here("figures", "main", "figure2_panelC_donuts4.jpeg"), width = 13, height = 7, device = "jpeg")
+  ggplot2::ggsave(plot = plot_final, here::here("figures", "main", "figure2_panelC_donuts.jpeg"), width = 15, height = 7, device = "jpeg")
+  
+  
+### -----
+  
+### ----- PANEL Supp -----
   
   ## ---- FORMAT DATA
   ratio_mitig_adapt2 <- ratio_mitig_adapt |> 
     select(-ratio) |> 
     rename(n_MitPlusAda = mit_ada,
            perc_mit     = layer) |> 
-    left_join(income_grp |>  select(-country), by = "iso_code") |> 
+    # left_join(income_grp |>  select(-country), by = "iso_code") |> 
     left_join(country_grp |> select(iso_code, group_land), by = "iso_code") |> 
-    replace_na(list(group_land = "Coastal"))
-  
+    replace_na(list(group_land = "Coastal")) |> 
+    filter(group_land != "AMUNRC") 
+
     ## --- Residuals
-    ratio_mitig_adapt2 <- ratio_mitig_adapt2 |> 
+    data_panelD2 <- data_panelD |> 
       mutate(adaptation_log = log(adaptation + 1),
              mitigation_log = log(mitigation + 1),
-             residuals = resid(lm(adaptation_log ~ mitigation_log, data = cur_data())),
-             labels    = abs(residuals) >= quantile(abs(residuals), prob = 0.85))
+             labels    = case_when(adaptation >= mitigation ~ "Adaptation",
+                                   TRUE ~ "Mitigation")) |> 
+             # group_income = factor(group_income, levels = c("High income", "Upper middle income", "Lower middle income", "Low income"))) |> 
+      ungroup()
+    
+    ## --- Donuts plots
+    n_LL = sum(data_panelD2$group_land == "Land-locked")
+    n_C = sum(data_panelD2$group_land == "Coastal")
+    n_SIDS = sum(data_panelD2$group_land == "SIDS")
+    
+    data_donut = data_panelD2 |> 
+      group_by(group_land, labels) |> 
+      summarise(count = n()) |> 
+      mutate(total_count = case_when(group_land == "Coastal" ~ n_C,
+                                     group_land == "SIDS" ~ n_SIDS,
+                                     TRUE ~ n_LL),
+             perc = (count/total_count)*100) |> 
+      group_split(group_land)
+    
   
   ## ---- PLOT PANEL D
-  plot <- ggplot(data    = ratio_mitig_adapt2, 
+  plot <- ggplot(data    = data_panelD2, 
          mapping = aes(x = mitigation_log, 
-                       y = adaptation_log)) +
+                       y = adaptation_log,
+                       color = group_land)) +
     
     geom_abline(slope = 1, linetype='dotted') +
     
-    geom_point(mapping = aes(color = group_land), show.legend = FALSE) +
+    scale_color_manual(values = c("SIDS" = "#0fbcd6",
+                                  "Land-locked" = "#b36705",
+                                  "Coastal" = "#3f47e8"),
+                       name = NULL) +
     
-    facet_grid(group_land ~ .) +
+    geom_text_repel(data         = filter(data_panelD2, labels == TRUE), 
+                    mapping      = aes(label = country), 
+                    max.overlaps = 100,
+                    show.legend  = FALSE,
+                    min.segment.length = 0.1) +
+    
+    geom_point(show.legend = FALSE) + # mapping = aes(color = group_income)
+    
+    facet_wrap(group_land ~ ., ncol = 3) +
     
     # geom_smooth(method  = lm, 
     #             col     = "grey10") +
@@ -300,59 +529,78 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     xlab(label = "# Mit. papers") +
     ylab(label = "# Ada. papers") +
     
-    # geom_text_repel(data         = filter(ratio_mitig_adapt2, group_land %in% c("SIDS", "LLC")), 
-    #                 mapping      = aes(label = Country, color = group_land),
-    #                 max.overlaps = 100,
-    #                 show.legend  = FALSE,
-    #                 min.segment.length = 0.1) +
-    
-    scale_color_manual(values = c("Coastal"   = "#3f47e8",
-                                  "Land-locked"  = "#b36705",
-                                  "SIDS" = "#0fbcd6"),
-                       name   = NULL,
-                       labels = c("CC"   = "Coastal",
-                                  "LDC"  = "Land-locked",
-                                  "SIDS" = "SIDS")) +
-    
-    # scale_shape_manual(values = c("High income"         = 15,
-    #                               "Upper middle income" = 16,
-    #                               "Lower middle income" = 17,
-    #                               "Low income"          = 18),
+    # scale_color_manual(values = c("High income"   = "#de6040",
+    #                               "Upper middle income" = "#40c28a",
+    #                               "Lower middle income" = "#9e63ad",
+    #                               'Low income' = "#0fbcd6"),
     #                    name   = "Income",
     #                    labels = c("High income"         = "High",
     #                               "Upper middle income" = "Upper middle",
     #                               "Lower middle income" = "Lower middle",
     #                               "Low income"          = "Low")) +
-
+    
     theme_bw() +
     # guides(size = "none", color = guide_colourbar(title.position = "top", barwidth = 8, barheight = 0.7)) +
-    theme(legend.position = c(0.2,0.9),
+    theme(legend.position = "right",
           axis.text.x     = element_text(size = 11),
           axis.text.y     = element_text(size = 11),
           axis.title.x    = element_text(size = 13),
           axis.title.y    = element_text(size = 13),
-          legend.text     = element_text(size = 12),
-          legend.title    = element_text(size  = 13, 
+          legend.text     = element_text(size = 13),
+          legend.title    = element_text(size  = 14, 
                                          face  = "bold", 
-                                         hjust = 0.5, 
-                                         vjust = 0.5)) 
+                                         vjust = 0.5),
+          strip.text.x = element_text(size = 14)) ; plot
   
   ### Change strips backgrounds
   fill_colors = c("#3f47e8", "#b36705", "#0fbcd6")
-  plot2 <- ggplot2::ggplot_gtable(ggplot2::ggplot_build(plot))
-  strips <- which(startsWith(plot2$layout$name,'strip'))
-  
-  for (s in seq_along(strips)) {
-    plot2$grobs[[strips[s]]]$grobs[[1]]$children[[1]]$gp$fill <- fill_colors[s]
-  }
-  
-  plot(plot2)
-  ggplot2::ggsave(plot = plot2, here::here("figures", "main", "Ada_vs_Mit_country_types_v22.jpeg"), width = 5, height = 7, device = "jpeg")
+  # plot2 <- ggplot2::ggplot_gtable(ggplot2::ggplot_build(plot))
+  # strips <- which(startsWith(plot2$layout$name,'strip'))
+  # 
+  # for (s in seq_along(strips)) {
+  #   plot2$grobs[[strips[s]]]$grobs[[1]]$children[[1]]$gp$fill <- fill_colors[s]
+  # }
+  # 
+  # plot(plot2)
+  # ggplot2::ggsave(plot = plot2, here::here("figures", "main", "Ada_vs_Mit_country_types_v2.jpeg"), width = 15, height = 5, device = "jpeg")
 
+  plot_donuts_ls <- lapply(data_donut, function(x){
+    
+    x_plot <- x |> 
+      select(-group_land) |> 
+      mutate(Type     = "MitAda",
+             cat = factor(labels, levels = c("Mitigation", "Adaptation"))) |> 
+      arrange(cat) |> 
+      mutate(pos = round(cumsum(perc) - (0.5 * perc), 2))  
+
+    ggplot(x_plot, aes(x = Type, y = perc, fill = labels)) +
+      geom_col(show.legend = F) +
+      geom_text(aes(label = paste0(round(perc, 1), "%"), x = Type, y = pos), size = 4, color = "white") +
+      # Colors
+      scale_fill_manual(name   = NULL,
+                        values = c("Adaptation"  = "#4c4680",
+                                   "Mitigation" = "#197da8")) +
+      scale_x_discrete(limits = c(" ", "MitAda")) +
+      coord_polar("y") +
+      theme_void()
+    
+  })
+  
+  cowplot::plot_grid(plotlist = plot_donuts_ls, ncol = 3)
+  
+  # --- Arrange plot
+  plot_final <- cowplot::ggdraw() +
+    cowplot::draw_plot(plot, x = 0.00, y = 0.0, width = 1.0, height = 1.0) +
+    cowplot::draw_plot(plot_donuts_ls[[1]], x = -0.09, y = 0.55, width = 0.4, height = 0.4) +
+    cowplot::draw_plot(plot_donuts_ls[[2]], x = 0.23,  y = 0.55, width = 0.4, height = 0.4) +
+    cowplot::draw_plot(plot_donuts_ls[[3]], x = 0.55,  y = 0.55, width = 0.4, height = 0.4) ; plot_final
+    
+  ggplot2::ggsave(plot = plot_final, here::here("figures", "main", "adap_mit_SIDS5.jpeg"), width = 15, height = 5, device = "jpeg")
+  
 ### -----
 
   
-### ---- PANEL E -----
+### ---- PANEL Supp -----
   
   ## --- LOAD DATA
   grid_df <- tbl(dbcon, "grid_df_res2.5") 
@@ -393,12 +641,12 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     ORO_per_country_geoP_sf_land <- sf::st_join(ORO_geoP_sf_land, world_shp) |>  
       filter(!is.na(affiliation))
     
-    ORO_land_test <- ORO_geoP_sf_land |> 
-      sf::st_drop_geometry() |> 
-      select(analysis_id, shp_id) |> 
-      left_join(test, by = c("shp_id" = "shpfile_id")) |> 
-      filter(!is.na(shp_id)) |> 
-      distinct() ; length(unique(ORO_land_test$analysis_id))
+    # ORO_land_test <- ORO_geoP_sf_land |> 
+    #   sf::st_drop_geometry() |> 
+    #   select(analysis_id, shp_id) |> 
+    #   left_join(test, by = c("shp_id" = "shpfile_id")) |> 
+    #   filter(!is.na(shp_id)) |> 
+    #   distinct() ; length(unique(ORO_land_test$analysis_id))
     
     # y <- sf::st_join(ORO_geoP_sf_land, world_shp)
     # z <- sf::st_join(world_shp, ORO_geoP_sf_land)
@@ -446,7 +694,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                                        TRUE ~ admin)) |> 
       filter(!is.na(final_country))
     
-    length(unique(ORO_per_country_geoP_df_all$analysis_id)) # n = 17201 from geoparsing
+    length(unique(ORO_per_country_geoP_df_all$analysis_id)) # n = 17191 from geoparsing
     sum(ORO_per_country$Count_ORO) # n = 40644 from 1st author affiliation
     
     sum(ORO_per_country_geoP_df_all$same == "same") # 10991
@@ -587,22 +835,22 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
     
     bivariate_map(data_map   = data_2_map_OROall,
-                  data_world = world_shp,
+                  data_world = NULL,
                   color      = bivariate_color_scale,
                   ylab       = "# ORO geoP",
                   xlab       = "# ORO 1st aff",
-                  name       = "main/Figure2_PanelE3")
+                  name       = "main/Figure2_PanelE")
   
     
     data_2_map_OROall$data$layer[data_2_map_OROall$data$layer == Inf] <- 100
     data_2_map_OROall$data$layer[data_2_map_OROall$data$layer > 100] <- 100
     
-    univariate_map(data_map          = data_2_map_OROall,
-                   color_scale       = NULL,
-                   midpoint          = 0,
-                   legend            = "Change",
-                   show.legend       = TRUE,
-                   name              = "main/Fig2_panelE")
+    # univariate_map(data_map          = data_2_map_OROall,
+    #                color_scale       = NULL,
+    #                midpoint          = 0,
+    #                legend            = "Change",
+    #                show.legend       = TRUE,
+    #                name              = "main/Fig2_panelE")
     
     ## --- PLOT COMMON DATA
     world_shp_data_OROcommon <- format_shp_of_the_world(world_shp    = world_shp,
@@ -616,11 +864,23 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     data_2_map_OROcommon$data$layer[data_2_map_OROcommon$data$layer > 100] <- 100
     
     univariate_map(data_map          = data_2_map_OROcommon,
-                   color_scale       = NULL,
-                   midpoint          = 0,
-                   legend            = "Change",
+                   color_scale       = c("darkred","white", "darkblue"),
+                   second.var        = NULL,
+                   midpoint          = 0, 
+                   title_color       = "Change in \n #paper (%)",
+                   title_size        = NULL,
                    show.legend       = TRUE,
-                   name              = "main/Fig2_panelE_common")
+                   name              = "main/Fig2_panelE_common2")
+    
+    panelB <- univariate_map(data_map          = data_2_map_panelB,
+                             color_scale       = c("#4c4680","white", "#197da8"),
+                             second.var        = NULL,
+                             midpoint          = 0, 
+                             title_color       = "% mit. ORO",
+                             title_size        = NULL, 
+                             show.legend       = TRUE,
+                             name              = "main/Fig2_panelB2")
+    
     
 ### ----
   
