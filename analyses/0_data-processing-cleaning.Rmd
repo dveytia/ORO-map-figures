@@ -253,7 +253,7 @@ b) estimate "uncertainty" for each country using the "ambiguous" classification 
 dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, "all_tables_v4.sqlite"), create=FALSE)
 
 geoparsedText <- tbl(dbcon, "geoparsed_text") 
-shp_df_matches <- tbl(dbcon, "geoparsed-text_shp_df_matches")
+shp_df_matches <- tbl(dbcon, "geoparsed-text_shp_df_matches") %>% collect()
 shp_df_sum <- tbl(dbcon, "geoparsed-text_grid-sums")
 uniquerefs <- tbl(dbcon, "uniquerefs")
 
@@ -283,6 +283,77 @@ uniquerefs <- tbl(dbcon, "uniquerefs")
            city_T_F  = word_title %in% cities$name) |> 
     # Filter rows whose the column word corresponds to a country OR city name
     filter(!is.na(id_country) | city_T_F == TRUE)
+
+```
+
+```{r visualize data structure}
+uniqueWordPlaceMatches <- geoparsedText %>% select(word, place_name) %>% distinct(word, place_name, .keep_all = T)
+nrow(uniqueWordPlaceMatches) # 8261
+
+# Filter to those for which we actually have matches to the natural earth database
+sum(uniqueWordPlaceMatches$place_name %in% )
+
+
+uniqueWordPlaceMatches$n_articles <- rep(NA, nrow(uniqueWordPlaceMatches))
+for(i in 1:nrow(uniqueWordPlaceMatches)){
+  uniqueWordPlaceMatches$n_articles[i] <- sum(geoparsedText$word == uniqueWordPlaceMatches$word[i] &
+          geoparsedText$place_name == uniqueWordPlaceMatches$place_name[i])
+}
+
+quantile(uniqueWordPlaceMatches$n_articles, probs = c(0,0.75, 0.8, 0.85, 0.9, 0.95, 1))
+
+sum(uniqueWordPlaceMatches$n_articles[17 <= uniqueWordPlaceMatches$n_articles])
+sum(uniqueWordPlaceMatches$n_articles[uniqueWordPlaceMatches$n_articles < 17])
+
+
+highFreqMatches <- uniqueWordPlaceMatches %>%
+  filter(17 <= n_articles) %>%
+  arrange(desc(n_articles)) 
+
+nrow(highFreqMatches) # 437 articles to check
+
+write.csv(highFreqMatches, file = here::here("data/geoparsing/geoparsing_wordPlaceMatches95quantile.csv"))
+
+
+shp_df <- tbl(dbcon, "shp_df_natural-earth-shapes") %>%
+  select(name,name_long, name_en,name_local, abbrev, formal_en,adm0_a3_us, continent,region_un,region, subregion,region_wb,gn_name, shpfile_id) %>%
+  collect()
+
+shp_df_names <- apply(shp_df, 1, function(x) paste(x, collapse = " "))
+
+shp_df[grep("Everglade", shp_df_names, ignore.case = TRUE),] %>% View
+shp_df[grep("africa", shp_df_names, ignore.case = TRUE),c("name","shpfile_id")] %>% View
+
+temp <- shp_df[grep("eastern africa", shp_df$subregion, ignore.case = TRUE),]
+temp <- temp %>% filter(subregion %in% c("Melanesia","Micronesia","Polynesia"))
+paste(temp$name, collapse = "; ")
+paste(temp$shpfile_id, collapse = "; ")
+
+shp_df_matches[grep("everglade", shp_df_matches$place, ignore.case = TRUE),] %>%
+  filter(!is.na(shp_id)) %>%
+  distinct(place, shp_id) %>%
+  select(place, shp_id) %>%
+  View()
+
+
+# After cleaning, read in data and visualize
+highFreqMatches_clean <- read.csv(here::here("data/geoparsing/geoparsing_wordPlaceMatches95quantile_cleaned.csv"))
+
+highFreqMatches_clean %>%
+  group_by(true_match, ambiguous) %>%
+  summarise(n_articles = sum(n_articles))
+
+sum(highFreqMatches_clean$shp_id_correct!= "")
+sum(highFreqMatches_clean$true_match == FALSE)
+sum(highFreqMatches_clean$n_articles[highFreqMatches_clean$shp_id_correct!= ""])
+
+highFreqMatches_clean %>%
+  group_by(true_match, ambiguous) %>%
+  summarise(n_articles = sum(n_articles)) %>%
+  reshape2::melt(value.var = "n_articles") %>%
+  ggplot(aes(x=true_match, y=value, fill = ambiguous))+
+  geom_col(position = "stack")+
+  theme_bw()
 
 ```
 
