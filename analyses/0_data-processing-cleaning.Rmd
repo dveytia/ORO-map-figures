@@ -241,6 +241,14 @@ c. Landward area contained within the 200 m land elevation contour ((Land-ocean 
 
 I suggest to take the conservative approach of option "c" and do landward area within 200 m land elevation contour. That said, if it is too complicated/time consuming, then option "a" looks easier -- we could make the argument that we extend it to 200 km from coast because given sea level rise locations further inland may be concerned with coastal research? 
 
+*Estimating error rate*
+
+Another approach is to create a lookup table of unique word and place_name matches and double check manually -- this can then be merged into the geoparsed_text table to indicate whether a match is TRUE, FALSE, or ambiguous. This will allow us to estimate the likely error rate, which can be stratified by country. This information can be used to:
+a) clean the data by completely eliminating matches that are FALSE
+b) estimate "uncertainty" for each country using the "ambiguous" classification -- perhaps this information can be displayed alongside the data plotted in the map via stippling etc. This will likely apply to countries like the USA, where records like "south beach" are attributed.
+
+
+
 ```{r load data}
 dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, "all_tables_v4.sqlite"), create=FALSE)
 
@@ -275,6 +283,25 @@ uniquerefs <- tbl(dbcon, "uniquerefs")
            city_T_F  = word_title %in% cities$name) |> 
     # Filter rows whose the column word corresponds to a country OR city name
     filter(!is.na(id_country) | city_T_F == TRUE)
+
+```
+
+
+```{r estimate sample size needed to detect error}
+
+## Step 1: Power analysis
+# This analysis can be used to estimate what sample size (ie the number of records that need to be checked) in order to estimate the proportion of error for each country
+
+n_mismatch <- pwr::pwr.p.test(h = 0.10, # estimate
+           sig.level = 0.05,
+           power = 0.80,
+           alternative = "greater")
+
+# The total number of rows needed to be screened in order to quantify/detect error needs to be multiplied by number of countries
+formatC(ceiling(n_mismatch$n)*length(unique(geoparsedText$country_predicted)), big.mark = ",", format="d")
+# 139,275
+
+# This number is  >> than the total number of rows, so will need to screen/check all the rows in the data
 
 ```
 
