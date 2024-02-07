@@ -331,8 +331,11 @@ highFreqMatches <- uniqueWordPlaceMatchesCountryPred %>%
 
 lowFreqMatches <- uniqueWordPlaceMatchesCountryPred %>%
   filter(n_articles < 17) %>%
-  group_by(country_predicted) |> 
-  summarise(n_articles = n()) |> 
+  arrange(desc(n_articles)) 
+
+narticle_per_coutry_LowFreq <- lowFreqMatches
+  group_by(country_predicted) |>
+  summarise(n_articles = n()) |>
   arrange(desc(n_articles)) 
 
 nrow(highFreqMatches) # 437 articles to check
