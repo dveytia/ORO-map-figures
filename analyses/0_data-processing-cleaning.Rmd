@@ -329,6 +329,12 @@ highFreqMatches <- uniqueWordPlaceMatchesCountryPred %>%
   filter(17 <= n_articles) %>%
   arrange(desc(n_articles)) 
 
+lowFreqMatches <- uniqueWordPlaceMatchesCountryPred %>%
+  filter(n_articles < 17) %>%
+  group_by(country_predicted) |> 
+  summarise(n_articles = n()) |> 
+  arrange(desc(n_articles)) 
+
 nrow(highFreqMatches) # 437 articles to check
 
 write.csv(highFreqMatches, file = here::here("data/geoparsing/geoparsing_wordPlaceMatches95quantile.csv"))
