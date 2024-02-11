@@ -209,3 +209,113 @@ fig1_ggp <- ggplot()+
 
 fig1_ggp
 ```
+
+
+# Figure 3 - upset plot just showing interactions with NbS
+
+
+
+```{r calculate oro-oro interaction sizes}
+predRel <- tbl(dbcon, "pred_relevance") %>%
+  filter(0.5 <= relevance_mean) %>%
+  select(analysis_id)
+predType <- tbl(dbcon, "pred_oro_type_long") %>%
+  filter(0.5 <= mean) %>%
+  select(analysis_id, oro_type)
+
+## Join together to get relevance preditions for all included
+oroTypeDf <- predRel %>%
+  inner_join(predType, by ="analysis_id") %>% 
+  collect()
+
+# Format aesthetics for plotting
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+typeAES$label[which(typeAES$label == "Conservation")] <- "Conservation/NbS"
+
+oroTypeDf <- oroTypeDf %>%
+  mutate(oro_type = factor(oro_type, levels = typeAES$level, labels = typeAES$label))
+
+# format as tabular data
+oroTypeDf_wide <- oroTypeDf %>%
+  select(analysis_id, oro_type) %>%
+  mutate(count = 1) %>%
+  reshape2::dcast(analysis_id ~ oro_type, drop=FALSE, value.var = "count")
+
+upsetCols <- typeAES %>%
+  rename(set = label, fill = colour) %>%
+  select(set, fill)
+
+
+# Also calculate interaction matrix
+oroTypeDf_mat <- crossprod(table(oroTypeDf[,c("analysis_id","oro_type")]))
+
+# set buckets that aren't crossed with conservation to 0
+for(i in 1:nrow(oroTypeDf_mat))
+  for(j in 1:ncol(oroTypeDf_mat))
+    if(grepl("conservation", rownames(oroTypeDf_mat)[i], ignore.case = TRUE) |
+       grepl("conservation", colnames(oroTypeDf_mat)[j], ignore.case = TRUE)){
+      oroTypeDf_mat[i,j] <- oroTypeDf_mat[i,j]
+    } else{
+      oroTypeDf_mat[i,j] <- 0
+    } 
+
+```
+
+```{r save upset plot}
+require(ComplexUpset)
+
+vars = colnames(oroTypeDf_wide)[colnames(oroTypeDf_wide) != "analysis_id"]
+
+# Get the names of all the interaction combinations that include conservation
+allIntersections2D <- t(combn(vars,2))
+allIntersections2D <- allIntersections2D[apply(allIntersections2D, 1, function(x) grepl("conservation", paste(x, collapse = ""), ignore.case=T)),]
+
+allIntersections3D <- t(combn(vars,3))
+allIntersections3D <- allIntersections3D[apply(allIntersections3D, 1, function(x) grepl("conservation", paste(x, collapse = ""), ignore.case=T)),]
+
+allIntersections4D <- t(combn(vars,4))
+allIntersections4D <- allIntersections4D[apply(allIntersections4D, 1, function(x) grepl("conservation", paste(x, collapse = ""), ignore.case=T)),]
+
+# Plot the upset plot
+upset(
+  data=oroTypeDf_wide,
+  intersect = rev(colnames(oroTypeDf_wide)[colnames(oroTypeDf_wide) != "analysis_id"]),
+  intersections = c(as.list(data.frame(t(allIntersections2D))),
+                    as.list(data.frame(t(allIntersections3D))),
+                    as.list(data.frame(t(allIntersections4D)))),
+  width_ratio = 0.3,
+  min_size = 1,
+  keep_empty_groups = FALSE,
+  sort_sets = FALSE,
+  base_annotations = list('Intersection size' = intersection_size(text = list(size=3.5))+
+                            ylim(c(0,600))), #, vjust=-0.1, hjust=-0.1, angle=45
+  set_sizes = (upset_set_size(geom = geom_bar(fill = "white"))+
+                 geom_text(aes(label=..count..), hjust=1.1, stat='count', size=3, col="white")+
+                 expand_limits(y=30000)+
+                 theme(axis.text.x = element_text(angle=90))),
+  stripes = rev(typeAES$colour),
+  sort_intersections = 'ascending',
+  sort_intersections_by = c("degree","cardinality"),
+  group_by = "degree",
+  min_degree = 2,
+  max_degree = 3,
+  # highlight interesting interactions
+  queries = list(
+    upset_query(intersect = c("CO2 removal or storage", "Conservation/NbS"), color = "orange", fill="orange"),
+    upset_query(intersect = c("Built infrastructure & technology", "Conservation/NbS"), color = "orange", fill="orange"),
+    upset_query(intersect = c("Conservation/NbS", "Built infrastructure & technology","Socio-institutional"), color = "orange", fill="orange")
+  )
+)
+
+# save fig dimensions: 800 x 470
+# for pdf 9 x 5 in
+```
+
+
+
+
+
+
+
+
