@@ -313,6 +313,163 @@ upset(
 ```
 
 
+# Fig 4 - Geoparsing results for just conservation options
+
+```{r load extra libraries}
+library(R.utils)
+library(tidyr)
+library(stringr)
+library(viridis)
+library(sf)
+library(broom)
+library(countrycode)
+library(ggrepel)
+```
+
+```{r get data on conservation empirical geoparsing data}
+grid_df <- tbl(dbcon, "grid_df_res2.5") %>% collect()
+shp_df_matches <- tbl(dbcon, "geoparsed-text_shp_df_matches")
+
+predRel <- tbl(dbcon, "pred_relevance") %>%
+  filter(0.5 <= relevance_mean) %>%
+  select(analysis_id)
+predConservation <- tbl(dbcon, "pred_oro_type_long") %>% 
+  filter(0.5 <= mean & oro_type == "Conservation") %>%
+  select(analysis_id)
+predMethod <- tbl(dbcon, "pred_method_type") %>%
+  filter(0.5 <= `method_type.Empirical - mean_prediction`) %>%
+  select(analysis_id)
+
+## Join together to get relevance preditions for all included
+shp_df_matches_conservation <- predRel %>%
+  inner_join(predConservation, by ="analysis_id") %>%
+  inner_join(predMethod, by = "analysis_id") %>%
+  inner_join(shp_df_matches, by ="analysis_id") %>%
+  collect()
+
+shp_df_matches_conservation_weightedSum <- shp_df_matches_conservation %>%
+  group_by(grid_df_id) %>%
+  summarise(n_articles = sum(cell_weight))
+
+grid_df_conservation <- grid_df %>%
+  left_join(shp_df_matches_conservation_weightedSum, by = "grid_df_id")
+
+```
+
+```{r plot wgs84 projection}
+## Plot
+countries <- map_data("world")
+
+ggplot()+
+  geom_tile(data=grid_df_conservation, aes(x=LON, y=LAT, fill = log(n_articles)),
+            na.rm = TRUE)+
+  #scale_fill_viridis_c(name = "log(n articles)", na.value="transparent", option = "plasma")+
+  scale_fill_distiller(name = "log(n articles)", na.value="transparent", palette = "Greens", direction = 1)+
+  geom_polygon(data=countries, aes(long, lat, group=group), fill = "transparent", col="black", linewidth = 0.1)+
+  coord_quickmap()+
+  theme_bw()
+  theme(
+    legend.position = "bottom",
+    panel.background = element_blank(),
+    panel.grid = element_blank(),
+    panel.border = element_blank(),
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    axis.ticks = element_blank()
+  )
+ 
+
+```
+
+## Subset data to just cells in EEZ and 200 km from coast
+
+```{r}
+
+
+```
+
+
+```{r shapefiles of coast and EEZ}
+#world_shp <- sf::read_sf(here::here("data", "external", "world_shp")) # shape file of the world
+
+coast <- giscoR::gisco_get_countries(
+  spatialtype = "COASTL",
+  epsg = "4326"
+)
+#coast <- st_transform(coast, st_crs("ESRI:54030"))
+
+eez_rast <- raster::raster(here::here("data", "external", "eez_rast", "rast_iso_eez.asc"))
+
+
+# make a polygon from the grid tiles to plot with sf
+grid_df_poly1 <- grid_df %>% 
+  select(LON, LAT, grid_df_id) %>%
+  mutate(LON = LON-(2.5/2), LAT = LAT-(2.5/2))
+grid_df_poly2 <- grid_df %>% 
+  select(LON, LAT, grid_df_id) %>%
+  mutate(LON = LON-(2.5/2), LAT = LAT+(2.5/2))
+grid_df_poly3 <- grid_df %>% 
+  select(LON, LAT, grid_df_id) %>%
+  mutate(LON = LON+(2.5/2), LAT = LAT+(2.5/2))
+grid_df_poly4 <- grid_df %>% 
+  select(LON, LAT, grid_df_id) %>%
+  mutate(LON = LON+(2.5/2), LAT = LAT-(2.5/2))
+grid_df_poly <- rbind(grid_df_poly1,grid_df_poly2,grid_df_poly3,grid_df_poly4)
+
+grid_df_conservation_poly <- grid_df_poly %>%
+  left_join(grid_df_conservation %>% select(grid_df_id, n_articles), by="grid_df_id") %>%
+  arrange(grid_df_id)
+
+brks <- quantile(grid_df_conservation$n_articles, probs=seq(0,1, by=0.1), na.rm=T)
+brkslabs <- formatC(brks,digits=2,format="e")
+#names(brks) <- brkslabs
+
+
+# Plot
+ggplot() +
+  geom_polygon(data=grid_df_conservation_poly, aes(LON, LAT, group=grid_df_id, fill=log(n_articles)))+
+  scale_fill_distiller(palette = "Greens", direction = 1, name = "log(weighted articles)",
+                       na.value = "transparent")+
+  # scale_fill_binned(type="viridis", breaks = brks)+
+  # scale_fill_binned(name = "N articles (weighted)", 
+  #              type = "gradient",low="white", high="darkgreen", na.value = "transparent",
+  #              breaks = brks, nice.breaks = FALSE,
+  #              #labels = function(x) ifelse(1000 <= x, paste(x/1000, "k"), paste(x)),
+  #              #rescaler = scales::rescale,
+  #              #values = range01(breaksFill),
+  #              show.limits = TRUE, 
+  #              #limits = brks[c(0, length(brks))], 
+  #              #oob= scales::squish,
+  #              guide = guide_coloursteps(order = 1), #barwidth = unit(0.5, 'cm') 
+  #              position = "bottom")+
+  
+  
+  geom_sf(data=coast, col = "black", linewidth = 0.5)+
+  coord_sf(crs = st_crs('ESRI:54030'),default_crs = st_crs(4326))+
+  theme_bw()+
+  theme(
+    legend.position = "bottom",
+    panel.background = element_blank(),
+    panel.grid = element_blank(),
+    panel.border = element_blank(),
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    axis.ticks = element_blank()
+  )
+  
+ggsave(filename=here::here("testNbSmap.png"),plot=map_ggp,"png")
+
+
+
+
+
+```
+
+
+
+
+
+
 
 
 
