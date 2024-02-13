@@ -14,7 +14,7 @@ library(dplyr)
 library(dbplyr)
 library(R.utils)
 library(RSQLite)
-
+library(countrycode)
 ```
 
 # Add files to sqlite database
@@ -225,15 +225,17 @@ DBI::dbDisconnect(dbcon)
 This section will clean the bad place matches from the geoparsing tables.
 
 Steps to clean:
-1. Remove acronym matches where the word matched is all capitalized letters, except UK and US
-2. Remove text between copyright symbol and next period (get rid of publisher matching)
-3. Remove land matches x distance from the coast when the spatial scale of the match is sub-national
-4. Remove affiliation text from abstract, and any resulting word matches
-5. Remove word matches that are a complete word in the English language
-6. Weight match by country_conf value (0.6 - 1)** -> consider removing low values using cluster analysis altogether
+0. Select only empirical papers
+1. Select only data were a the place name matches a shapefile ID
+2. Remove acronym matches where the word matched is all capitalized letters, except UK and US
+3. Remove text between copyright symbol and next period (get rid of publisher matching)
+4. Remove land matches x distance from the coast when the spatial scale of the match is sub-national
+5. Remove affiliation text from abstract, and any resulting word matches
+6. Remove word matches that are a complete word in the English language
+7. Weight match by country_conf value (0.6 - 1)** -> consider removing low values using cluster analysis altogether
 
 
-Notes on no. 3: 
+Notes on no. 4: 
 There are several definitions we can use to identify coastal land (from least to most conservative):
 a. Within 100 km from the land-sea interface (WRI 2000,Burke et al. 2001)
 b. Landward area contained within 100 m elevation of sea level (Nicholls and Small 2002)
@@ -252,37 +254,162 @@ b) estimate "uncertainty" for each country using the "ambiguous" classification 
 ```{r load data}
 dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, "all_tables_v4.sqlite"), create=FALSE)
 
-geoparsedText <- tbl(dbcon, "geoparsed_text") |>  collect()
+geoparsedText <- tbl(dbcon, "geoparsed_text") 
 shp_df_matches <- tbl(dbcon, "geoparsed-text_shp_df_matches") 
 shp_df_sum <- tbl(dbcon, "geoparsed-text_grid-sums")
 uniquerefs <- tbl(dbcon, "uniquerefs")
-
+shp_df_matches <- tbl(dbcon, "geoparsed-text_shp_df_matches") 
+grid_df <- tbl(dbcon, "grid_df_res2.5") %>% collect() 
 ```
 
 
 ```{r steps for cleaning}
 
-### Note N°1: Capital letter filtering
-
-  ## Extract world cities and countries names
-  library(maps)
-  cities <- as.data.frame(world.cities) 
-  
-  ## Filter rows if the word match in capital letter
-  word_in_capital_letters_TRUE <- tbl(dbcon, "geoparsed_text") |>  
+### Global geoparsed data
+geoP_data <- tbl(dbcon, "geoparsed_text") |>  
     dplyr::select(analysis_id, word, country_predicted, place_name) |> 
+    collect() 
+
+length(unique(geoP_data$analysis_id))
+nrow(geoP_data)
+
+### Note N°0: Select only empirical studies
+
+  ## Extract the papers predicted as empirical ones
+  predMethod <- tbl(dbcon, "pred_method_type") |> 
+    select(analysis_id, 
+           `method_type.Empirical - mean_prediction`) |> 
+    filter(`method_type.Empirical - mean_prediction` >= 0.5) |> 
+    collect()
+  
+  ## Selection of empiral papers among all papers
+  geoP_data_empirical <- filter(geoP_data, analysis_id %in% unique(predMethod$analysis_id))
+
+  length(unique(geoP_data_empirical$analysis_id))
+  nrow(geoP_data_empirical)
+
+  
+### Note N°1: Select only data where !is.na()
+  
+  ## Join with the geoparsed matching location (grid cell level)
+  geoP_data_empirical_cell <- geoP_data_empirical |> 
+    left_join(shp_df_matches, by = "analysis_id", copy = TRUE) |>
+    collect()
+  
+  nrow(geoP_data_empirical_cell)
+  length(unique(geoP_data_empirical_cell$analysis_id))
+  
+  ## Filter only rows where there the shp_id column != NA
+  geoP_data_empirical_cell_noNA <- filter(geoP_data_empirical_cell, !is.na(shp_id))
+  nrow(geoP_data_empirical_cell_noNA)
+  length(unique(geoP_data_empirical_cell_noNA$analysis_id))
+  
+  
+### Note N°2: Capital letter filtering
+  
+  # (Filter row that are not in capital letter) OR
+  # (Filter row in capital letters & with a number of character > 3) OR ~ to avoid acronyme but keep city name in capital letters
+  # (Filter row in capital letters & matching with USA, UK or US) ~ to avoid loosing data on these 2 countries
+  geoP_data_empirical_cell_acronym <- geoP_data_empirical_cell |> 
+    filter((stringr::str_detect(word, pattern = "^[[:upper:][:space:]]+$") == FALSE) |
+           (stringr::str_detect(word, pattern = "^[[:upper:][:space:]]+$") == TRUE & nchar(word) > 3) |
+           (stringr::str_detect(word, pattern = "^[[:upper:][:space:]]+$") == TRUE & word %in% c("USA", "UK", "US")))
+  
+  nrow(geoP_data_empirical_cell_acronym)
+  length(unique(geoP_data_empirical_cell_acronym$analysis_id))
+
+  
+### Note N°3: Remove word matching with copyright informations
+  
+  ## Extract analysis_id that have (c) symbole in the abstract
+  geoparsedText_with_C <- uniquerefs |>
     collect() |> 
-    # Filter row with a matching pattern in CAPITAL letters
-    filter(stringr::str_detect(word, pattern = "^[[:upper:][:space:]]+$")) |> 
-    mutate(word_title = stringr::str_to_title(word),
-           # New column to identify CAPITAL letters patterns that are country names
-           id_country = countrycode(sourcevar   = word,
-                                    origin      = "country.name",
-                                    destination = "country.name"),
-           # New column to identify CAPITAL letters patterns that are city names
-           city_T_F  = word_title %in% cities$name) |> 
-    # Filter rows whose the column word corresponds to a country OR city name
-    filter(!is.na(id_country) | city_T_F == TRUE)
+    # Filter only analysis_id keept at previous filter
+    filter(analysis_id %in% unique(geoP_data_empirical_cell_acronym$analysis_id)) |> 
+    # Filter only analysis_id with the copyright symbole
+    filter(stringr::str_detect(abstract, pattern = "Â©")) |> 
+    # mutate(copyright_text = stringr::str_extract(abstract, "\\Â©\\w+$"))
+    mutate(copyright_text = stringr::str_split(abstract, "Â©")[[1]][2]) |> 
+    select(analysis_id, copyright_text)
+  
+  
+  ## Filter data with "word" matching with a name in "copyright_text
+  geoP_data_empirical_cell_acronym_CR <- geoP_data_empirical_cell_acronym |> 
+    left_join(geoparsedText_with_C, by = "analysis_id") |> 
+    mutate(filter = case_when(stringr::str_detect(copyright_text, stringr::fixed(word)) ~ TRUE,
+                              TRUE ~ FALSE)) |> 
+    filter(filter == FALSE) |> 
+    select(-copyright_text, -filter)
+  
+  nrow(geoP_data_empirical_cell_acronym_CR)
+  length(unique(geoP_data_empirical_cell_acronym_CR$analysis_id))
+  
+  
+### Note N°4: Remove land matches x distance from the coast when the spatial scale of the match is sub-national
+  
+  ## Set new grid dataframe with new info
+  grid_df2 <- grid_df
+  
+  ## Within the EEZ----------------------------
+  require(raster)
+  eez_rast <- raster::raster(here::here("data", "external", "eez_rast", "rast_iso_eez.asc"))
+  eez_rast[eez_rast == 0] <- NA
+  
+    # extract eez value at grid cell points
+    grid_df2$eez_vals <- raster::extract(eez_rast, grid_df[,c("LON","LAT")])
+    
+  ## Distiance inlad from the coast 
+    
+    # Used this as inspo: https://dominicroye.github.io/en/2019/calculating-the-distance-to-the-sea-in-r/
+    coast <- giscoR::gisco_get_countries(
+      spatialtype = "COASTL",
+      epsg = "4326"
+    )
+    
+    coast_utm <- sf::st_transform(coast, 4087)
+  
+    landCells_sf <- grid_df |>  
+      dplyr::filter(is_land == 1) |> 
+      sf::st_as_sf(coords = c('LON','LAT')) |> 
+      sf::st_set_crs(4326) |> 
+      sf::st_transform(4087)
+
+    #transform from polygon shape to line
+    coast_utm <- sf::st_cast(coast_utm, "MULTILINESTRING")
+    
+    #calculation of the distance between the coast and our points
+    dist <- sf::st_distance(coast_utm, landCells_sf)
+    
+    # will need to compute the minimum distance for each land cell
+    minDist <- apply(dist, 2, function(x) min(x, na.rm=T))
+    minDist <- minDist/1000 # convert to km
+    landCells_sf$distInLand_km <- minDist
+    landCells <- as.data.frame(landCells_sf)
+    
+    grid_df2 <- grid_df2 |> 
+      dplyr::left_join(landCells |>  dplyr::select(grid_df_id, distInLand_km))
+    
+    # Plot to check -- this works!
+    ggplot(grid_df2) +
+      geom_point(aes(LON, LAT, col = distInLand_km))
+    
+
+  ## Make a new column to identify inland or coast
+  grid_df2 <- grid_df2 %>%
+    mutate(coastal = ifelse(distInLand_km <= 200 | !is.na(eez_vals), 1, 0))
+  
+    # check
+    grid_df2 %>%
+      ggplot(aes(LON, LAT, fill=coastal))+
+      geom_tile()
+    
+  ## Filter only cells that are at least 200km from coast
+  geoP_data_empirical_cell_acronym_CR_200km <- geoP_data_empirical_cell_acronym_CR |> 
+    left_join(grid_df2 |> select(grid_df_id, coastal), by = "grid_df_id") |> 
+    filter(coastal == 1)
+    
+  nrow(geoP_data_empirical_cell_acronym_CR_200km)
+  length(unique(geoP_data_empirical_cell_acronym_CR_200km$analysis_id))
 
 ```
 
@@ -333,7 +460,7 @@ lowFreqMatches <- uniqueWordPlaceMatchesCountryPred %>%
   filter(n_articles < 17) %>%
   arrange(desc(n_articles)) 
 
-narticle_per_coutry_LowFreq <- lowFreqMatches
+narticle_per_coutry_LowFreq <- lowFreqMatches |> 
   group_by(country_predicted) |>
   summarise(n_articles = n()) |>
   arrange(desc(n_articles)) 
