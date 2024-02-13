@@ -383,14 +383,219 @@ ggplot()+
 
 ## Subset data to just cells in EEZ and 200 km from coast
 
-```{r}
+
+Useful links: 
+https://gis.stackexchange.com/questions/373691/buffer-coastlines
+
+https://gis.stackexchange.com/questions/392505/can-i-use-r-to-do-a-buffer-inside-polygons-shrink-polygons-negative-buffer
+
+https://stackoverflow.com/questions/51837454/r-measuring-distance-from-a-coastline
+
+https://dominicroye.github.io/en/2019/calculating-the-distance-to-the-sea-in-r/
+
+```{r calculate grid cells within the EEZ and coast}
+
+## Set new grid dataframe with new info
+grid_df2 <- grid_df
+
+
+## Within the EEZ----------------------------
+require(raster)
+eez_rast <- raster::raster(here::here("data", "external", "eez_rast", "rast_iso_eez.asc"))
+eez_rast[eez_rast==0] <- NA
+
+# extract eez value at grid cell points
+grid_df2$eez_vals <- raster::extract(eez_rast, grid_df[,c("LON","LAT")])
+
+# check
+grid_df2 %>%
+  filter(!is.na(eez_vals)) %>%
+  ggplot(aes(LON, LAT, fill=eez_vals))+
+  geom_tile()
+
+
+
+## Distiance inlad from the coast ---------------------------
+# Used this as inspo: https://dominicroye.github.io/en/2019/calculating-the-distance-to-the-sea-in-r/
+coast <- giscoR::gisco_get_countries(
+  spatialtype = "COASTL",
+  epsg = "4326"
+)
+
+coast_utm <- st_transform(coast, 4087)
+
+landCells_sf <- grid_df %>% 
+  filter(is_land == 1) %>%
+  st_as_sf(coords = c('LON','LAT')) %>%
+  st_set_crs(4326) %>%
+  st_transform(4087)
+
+#transform from polygon shape to line
+coast_utm <- st_cast(coast_utm, "MULTILINESTRING")
+
+#calculation of the distance between the coast and our points
+dist <- st_distance(coast_utm, landCells_sf)
+dim(dist) # nrow = nrow of coast, ncol = nrow of land cells
+
+# will need to compute the minimum distance for each land cell
+minDist <- apply(dist, 2, function(x) min(x, na.rm=T))
+minDist <- minDist/1000 # convert to km
+landCells_sf$distInLand_km <- minDist
+landCells <- as.data.frame(landCells_sf)
+
+grid_df2 <- grid_df2 %>%
+  left_join(landCells %>% dplyr::select(grid_df_id, distInLand_km))
+
+# Plot to check -- this works!
+ggplot(grid_df2)+
+  geom_point(aes(LON, LAT, col = distInLand_km))
+
+
+
+## Make a new column to identify inland or coast
+grid_df2 <- grid_df2 %>%
+  mutate(coastal = ifelse(distInLand_km <= 200 | !is.na(eez_vals), 1, 0))
+
+# check
+grid_df2 %>%
+  ggplot(aes(LON, LAT, fill=coastal))+
+  geom_tile()
 
 
 ```
 
 
-```{r shapefiles of coast and EEZ}
-#world_shp <- sf::read_sf(here::here("data", "external", "world_shp")) # shape file of the world
+```{r get shpfiles of coastal habitats}
+require(dplyr)
+require(sf)
+require(ggplot2)
+
+## Function to simplify shape file
+# Inspired by: https://www.r-bloggers.com/2021/03/simplifying-geospatial-features-in-r-with-sf-and-rmapshaper/
+simplifyShape <- function(filePath, outCRS = 'ESRI:54030', keepThreshold = 0.001){
+  temp_shp <- read_sf(filePath) %>% 
+    st_geometry() %>%
+    st_transform(outCRS)
+  temp_shp_simpl <- temp_shp %>% 
+    st_simplify(preserveTopology = FALSE, dTolerance = 500) %>%
+    rmapshaper::ms_simplify(keep = keepThreshold,keep_shapes = FALSE) %>% # this line is crucial
+    st_buffer(dist = -1000, nQuadSegs = 1) %>%
+    st_buffer(dist = 1*(10^5), nQuadSegs = 1)
+  rm(temp_shp)
+  return(temp_shp_simpl)
+}
+
+
+## Corals
+dir_use <- here::here("data/external/ocean_habitats_distribution/all_shapefiles")
+files <- dir(dir_use)
+coral_sf <- simplifyShape(file.path(dir_use, files[grep("coral", files, ignore.case = TRUE)]))
+#save(coral_sf, file = here::here("data/external/ocean_habitats_distribution/sf_simplified/coral_reefs.RData"))
+
+
+## Seagrasses
+seagrass_sf <- simplifyShape("data/external/ocean_habitats_distribution/WCMC013-014_SeagrassPtPy2021_v7_1/014_001_WCMC013-014_SeagrassPtPy2021_v7_1/01_Data")
+
+seagrass_sf %>% 
+  ggplot() +
+  geom_sf()+
+  coord_sf(crs = st_crs('ESRI:54030'))
+
+#save(seagrass_sf, file = here::here("data/external/ocean_habitats_distribution/sf_simplified/seagrasses.RData"))
+
+
+## Saltmarshes
+saltmarsh_sf <- simplifyShape( 
+  here::here("data/external/ocean_habitats_distribution/WCMC027_Saltmarsh_v6_1/WCMC027_Saltmarsh_v6_1/01_Data/WCMC027_Saltmarshes_Py_v6_1.dbf"), keepThreshold = 0.1)
+
+round(object.size(saltmarsh_sf)/1024)
+
+saltmarsh_sf %>% 
+  ggplot() +
+  geom_sf()+
+  coord_sf(crs = st_crs('ESRI:54030'))
+
+#save(saltmarsh_sf, file = here::here("data/external/ocean_habitats_distribution/sf_simplified/saltmarsh.RData"))
+
+
+## Mangroves
+# dir_use <- "data/external/ocean_habitats_distribution/GMW_v3/01_GMW_001_GlobalMangroveWatch/01_Data/gmw_v3"
+# files <- dir(dir_use)
+# files <- files[grep("2020", files)]
+mangrove_sf <- simplifyShape(here::here("data/external/ocean_habitats_distribution/GMW_v3/01_GMW_001_GlobalMangroveWatch/01_Data/gmw_v3/gmw_v3_2020_vec.dbf"), keepThreshold = 0.1)
+
+round(object.size(mangrove_sf)/1024) # reduces size quite a bit!
+
+mangrove_sf %>% 
+  ggplot() +
+  geom_sf()+
+  coord_sf(crs = st_crs('ESRI:54030'))
+
+#save(mangrove_sf, file = here::here("data/external/ocean_habitats_distribution/sf_simplified/mangrove.RData"))
+
+
+
+## Plot all ecosystem types overlayed ----------
+habitats_sf_dir <- here::here("data/external/ocean_habitats_distribution/sf_simplified")
+habitats_sf_files <- dir(habitats_sf_dir)
+for(i in 1:length(habitats_sf_files)){
+  load(file.path(habitats_sf_dir, habitats_sf_files[i]))
+}
+
+coast <- giscoR::gisco_get_countries(
+  spatialtype = "COASTL",
+  epsg = "4326"
+)
+coast_rob <- st_transform(coast, 'ESRI:54030') %>%
+  st_cast("POLYGON") %>%
+  st_cast("MULTIPOLYGON")
+
+
+# make a bounding box
+xmn <- -180
+xmx <- 180
+ymn <- -90
+ymx <- 90
+lout <- 100
+
+bbox_df <- data.frame(
+  LON = c(
+    rep(xmn, lout), 
+    seq(xmn, xmx, length.out = lout),
+    rep(xmx, lout),
+    seq(xmx, xmn, length.out = lout)
+  ),
+  LAT = c(
+    seq(ymn, ymx, length.out = lout),
+    rep(ymx, lout),
+    seq(ymx, ymn, length.out = lout),
+    rep(ymn, lout)
+  ),
+  group = rep("bbx", lout*4)
+)
+
+
+ggplot() +
+  geom_sf(data = coast_rob, col = "darkgrey")+
+  geom_sf(data = coral_sf, aes(fill = "Coral"), alpha = 0.5, show.legend = TRUE)+
+  geom_sf(data = seagrass_sf, aes(fill = "seagrass"), alpha = 0.5, show.legend = TRUE)+
+  geom_sf(data = saltmarsh_sf, aes(fill = "saltmarsh"), alpha = 0.5, show.legend = TRUE)+
+  geom_sf(data = mangrove_sf, aes(fill = "mangrove"), alpha = 0.5, show.legend = TRUE)+
+  geom_polygon(data=bbox_df, aes(x=LON, y=LAT, group=group),col = "black", linewidth = 0.7, fill=NA)+
+  scale_fill_manual(values = c("Coral" = "coral", "seagrass" = "turquoise",
+                               "saltmarsh" = "red", "mangrove" = "lightgreen"),
+                    labels = c("Coral reef","Mangrove","Salt Marsh","Seagrass"),
+                    name = "Ecosystem type") +
+  
+  coord_sf(crs = st_crs('ESRI:54030'), default_crs = st_crs(4326))+
+  theme_void()+
+  theme(
+    legend.position = "bottom"
+  )
+
+```
+
+```{r plot the NbS geoparsing and ecosystem type data}
 
 coast <- giscoR::gisco_get_countries(
   spatialtype = "COASTL",
@@ -398,21 +603,44 @@ coast <- giscoR::gisco_get_countries(
 )
 #coast <- st_transform(coast, st_crs("ESRI:54030"))
 
-eez_rast <- raster::raster(here::here("data", "external", "eez_rast", "rast_iso_eez.asc"))
+# make a bounding box
+xmn <- -180
+xmx <- 180
+ymn <- -90
+ymx <- 90
+lout <- 100
+
+bbox_df <- data.frame(
+  LON = c(
+    rep(xmn, lout), 
+    seq(xmn, xmx, length.out = lout),
+    rep(xmx, lout),
+    seq(xmx, xmn, length.out = lout)
+  ),
+  LAT = c(
+    seq(ymn, ymx, length.out = lout),
+    rep(ymx, lout),
+    seq(ymx, ymn, length.out = lout),
+    rep(ymn, lout)
+  ),
+  group = rep("bbx", lout*4)
+)
 
 
+
+## Plot NbS GEoparsing
 # make a polygon from the grid tiles to plot with sf
-grid_df_poly1 <- grid_df %>% 
-  select(LON, LAT, grid_df_id) %>%
+grid_df_poly1 <- grid_df2 %>% 
+  select(LON, LAT, grid_df_id, coastal) %>%
   mutate(LON = LON-(2.5/2), LAT = LAT-(2.5/2))
-grid_df_poly2 <- grid_df %>% 
-  select(LON, LAT, grid_df_id) %>%
+grid_df_poly2 <- grid_df2 %>% 
+  select(LON, LAT, grid_df_id, coastal) %>%
   mutate(LON = LON-(2.5/2), LAT = LAT+(2.5/2))
-grid_df_poly3 <- grid_df %>% 
-  select(LON, LAT, grid_df_id) %>%
+grid_df_poly3 <- grid_df2 %>% 
+  select(LON, LAT, grid_df_id, coastal) %>%
   mutate(LON = LON+(2.5/2), LAT = LAT+(2.5/2))
-grid_df_poly4 <- grid_df %>% 
-  select(LON, LAT, grid_df_id) %>%
+grid_df_poly4 <- grid_df2 %>% 
+  select(LON, LAT, grid_df_id, coastal) %>%
   mutate(LON = LON+(2.5/2), LAT = LAT-(2.5/2))
 grid_df_poly <- rbind(grid_df_poly1,grid_df_poly2,grid_df_poly3,grid_df_poly4)
 
@@ -420,8 +648,11 @@ grid_df_conservation_poly <- grid_df_poly %>%
   left_join(grid_df_conservation %>% select(grid_df_id, n_articles), by="grid_df_id") %>%
   arrange(grid_df_id)
 
-brks <- quantile(grid_df_conservation$n_articles, probs=seq(0,1, by=0.1), na.rm=T)
-brkslabs <- formatC(brks,digits=2,format="e")
+grid_df_conservation_poly <- grid_df_conservation_poly %>%
+  filter(coastal == 1)
+
+#brks <- quantile(grid_df_conservation$n_articles, probs=seq(0,1, by=0.1), na.rm=T)
+#brkslabs <- formatC(brks,digits=2,format="e")
 #names(brks) <- brkslabs
 
 
@@ -445,6 +676,7 @@ ggplot() +
   
   
   geom_sf(data=coast, col = "black", linewidth = 0.5)+
+  geom_polygon(data=bbox_df, aes(x=LON, y=LAT, group=group),col = "black", linewidth = 0.7, fill=NA)+
   coord_sf(crs = st_crs('ESRI:54030'),default_crs = st_crs(4326))+
   theme_bw()+
   theme(
@@ -457,7 +689,7 @@ ggplot() +
     axis.ticks = element_blank()
   )
   
-ggsave(filename=here::here("testNbSmap.png"),plot=map_ggp,"png")
+
 
 
 
