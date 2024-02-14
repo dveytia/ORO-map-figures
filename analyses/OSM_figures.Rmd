@@ -1,0 +1,710 @@
+---
+title: "OSM_figures"
+author: "Devi Veytia"
+date: "2024-02-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Set up
+
+```{r load libraries}
+library(dplyr)
+library(dbplyr)
+library(R.utils)
+library(RSQLite)
+library(ggplot2)
+```
+
+
+```{r Get the latest version of sqlite database and connect}
+
+sqliteDir <- here::here("data/sqlite-databases")
+sqliteFiles <- dir(sqliteDir)
+sqliteVersions <- as.numeric(gsub(".sqlite","",substring(sqliteFiles, regexpr("_v", sqliteFiles) + 2)))
+latestVersion <- sqliteFiles[which.max(sqliteVersions)]
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+```
+
+
+```{r import common aesthetics}
+factor_aes <- readxl::read_excel(here::here("R/factor_aesthetics.xlsx"))
+```
+
+# Figure 1: Line plot of # articles for Ocean & climate research, all OROs, and NbS by year
+
+For each year, count the number of lower, mean and upper articles relevant for all OROs and for each branch
+```{r Sum n articles per oro branch per year}
+predRel <- tbl(dbcon, "pred_relevance") 
+pred_oro_branch <- tbl(dbcon, "pred_oro_branch")
+uniquerefs <- tbl(dbcon, "allrefs")
+
+oro_branch_by_year <- pred_oro_branch %>%
+  inner_join(predRel %>% select(analysis_id, relevance_mean), by = "analysis_id")%>%
+  filter(0.5 <= relevance_mean) %>% 
+  inner_join(uniquerefs %>% select(analysis_id, year), by = "analysis_id") %>%
+  group_by(year) %>%
+  summarise(
+    allORO_mean = sum(0.5 <= `oro_branch.Mitigation - mean_prediction` |
+                        0.5 <= `oro_branch.Nature - mean_prediction` |
+                        0.5 <= `oro_branch.Societal - mean_prediction`),
+    allORO_lower = sum(0.5 <= `oro_branch.Mitigation - lower_pred` |
+                        0.5 <= `oro_branch.Nature - lower_pred` |
+                        0.5 <= `oro_branch.Societal - lower_pred`),
+    allORO_upper = sum(0.5 <= `oro_branch.Mitigation - upper_pred` |
+                        0.5 <= `oro_branch.Nature - upper_pred` |
+                        0.5 <= `oro_branch.Societal - upper_pred`),
+    Mitigation_mean = sum(0.5 <= `oro_branch.Mitigation - mean_prediction`),
+    Mitigation_lower = sum(0.5 <= `oro_branch.Mitigation - lower_pred`),
+    Mitigation_upper = sum(0.5 <= `oro_branch.Mitigation - upper_pred`),
+    Nature_mean = sum(0.5 <= `oro_branch.Nature - mean_prediction`),
+    Nature_lower = sum(0.5 <= `oro_branch.Nature - lower_pred`),
+    Nature_upper = sum(0.5 <= `oro_branch.Nature - upper_pred`),
+    Societal_mean = sum(0.5 <= `oro_branch.Societal - mean_prediction`),
+    Societal_lower = sum(0.5 <= `oro_branch.Societal - lower_pred`),
+    Societal_upper = sum(0.5 <= `oro_branch.Societal - upper_pred`)
+  ) %>% 
+  collect()
+
+# Melt and reformat so each line is a yearxbranch, and then columns for mean, lower and upper
+variables <- c("allORO","Mitigation","Nature","Societal")
+
+for(v in 1:length(variables)){
+  sub <- oro_branch_by_year[,c(1,grep(variables[v], colnames(oro_branch_by_year)))]
+  colnames(sub) <- gsub(paste0(variables[v],"_"),"", colnames(sub))
+  # sub <- reshape2::melt(sub, id.vars = "year", variable.name = "prediction_boundary", 
+  #                       value.name = "n_articles")
+  sub$ORO_branch <- paste(variables[v])
+  if(v==1){
+    oro_branch_by_year_sums <- sub
+  }else{
+    oro_branch_by_year_sums <- rbind(oro_branch_by_year_sums, sub)
+  }
+}
+
+
+# Limit to just all OROs and NbS and format year as Date
+oro_branch_by_year_sums <- oro_branch_by_year_sums%>%
+  na.omit() %>%
+  filter(ORO_branch %in% c("allORO","Nature")) %>%
+  mutate(year = as.Date(paste0(year, "-01-01")),
+         ORO_branch = factor(ORO_branch, levels = c("allORO","Nature"), labels=c("All OROs","NbS")))
+
+
+# use the max year to set the x limits
+xmax = as.Date("2022-12-31")
+xmin = as.Date("1980-01-01")
+
+oro_branch_by_year_sums <- oro_branch_by_year_sums %>%
+  filter(xmin <= year & year <= xmax)
+```
+
+```{r get number of articles from citation indexed databases}
+
+## Web of Science
+wos_by_year <- read.delim2(
+  here::here("data/external/ocean-and-climate-publications/WOS_ocean-and-climate_by-year_2023-11-21.txt"))
+
+wos_by_year <- wos_by_year %>%
+  rename(year = Publication.Years, n_articles = Record.Count)%>%
+  select(year, n_articles)%>%
+  mutate(year = as.Date(paste0(year, "-01-01"))) %>%
+  filter(as.Date("1991-01-01") <= year & year <= xmax) %>%
+  na.omit()
+
+
+## Scopus
+scopus_by_year <- read.csv(
+  here::here("data/external/ocean-and-climate-publications/SCOPUS_ocean-and-climate_by-year_2023-11-21.csv"))
+
+scopus_by_year <- scopus_by_year %>%
+  mutate(year = as.Date(paste0(year, "-01-01"))) %>%
+  filter(xmin <= year & year <= xmax)%>%
+  na.omit()
+
+
+```
+
+
+```{r fit log-transformed lm log(y) = log(a) + r * t to estimate rate of change for each dataset}
+# Create one dataset with all the information
+modDf <- rbind(
+  cbind(wos_by_year, dataset = "WOS"),
+  cbind(scopus_by_year, dataset = "Scopus"),
+  oro_branch_by_year_sums %>% select(year, mean, ORO_branch) %>% rename(n_articles = mean, dataset = ORO_branch)
+)
+
+# Subset to only common years?
+modDf <- subset(modDf, year %in% as.Date(intersect(intersect(wos_by_year$year,scopus_by_year$year),oro_branch_by_year_sums$year), origin = "1970-01-01"))
+
+modDf <- na.omit(modDf)
+
+modDf$dataset <- factor(modDf$dataset, levels = c("WOS","Scopus","All OROs","NbS"))
+summary(modDf)
+
+
+# Fit seperate log-transformed model for each group
+fits <- plyr::dlply(modDf, "dataset", function(df) lm(log(n_articles) ~ year, data=df))
+fits_df <- plyr::ldply(fits, coef) %>% as.data.frame()
+pVal_df = plyr::ldply(fits, function(x) summary(x)$coefficients["year","Pr(>|t|)"]) %>% as.data.frame()
+colnames(pVal_df)[2] <- "pVal"
+rSq_df <- plyr::ldply(fits, function(x) summary(x)$r.squared) %>% as.data.frame()
+colnames(rSq_df)[2] <- "r2"
+fits_df <- merge(fits_df, pVal_df)
+fits_df <- merge(fits_df, rSq_df)
+fits_df <- fits_df %>% rename(rate = year)
+
+maxYear <- modDf %>% filter(year == as.Date("2022-01-01"))
+fits_df <- merge(fits_df, maxYear)
+
+# # Format numbers for readability?
+# fits_df[,c("year","pVal","r2")] <- apply(fits_df[,c("year","pVal","r2")], 1:2, function(x) formatC(x, digits=3, format = "E"))
+```
+
+
+
+```{r PLOT Figure 1}
+fig1_ggp <- ggplot()+
+  
+  # Plot complete years
+  geom_ribbon(data = oro_branch_by_year_sums, 
+              aes(x=year, ymin = log(lower), ymax=log(upper), fill = ORO_branch), alpha = 0.5)+
+  geom_line(data = oro_branch_by_year_sums, aes(x=year, y=log(mean), col=ORO_branch), linewidth = 1,
+            na.rm=T)+
+  geom_line(data = wos_by_year, 
+            aes(x=year, y=log(n_articles), linetype = "WOS"), col="black", linewidth = 1,
+            na.rm=T)+
+  geom_line(data = scopus_by_year, 
+            aes(x=year, y=log(n_articles), linetype = "Scopus"), col="black", linewidth = 1,
+            na.rm=T)+
+  
+  # Plot model rates
+  geom_text(data = fits_df %>% filter(dataset != "WOS"), aes(x = year, y = log(n_articles)-0.7, 
+                                label = paste("r =",formatC(rate, digits=2, format="E"))),
+            col = "red",size=3)+
+  
+  # Format scales
+  scale_color_manual(values = c("navy", "forestgreen"), 
+                     name = "ORO type", guide=guide_legend(order=1, nrow=2), position = "top")+
+  scale_fill_manual(values = c("navy", "forestgreen"), guide = "none")+
+  scale_linetype_manual(values = c("solid","dotted"), name = "Oceans & climate literature\ndatabase:",
+                        guide=guide_legend(order=2, nrow=2), position = "bottom")+
+  labs(x="Year", y="log(N articles)/year")+
+  scale_x_date(limits = c(as.Date("1980-01-01"),xmax+300))+
+  scale_y_continuous(sec.axis = sec_axis(trans = exp, name = "N articles", 
+                                         breaks = c(0,100,1000,10000,30000,80000),
+                                         labels = function(x) formatC(x, big.mark=",", format="d")),
+                     breaks = seq(0,10, by= 2))+
+  theme_classic()+
+  theme(
+    legend.position = "bottom",
+    legend.box = "vertical",
+    legend.text = element_text(size=8),
+    legend.title = element_text(size=10),
+    axis.text = element_text(size=7)
+    )
+
+fig1_ggp
+```
+
+
+# Figure 3 - upset plot just showing interactions with NbS
+
+
+
+```{r calculate oro-oro interaction sizes}
+predRel <- tbl(dbcon, "pred_relevance") %>%
+  filter(0.5 <= relevance_mean) %>%
+  select(analysis_id)
+predType <- tbl(dbcon, "pred_oro_type_long") %>%
+  filter(0.5 <= mean) %>%
+  select(analysis_id, oro_type)
+
+## Join together to get relevance preditions for all included
+oroTypeDf <- predRel %>%
+  inner_join(predType, by ="analysis_id") %>% 
+  collect()
+
+# Format aesthetics for plotting
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+typeAES$label[which(typeAES$label == "Conservation")] <- "Conservation/NbS"
+
+oroTypeDf <- oroTypeDf %>%
+  mutate(oro_type = factor(oro_type, levels = typeAES$level, labels = typeAES$label))
+
+# format as tabular data
+oroTypeDf_wide <- oroTypeDf %>%
+  select(analysis_id, oro_type) %>%
+  mutate(count = 1) %>%
+  reshape2::dcast(analysis_id ~ oro_type, drop=FALSE, value.var = "count")
+
+upsetCols <- typeAES %>%
+  rename(set = label, fill = colour) %>%
+  select(set, fill)
+
+
+# Also calculate interaction matrix
+oroTypeDf_mat <- crossprod(table(oroTypeDf[,c("analysis_id","oro_type")]))
+
+# set buckets that aren't crossed with conservation to 0
+for(i in 1:nrow(oroTypeDf_mat))
+  for(j in 1:ncol(oroTypeDf_mat))
+    if(grepl("conservation", rownames(oroTypeDf_mat)[i], ignore.case = TRUE) |
+       grepl("conservation", colnames(oroTypeDf_mat)[j], ignore.case = TRUE)){
+      oroTypeDf_mat[i,j] <- oroTypeDf_mat[i,j]
+    } else{
+      oroTypeDf_mat[i,j] <- 0
+    } 
+
+```
+
+```{r save upset plot}
+require(ComplexUpset)
+
+vars = colnames(oroTypeDf_wide)[colnames(oroTypeDf_wide) != "analysis_id"]
+
+# Get the names of all the interaction combinations that include conservation
+allIntersections2D <- t(combn(vars,2))
+allIntersections2D <- allIntersections2D[apply(allIntersections2D, 1, function(x) grepl("conservation", paste(x, collapse = ""), ignore.case=T)),]
+
+allIntersections3D <- t(combn(vars,3))
+allIntersections3D <- allIntersections3D[apply(allIntersections3D, 1, function(x) grepl("conservation", paste(x, collapse = ""), ignore.case=T)),]
+
+allIntersections4D <- t(combn(vars,4))
+allIntersections4D <- allIntersections4D[apply(allIntersections4D, 1, function(x) grepl("conservation", paste(x, collapse = ""), ignore.case=T)),]
+
+# Plot the upset plot
+upset(
+  data=oroTypeDf_wide,
+  intersect = rev(colnames(oroTypeDf_wide)[colnames(oroTypeDf_wide) != "analysis_id"]),
+  intersections = c(as.list(data.frame(t(allIntersections2D))),
+                    as.list(data.frame(t(allIntersections3D))),
+                    as.list(data.frame(t(allIntersections4D)))),
+  width_ratio = 0.3,
+  min_size = 1,
+  keep_empty_groups = FALSE,
+  sort_sets = FALSE,
+  base_annotations = list('Intersection size' = intersection_size(text = list(size=3.5))+
+                            ylim(c(0,600))), #, vjust=-0.1, hjust=-0.1, angle=45
+  set_sizes = (upset_set_size(geom = geom_bar(fill = "white"))+
+                 geom_text(aes(label=..count..), hjust=1.1, stat='count', size=3, col="white")+
+                 expand_limits(y=30000)+
+                 theme(axis.text.x = element_text(angle=90))),
+  stripes = rev(typeAES$colour),
+  sort_intersections = 'ascending',
+  sort_intersections_by = c("degree","cardinality"),
+  group_by = "degree",
+  min_degree = 2,
+  max_degree = 3,
+  # highlight interesting interactions
+  queries = list(
+    upset_query(intersect = c("CO2 removal or storage", "Conservation/NbS"), color = "orange", fill="orange"),
+    upset_query(intersect = c("Built infrastructure & technology", "Conservation/NbS"), color = "orange", fill="orange"),
+    upset_query(intersect = c("Conservation/NbS", "Built infrastructure & technology","Socio-institutional"), color = "orange", fill="orange")
+  )
+)
+
+# save fig dimensions: 800 x 470
+# for pdf 9 x 5 in
+```
+
+
+# Fig 4 - Geoparsing results for just conservation options
+
+```{r load extra libraries}
+library(R.utils)
+library(tidyr)
+library(stringr)
+library(viridis)
+library(sf)
+library(broom)
+library(countrycode)
+library(ggrepel)
+```
+
+```{r get data on conservation empirical geoparsing data}
+grid_df <- tbl(dbcon, "grid_df_res2.5") %>% collect()
+shp_df_matches <- tbl(dbcon, "geoparsed-text_shp_df_matches")
+
+predRel <- tbl(dbcon, "pred_relevance") %>%
+  filter(0.5 <= relevance_mean) %>%
+  select(analysis_id)
+predConservation <- tbl(dbcon, "pred_oro_type_long") %>% 
+  filter(0.5 <= mean & oro_type == "Conservation") %>%
+  select(analysis_id)
+predMethod <- tbl(dbcon, "pred_method_type") %>%
+  filter(0.5 <= `method_type.Empirical - mean_prediction`) %>%
+  select(analysis_id)
+
+## Join together to get relevance preditions for all included
+shp_df_matches_conservation <- predRel %>%
+  inner_join(predConservation, by ="analysis_id") %>%
+  inner_join(predMethod, by = "analysis_id") %>%
+  inner_join(shp_df_matches, by ="analysis_id") %>%
+  collect()
+
+shp_df_matches_conservation_weightedSum <- shp_df_matches_conservation %>%
+  group_by(grid_df_id) %>%
+  summarise(n_articles = sum(cell_weight))
+
+grid_df_conservation <- grid_df %>%
+  left_join(shp_df_matches_conservation_weightedSum, by = "grid_df_id")
+
+```
+
+```{r plot wgs84 projection}
+## Plot
+countries <- map_data("world")
+
+ggplot()+
+  geom_tile(data=grid_df_conservation, aes(x=LON, y=LAT, fill = log(n_articles)),
+            na.rm = TRUE)+
+  #scale_fill_viridis_c(name = "log(n articles)", na.value="transparent", option = "plasma")+
+  scale_fill_distiller(name = "log(n articles)", na.value="transparent", palette = "Greens", direction = 1)+
+  geom_polygon(data=countries, aes(long, lat, group=group), fill = "transparent", col="black", linewidth = 0.1)+
+  coord_quickmap()+
+  theme_bw()
+  theme(
+    legend.position = "bottom",
+    panel.background = element_blank(),
+    panel.grid = element_blank(),
+    panel.border = element_blank(),
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    axis.ticks = element_blank()
+  )
+ 
+
+```
+
+## Subset data to just cells in EEZ and 200 km from coast
+
+
+Useful links: 
+https://gis.stackexchange.com/questions/373691/buffer-coastlines
+
+https://gis.stackexchange.com/questions/392505/can-i-use-r-to-do-a-buffer-inside-polygons-shrink-polygons-negative-buffer
+
+https://stackoverflow.com/questions/51837454/r-measuring-distance-from-a-coastline
+
+https://dominicroye.github.io/en/2019/calculating-the-distance-to-the-sea-in-r/
+
+```{r calculate grid cells within the EEZ and coast}
+
+## Set new grid dataframe with new info
+grid_df2 <- grid_df
+
+
+## Within the EEZ----------------------------
+require(raster)
+eez_rast <- raster::raster(here::here("data", "external", "eez_rast", "rast_iso_eez.asc"))
+eez_rast[eez_rast==0] <- NA
+
+# extract eez value at grid cell points
+grid_df2$eez_vals <- raster::extract(eez_rast, grid_df[,c("LON","LAT")])
+
+# check
+grid_df2 %>%
+  filter(!is.na(eez_vals)) %>%
+  ggplot(aes(LON, LAT, fill=eez_vals))+
+  geom_tile()
+
+
+
+## Distiance inlad from the coast ---------------------------
+# Used this as inspo: https://dominicroye.github.io/en/2019/calculating-the-distance-to-the-sea-in-r/
+coast <- giscoR::gisco_get_countries(
+  spatialtype = "COASTL",
+  epsg = "4326"
+)
+
+coast_utm <- st_transform(coast, 4087)
+
+landCells_sf <- grid_df %>% 
+  filter(is_land == 1) %>%
+  st_as_sf(coords = c('LON','LAT')) %>%
+  st_set_crs(4326) %>%
+  st_transform(4087)
+
+#transform from polygon shape to line
+coast_utm <- st_cast(coast_utm, "MULTILINESTRING")
+
+#calculation of the distance between the coast and our points
+dist <- st_distance(coast_utm, landCells_sf)
+dim(dist) # nrow = nrow of coast, ncol = nrow of land cells
+
+# will need to compute the minimum distance for each land cell
+minDist <- apply(dist, 2, function(x) min(x, na.rm=T))
+minDist <- minDist/1000 # convert to km
+landCells_sf$distInLand_km <- minDist
+landCells <- as.data.frame(landCells_sf)
+
+grid_df2 <- grid_df2 %>%
+  left_join(landCells %>% dplyr::select(grid_df_id, distInLand_km))
+
+# Plot to check -- this works!
+ggplot(grid_df2)+
+  geom_point(aes(LON, LAT, col = distInLand_km))
+
+
+
+## Make a new column to identify inland or coast
+grid_df2 <- grid_df2 %>%
+  mutate(coastal = ifelse(distInLand_km <= 200 | !is.na(eez_vals), 1, 0))
+
+# check
+grid_df2 %>%
+  ggplot(aes(LON, LAT, fill=coastal))+
+  geom_tile()
+
+
+```
+
+
+```{r get shpfiles of coastal habitats}
+require(dplyr)
+require(sf)
+require(ggplot2)
+
+## Function to simplify shape file
+# Inspired by: https://www.r-bloggers.com/2021/03/simplifying-geospatial-features-in-r-with-sf-and-rmapshaper/
+simplifyShape <- function(filePath, outCRS = 'ESRI:54030', keepThreshold = 0.001){
+  temp_shp <- read_sf(filePath) %>% 
+    st_geometry() %>%
+    st_transform(outCRS)
+  temp_shp_simpl <- temp_shp %>% 
+    st_simplify(preserveTopology = FALSE, dTolerance = 500) %>%
+    rmapshaper::ms_simplify(keep = keepThreshold,keep_shapes = FALSE) %>% # this line is crucial
+    st_buffer(dist = -1000, nQuadSegs = 1) %>%
+    st_buffer(dist = 1*(10^5), nQuadSegs = 1)
+  rm(temp_shp)
+  return(temp_shp_simpl)
+}
+
+
+## Corals
+dir_use <- here::here("data/external/ocean_habitats_distribution/all_shapefiles")
+files <- dir(dir_use)
+coral_sf <- simplifyShape(file.path(dir_use, files[grep("coral", files, ignore.case = TRUE)]))
+#save(coral_sf, file = here::here("data/external/ocean_habitats_distribution/sf_simplified/coral_reefs.RData"))
+
+
+## Seagrasses
+seagrass_sf <- simplifyShape("data/external/ocean_habitats_distribution/WCMC013-014_SeagrassPtPy2021_v7_1/014_001_WCMC013-014_SeagrassPtPy2021_v7_1/01_Data")
+
+seagrass_sf %>% 
+  ggplot() +
+  geom_sf()+
+  coord_sf(crs = st_crs('ESRI:54030'))
+
+#save(seagrass_sf, file = here::here("data/external/ocean_habitats_distribution/sf_simplified/seagrasses.RData"))
+
+
+## Saltmarshes
+saltmarsh_sf <- simplifyShape( 
+  here::here("data/external/ocean_habitats_distribution/WCMC027_Saltmarsh_v6_1/WCMC027_Saltmarsh_v6_1/01_Data/WCMC027_Saltmarshes_Py_v6_1.dbf"), keepThreshold = 0.1)
+
+round(object.size(saltmarsh_sf)/1024)
+
+saltmarsh_sf %>% 
+  ggplot() +
+  geom_sf()+
+  coord_sf(crs = st_crs('ESRI:54030'))
+
+#save(saltmarsh_sf, file = here::here("data/external/ocean_habitats_distribution/sf_simplified/saltmarsh.RData"))
+
+
+## Mangroves
+# dir_use <- "data/external/ocean_habitats_distribution/GMW_v3/01_GMW_001_GlobalMangroveWatch/01_Data/gmw_v3"
+# files <- dir(dir_use)
+# files <- files[grep("2020", files)]
+mangrove_sf <- simplifyShape(here::here("data/external/ocean_habitats_distribution/GMW_v3/01_GMW_001_GlobalMangroveWatch/01_Data/gmw_v3/gmw_v3_2020_vec.dbf"), keepThreshold = 0.1)
+
+round(object.size(mangrove_sf)/1024) # reduces size quite a bit!
+
+mangrove_sf %>% 
+  ggplot() +
+  geom_sf()+
+  coord_sf(crs = st_crs('ESRI:54030'))
+
+#save(mangrove_sf, file = here::here("data/external/ocean_habitats_distribution/sf_simplified/mangrove.RData"))
+
+
+
+## Plot all ecosystem types overlayed ----------
+habitats_sf_dir <- here::here("data/external/ocean_habitats_distribution/sf_simplified")
+habitats_sf_files <- dir(habitats_sf_dir)
+for(i in 1:length(habitats_sf_files)){
+  load(file.path(habitats_sf_dir, habitats_sf_files[i]))
+}
+
+coast <- giscoR::gisco_get_countries(
+  spatialtype = "COASTL",
+  epsg = "4326"
+)
+coast_rob <- st_transform(coast, 'ESRI:54030') %>%
+  st_cast("POLYGON") %>%
+  st_cast("MULTIPOLYGON")
+
+
+# make a bounding box
+xmn <- -180
+xmx <- 180
+ymn <- -90
+ymx <- 90
+lout <- 100
+
+bbox_df <- data.frame(
+  LON = c(
+    rep(xmn, lout), 
+    seq(xmn, xmx, length.out = lout),
+    rep(xmx, lout),
+    seq(xmx, xmn, length.out = lout)
+  ),
+  LAT = c(
+    seq(ymn, ymx, length.out = lout),
+    rep(ymx, lout),
+    seq(ymx, ymn, length.out = lout),
+    rep(ymn, lout)
+  ),
+  group = rep("bbx", lout*4)
+)
+
+
+ggplot() +
+  geom_sf(data = coast_rob, col = "darkgrey")+
+  geom_sf(data = coral_sf, aes(fill = "Coral"), alpha = 0.5, show.legend = TRUE)+
+  geom_sf(data = seagrass_sf, aes(fill = "seagrass"), alpha = 0.5, show.legend = TRUE)+
+  geom_sf(data = saltmarsh_sf, aes(fill = "saltmarsh"), alpha = 0.5, show.legend = TRUE)+
+  geom_sf(data = mangrove_sf, aes(fill = "mangrove"), alpha = 0.5, show.legend = TRUE)+
+  geom_polygon(data=bbox_df, aes(x=LON, y=LAT, group=group),col = "black", linewidth = 0.7, fill=NA)+
+  scale_fill_manual(values = c("Coral" = "coral", "seagrass" = "turquoise",
+                               "saltmarsh" = "red", "mangrove" = "lightgreen"),
+                    labels = c("Coral reef","Mangrove","Salt Marsh","Seagrass"),
+                    name = "Ecosystem type") +
+  
+  coord_sf(crs = st_crs('ESRI:54030'), default_crs = st_crs(4326))+
+  theme_void()+
+  theme(
+    legend.position = "bottom"
+  )
+
+```
+
+```{r plot the NbS geoparsing and ecosystem type data}
+
+coast <- giscoR::gisco_get_countries(
+  spatialtype = "COASTL",
+  epsg = "4326"
+)
+#coast <- st_transform(coast, st_crs("ESRI:54030"))
+
+# make a bounding box
+xmn <- -180
+xmx <- 180
+ymn <- -90
+ymx <- 90
+lout <- 100
+
+bbox_df <- data.frame(
+  LON = c(
+    rep(xmn, lout), 
+    seq(xmn, xmx, length.out = lout),
+    rep(xmx, lout),
+    seq(xmx, xmn, length.out = lout)
+  ),
+  LAT = c(
+    seq(ymn, ymx, length.out = lout),
+    rep(ymx, lout),
+    seq(ymx, ymn, length.out = lout),
+    rep(ymn, lout)
+  ),
+  group = rep("bbx", lout*4)
+)
+
+
+
+## Plot NbS GEoparsing
+# make a polygon from the grid tiles to plot with sf
+grid_df_poly1 <- grid_df2 %>% 
+  select(LON, LAT, grid_df_id, coastal) %>%
+  mutate(LON = LON-(2.5/2), LAT = LAT-(2.5/2))
+grid_df_poly2 <- grid_df2 %>% 
+  select(LON, LAT, grid_df_id, coastal) %>%
+  mutate(LON = LON-(2.5/2), LAT = LAT+(2.5/2))
+grid_df_poly3 <- grid_df2 %>% 
+  select(LON, LAT, grid_df_id, coastal) %>%
+  mutate(LON = LON+(2.5/2), LAT = LAT+(2.5/2))
+grid_df_poly4 <- grid_df2 %>% 
+  select(LON, LAT, grid_df_id, coastal) %>%
+  mutate(LON = LON+(2.5/2), LAT = LAT-(2.5/2))
+grid_df_poly <- rbind(grid_df_poly1,grid_df_poly2,grid_df_poly3,grid_df_poly4)
+
+grid_df_conservation_poly <- grid_df_poly %>%
+  left_join(grid_df_conservation %>% select(grid_df_id, n_articles), by="grid_df_id") %>%
+  arrange(grid_df_id)
+
+grid_df_conservation_poly <- grid_df_conservation_poly %>%
+  filter(coastal == 1)
+
+#brks <- quantile(grid_df_conservation$n_articles, probs=seq(0,1, by=0.1), na.rm=T)
+#brkslabs <- formatC(brks,digits=2,format="e")
+#names(brks) <- brkslabs
+
+
+# Plot
+ggplot() +
+  geom_polygon(data=grid_df_conservation_poly, aes(LON, LAT, group=grid_df_id, fill=log(n_articles)))+
+  scale_fill_distiller(palette = "Greens", direction = 1, name = "log(weighted articles)",
+                       na.value = "transparent")+
+  # scale_fill_binned(type="viridis", breaks = brks)+
+  # scale_fill_binned(name = "N articles (weighted)", 
+  #              type = "gradient",low="white", high="darkgreen", na.value = "transparent",
+  #              breaks = brks, nice.breaks = FALSE,
+  #              #labels = function(x) ifelse(1000 <= x, paste(x/1000, "k"), paste(x)),
+  #              #rescaler = scales::rescale,
+  #              #values = range01(breaksFill),
+  #              show.limits = TRUE, 
+  #              #limits = brks[c(0, length(brks))], 
+  #              #oob= scales::squish,
+  #              guide = guide_coloursteps(order = 1), #barwidth = unit(0.5, 'cm') 
+  #              position = "bottom")+
+  
+  
+  geom_sf(data=coast, col = "black", linewidth = 0.5)+
+  geom_polygon(data=bbox_df, aes(x=LON, y=LAT, group=group),col = "black", linewidth = 0.7, fill=NA)+
+  coord_sf(crs = st_crs('ESRI:54030'),default_crs = st_crs(4326))+
+  theme_bw()+
+  theme(
+    legend.position = "bottom",
+    panel.background = element_blank(),
+    panel.grid = element_blank(),
+    panel.border = element_blank(),
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    axis.ticks = element_blank()
+  )
+  
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
