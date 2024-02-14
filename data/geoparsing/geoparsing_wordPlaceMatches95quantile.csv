@@ -1,0 +1,438 @@
+"","word","place_name","n_articles"
+"1","UK","United Kingdom of Great Britain and Northern Ireland",1885
+"2","North Sea","North Sea",1309
+"3","China","China University of Geosciences",1270
+"4","DC","Hilton Washington DC North - Gaithersburg",906
+"5","United States","United States",790
+"6","Germany","Federal Republic of Germany",690
+"7","Australia","Commonwealth of Australia",676
+"8","LNG","Toulon",673
+"9","Norway","Kingdom of Norway",615
+"10","CO2","Bueyeros CO2 Plant Airport",598
+"11","USA","Chevron USA Incorporated Seaplane Base",587
+"12","Japan","Japan",583
+"13","Switzerland","Switzerland",578
+"14","atlantic ocean","Atlantic Ocean",561
+"15","united kingdom","United Kingdom of Great Britain and Northern Ireland",548
+"16","Denmark","Kingdom of Denmark",523
+"17","London","London",483
+"18","north sea","North Sea",474
+"19","Indonesia","Republic of Indonesia",456
+"20","India","Republic of India",450
+"21","europe","Europe",445
+"22","Brazil","Federative Republic of Brazil",439
+"23","France","Republic of France",437
+"24","Canada","Canada",414
+"25","Basel","Basel",405
+"26","united states","United States",380
+"27","Netherlands","Kingdom of the Netherlands",306
+"28","mexico","Mexico",306
+"29","Bangladesh","Bangladesh",280
+"30","north america","North America",267
+"31","Houston","Houston",265
+"32","Mexico","Mexico",254
+"33","Spain","Kingdom of Spain",253
+"34","Malaysia","Malaysia",249
+"35","Portugal","Portuguese Republic",244
+"36","Taiwan","Taiwan",236
+"37","Hawaii","Hawaii",235
+"38","australia","Commonwealth of Australia",228
+"39","arctic","Arctic Bay",213
+"40","Italy","Italian Republic",202
+"41","United Kingdom","United Kingdom of Great Britain and Northern Ireland",196
+"42","scotland","Scotland",193
+"43","Ireland","United Kingdom of Great Britain and Northern Ireland",193
+"44","germany","New Germany",192
+"45","Korea","Republic of Korea",180
+"46","england","England",177
+"47","Spartina","Spártina",176
+"48","Vietnam","Socialist Republic of Vietnam",175
+"49","pacific ocean","South Pacific Ocean",169
+"50","mediterranean sea","Mediterranean Sea",168
+"51","canada","Canada",166
+"52","New Zealand","New Zealand",164
+"53","Louisiana","Louisiana",160
+"54","Philippines","Republic of the Philippines",160
+"55","india","Republic of India",158
+"56","indonesia","Republic of Indonesia",155
+"57","Sweden","Kingdom of Sweden",152
+"58","western europe","Western Europe",150
+"59","Texas","Texas",149
+"60","Alaska","Alaska",137
+"61","japan","Japan",136
+"62","U.K.","United Kingdom of Great Britain and Northern Ireland",135
+"63","baltic sea","Baltic Sea",131
+"64","malaysia","Malaysia",120
+"65","taiwan","Taiwan",116
+"66","CO2 ocean","Grande Shores Ocean Resorts Con",114
+"67","west coast","Yeshiva Ohr Elchonon Chabad West Coast Talmudical Seminary",113
+"68","SOC","Sóc Trăng",113
+"69","Massachusetts","Massachusetts",112
+"70","Washington","Washington",111
+"71","spain","Kingdom of Spain",109
+"72","Nova Scotia","Nova Scotia",106
+"73","netherlands","Kingdom of the Netherlands",106
+"74","brazil","Federative Republic of Brazil",104
+"75","Singapore","Republic of Singapore",98
+"76","New Jersey","New Jersey",96
+"77","indian ocean","British Indian Ocean Territory",96
+"78","South Korea","Republic of Korea",94
+"79","South Africa","Republic of South Africa",91
+"80","east coast","East Coast Believers Church",90
+"81","louisiana","Louisiana",89
+"82","norway","Norway",88
+"83","New York","New York",87
+"84","Turkey","Republic of Turkey",86
+"85","Nigeria","Federal Republic of Nigeria",86
+"86","monopile","Monopoli",85
+"87","Oregon","Oregon",84
+"88","atlantic","Atlantic City",84
+"89","Thailand","Kingdom of Thailand",84
+"90","Pacific Ocean","North West Pacific Ocean - to the East",83
+"91","Orkney","Orkney Islands",83
+"92","philippines","Republic of the Philippines",78
+"93","northern europe","Northern Europe",78
+"94","Berlin","Berlin, Stadt",78
+"95","Western Australia","State of Western Australia",77
+"96","Russia","Russian Federation",77
+"97","Kyoto","Kyoto Prefecture",77
+"98","massachusetts","Massachusetts",77
+"99","North Carolina","North Carolina",76
+"100","bangladesh","Bangladesh",75
+"101","Poland","Republic of Poland",73
+"102","Severn","Severn",72
+"103","Simulink","Samulino",70
+"104","u.s.","Dutch Harbor Naval Operating Base and Fort Mears, U.S. Army (historical)",69
+"105","Gulf Coast","Mississippi Gulf Coast Community College - Perkinston Campus",67
+"106","Mississippi","Mississippi",67
+"107","Queensland","State of Queensland",65
+"108","Maine","Maine",64
+"109","Red Sea","Kempinski Hotel Aqaba Red Sea",64
+"110","Kandelia","Candela",64
+"111","Greece","Hellenic Republic",63
+"112","America","Little America",63
+"113","Jiangsu","Jiangsu Sheng",63
+"114","Mersey","Trent and Mersey Canal",62
+"115","Soc","Sóc Trăng",62
+"116","Baltic Sea","Baltic Sea",62
+"117","africa","Africa",62
+"118","Paris","Paris",61
+"119","italy","Louisa",61
+"120","Belgium","Kingdom of Belgium",59
+"121","Newfoundland","Newfoundland and Labrador",59
+"122","New England","New England",58
+"123","Angola","Republic of Angola",58
+"124","Offshore Wind Farms","Beatrice Offshore Wind Farm",57
+"125","hawaii","Hawaii",56
+"126","New York City","New York City",56
+"127","Saudi Arabia","Kingdom of Saudi Arabia",56
+"128","East Coast","East Coast Believers Church",55
+"129","Britain","United Kingdom of Great Britain and Northern Ireland",55
+"130","south korea","Republic of Korea",55
+"131","korea","Republic of Korea",55
+"132","Guangdong","Guangdong Sheng",55
+"133","Gulf Stream","Gulf Stream",54
+"134","Colombia","Puerto Colombia",54
+"135","Great Britain","United Kingdom of Great Britain and Northern Ireland",53
+"136","north carolina","North Carolina",53
+"137","East Coast","Gisborne",52
+"138","Finland","Republic of Finland",52
+"139","Nysted","Nysted Havmøllepark",52
+"140","Rhode Island","Rhode Island",52
+"141","Egypt","Arab Republic of Egypt",51
+"142","Chesapeake Bay","Hyatt Regency Chesapeake Bay Golf Resort, Spa and Marina",51
+"143","Shanghai","Shanghai",51
+"144","sweden","Kingdom of Sweden",50
+"145","persian gulf","Persian Gulf",50
+"146","washington","Washington",49
+"147","texas","Texas",49
+"148","Indian Ocean","British Indian Ocean Territory",48
+"149","Sri Lanka","Democratic Socialist Republic of Sri Lanka",48
+"150","Fiji","Republic of Fiji",48
+"151","Pacific Island","Ghai Island",48
+"152","Tasmania","State of Tasmania",48
+"153","new york","New York",47
+"154","UAE","United Arab Emirates",47
+"155","Great Lakes","Lakes Entrance Airfield",46
+"156","Ghana","Republic of Ghana",46
+"157","Brittany","Bretagne",45
+"158","gulf coast","Mississippi Gulf Coast Community College - Perkinston Campus",45
+"159","thailand","Kingdom of Thailand",45
+"160","Cape Cod","Cape Cod Regional Technical High School Library",45
+"161","Puget Sound","Veterans Administration Puget Sound Health Care System Emergency Medical Services",45
+"162","Qatar","State of Qatar",45
+"163","belgium","Kingdom of Belgium",45
+"164","New Orleans","New Orleans",44
+"165","U.S.A.","United States",44
+"166","middle east","Middle East",44
+"167","A. marina","Monumento á mariña universal",44
+"168","Maldives","Republic of Maldives",43
+"169","Antarctic","Territory of the French Southern and Antarctic Lands",43
+"170","Northern Europe","Northern Europe",43
+"171","Sarawak","Sarawak",43
+"172","British Columbia","British Columbia",43
+"173","arabian sea","Arabian Sea",43
+"174","Iran","Islamic Republic of Iran",43
+"175","Arabian Gulf","Persian Gulf",42
+"176","new england","New England",42
+"177","Aberdeen","Aberdeen City",42
+"178","Peninsular Malaysia","Peninsular Malaysia",42
+"179","Nantucket Sound","Nantucket Sound",42
+"180","Abu Dhabi","Abu Dhabi Municipality",42
+"181","WT","[Heřmanice-Kristiánov] WT-1",42
+"182","Chile","Republic of Chile",41
+"183","Gujarat","State of Gujarāt",41
+"184","mississippi","Mississippi",41
+"185","far east","Far East",41
+"186","vietnam","Socialist Republic of Vietnam",41
+"187","Israel","State of Israel",40
+"188","South America","South America",40
+"189","Maryland","Maryland",39
+"190","Cornwall","Cornwall",39
+"191","ireland","Ireland",39
+"192","south africa","Republic of South Africa",39
+"193","Kenya","Republic of Kenya",39
+"194","BC","British Columbia",39
+"195","saudi arabia","Kingdom of Saudi Arabia",39
+"196","Alabama","Alabama",38
+"197","TN","Howard Johnson Gatlinburg Tn",38
+"198","Bali","Bali",37
+"199","NC","Salikipara NC",37
+"200","TX","Ramada Limited Weatherford Tx",37
+"201","saltmarshes","Edvin Loach and Saltmarshe",37
+"202","west africa","Republic of Angola",36
+"203","Papua New Guinea","Independent State of Papua New Guinea",36
+"204","sri lanka","Democratic Socialist Republic of Sri Lanka",36
+"205","east coast","Gisborne",35
+"206","Campos Basin","Great Basin College Battle Mountain Branch Campus",35
+"207","Southern California","Southern California",35
+"208","Sydney","Sydney",35
+"209","alderney","Alderney",35
+"210","Tanzania","United Republic of Tanzania",35
+"211","atlantic coast","Carlton Atlantic Coast",35
+"212","maine","Maine",35
+"213","mekong delta","Western Region",35
+"214","Connecticut","Connecticut",34
+"215","Holland","Holland",34
+"216","SC","Cavit Sc",34
+"217","Morocco","Kingdom of Morocco",34
+"218","Zhejiang","Zhejiang Sheng",34
+"219","Alderney Race","Race of Alderney",34
+"220","Hamburg","Hamburg",34
+"221","iran","Islamic Republic of Iran",34
+"222","Annapolis","Annapolis",33
+"223","New South Wales","State of New South Wales",33
+"224","Pacific Ocean","South Pacific Ocean",33
+"225","Vindeby","Vindeby",33
+"226","Southern Ocean","Southern Ocean",33
+"227","wales","Wales",33
+"228","Pakistan","Islamic Republic of Pakistan",33
+"229","Pacific Northwest","Pacific Northwest",33
+"230","sandy beaches","Flannagan Pond",33
+"231","caspian sea","Caspian Sea",33
+"232","DC-DC","Hilton Washington DC North - Gaithersburg",33
+"233","houston","Houston",32
+"234","Bristol","Bristol",32
+"235","Oahu","O‘ahu",32
+"236","Pacific island","Ghai Island",32
+"237","Peru","Republic of Peru",32
+"238","Canary Islands","Canary Islands",32
+"239","europe","Postal and Telegraphic Museum of Central Europe",32
+"240","PCC","PCC Helipad",32
+"241","rhode island","Rhode Island",32
+"242","San Francisco Bay","San Francisco Bay Area",32
+"243","West Coast","Yeshiva Ohr Elchonon Chabad West Coast Talmudical Seminary",31
+"244","Bergen","Bergen",31
+"245","south america","South America",31
+"246","Essex","Essex",31
+"247","alaska","Alaska",31
+"248","Blyth","Blyth",31
+"249","Peterhead","Peterhead",31
+"250","british columbia","British Columbia",31
+"251","Great Barrier Reef","hayman island resort great barrier reef",31
+"252","zhejiang","Zhejiang Sheng",30
+"253","Sicily","Sicily",30
+"254","Alberta","Alberta",30
+"255","Shetland","Shetland Islands",30
+"256","adriatic sea","Adriatic Sea",30
+"257","pakistan","Islamic Republic of Pakistan",30
+"258","singapore","Republic of Singapore",30
+"259","greece","Hellenic Republic",30
+"260","Vanuatu","Republic of Vanuatu",30
+"261","North Atlantic","North Atlantic Street Historic District",30
+"262","Cook Inlet","Cook Inlet Alaska Native Regional Corporation",29
+"263","Mauritius","Republic of Mauritius",29
+"264","lng","Toulon",29
+"265","Avicennia","Avicennia Island",29
+"266","Trinidad","Trinidad",29
+"267","Adriatic","Dubrovnik",29
+"268","Northern Ireland","United Kingdom of Great Britain and Northern Ireland",29
+"269","Perth","Perth",29
+"270","Saipem","Sailer Vāgu",29
+"271","North Wales","North Wales",29
+"272","Delaware","Delaware",29
+"273","guangdong","Guangdong Sheng",29
+"274","South Carolina","South Carolina",28
+"275","Shandong","Shandong Sheng",28
+"276","Copenhagen","Copenhagen",28
+"277","fiji","Republic of Fiji",28
+"278","Pacific Islands","USA United Nations Mandate -1979",28
+"279","Delta","Delta",28
+"280","australasia","Ladang Aik Hwa Australasia",28
+"281","new jersey","New Jersey",27
+"282","Iceland","Republic of Iceland",27
+"283","R\&D","R D Bailey Lake Wildlife Management Area",27
+"284","Ontario","Ontario",27
+"285","Rio de Janeiro","Rio de Janeiro",27
+"286","trinidad","Trinidad",27
+"287","FL","Mansion Fl",27
+"288","chesapeake bay","Hyatt Regency Chesapeake Bay Golf Resort, Spa and Marina",27
+"289","Wave Hub","Blue Wave Beach Resort Hua Hin",27
+"290","queensland","State of Queensland",27
+"291","morocco","Kingdom of Morocco",27
+"292","arctic ocean","Arctic Ocean",27
+"293","paris","Paris",27
+"294","Argentina","Centro Cultural Antártida Argentina",26
+"295","Mn","Country Inn & Suites By Carlson, Minneapolis West, MN",26
+"296","WA","Wa",26
+"297","South West","West Fargo",26
+"298","Galicia","Galicia",26
+"299","jiangsu","Jiangsu Sheng",26
+"300","rotterdam","Gemeente Rotterdam",26
+"301","north atlantic","North Atlantic Street Historic District",26
+"302","Rotterdam","Gemeente Rotterdam",26
+"303","oregon","Oregon",26
+"304","Block Island","New Shoreham",26
+"305","OC-OTEC","Sveti Prohor Pčinjski",25
+"306","Venice","Venice",25
+"307","western australia","State of Western Australia",25
+"308","Romania","România",25
+"309","Yorkshire","Yorkshire and The Humber",25
+"310","Offshore Wind","Beatrice Offshore Wind Farm",25
+"311","Mediterranean Sea","Mediterranean Sea",25
+"312","States","United States",25
+"313","east china sea","East China Sea",25
+"314","shandong","Shandong Sheng",24
+"315","Java","Java",24
+"316","Tuvalu","Tuvalu",24
+"317","Heidrun","Heidrun",24
+"318","southeast asia","Southeast Asia",24
+"319","Liverpool Bay","Liverpool Bay",24
+"320","MARIN","Marín",24
+"321","Admiralty Inlet","Admiralty Inlet",24
+"322","Terengganu","Terengganu",24
+"323","Fujian","Fujian Sheng",24
+"324","galicia","Galicia",24
+"325","egypt","Arab Republic of Egypt",24
+"326","hong kong","Hong Kong",24
+"327","anthozoa","Anthozoan Mountain",24
+"328","Bohai","Bohai Haixia",24
+"329","Coconut Creek","Coconut Creek",24
+"330","Long Island","Long Island",23
+"331","arabian gulf","United Arab Emirates",23
+"332","Hokkaido","Hokkaido",23
+"333","Atlantic Ocean","Atlantic Ocean",23
+"334","Kiribati","Republic of Kiribati",23
+"335","finland","Republic of Finland",23
+"336","Chennai","Chennai",23
+"337","shanghai","Shanghai",23
+"338","Suffolk","Suffolk County",23
+"339","london","London",23
+"340","Caribbean Sea","Caribbean Sea",23
+"341","barents sea","Barents Sea",22
+"342","Mobile","Mobile County",22
+"343","South Wales","State of New South Wales",22
+"344","severn","Severn",22
+"345","Sumatra","Sumatra",22
+"346","Azores","Azores",22
+"347","kenya","Republic of Kenya",22
+"348","Baja California","Estado de Baja California",22
+"349","Dubai","Dubai",22
+"350","southern europe","Southern Europe",22
+"351","Sakhalin Island","Sakhalin",22
+"352","WEC","Gharbī Wêch Khas̲h̲",22
+"353","Hawai'i","Hawaii",22
+"354","Cyprus","Republic of Cyprus",21
+"355","Boston","Boston",21
+"356","Tahiti","Îles du Vent",21
+"357","Mobile Bay","Mobile Bay",21
+"358","South Pacific","South Pacific Missionary Training Centre",21
+"359","oman","Sultanate of Oman",21
+"360","Bahamas","Commonwealth of The Bahamas",21
+"361","Okinawa","Okinawa",21
+"362","Tokyo","Tokyo Prefecture",21
+"363","SG","Wil (SG)",21
+"364","Pacific coast","Virginia City Cemeteries",21
+"365","lagrange","LaGrange County",21
+"366","southern ocean","Southern Ocean",21
+"367","Estuarine","University of Louisiana Lafayette Estuarine Habitats Coastal Fisheries Research Center",20
+"368","Savonius","Sanovia Creek",20
+"369","papua new guinea","Independent State of Papua New Guinea",20
+"370","North Pacific","Pacific Passage",20
+"371","Croatia","Republic of Croatia",20
+"372","south asia","South Eastern Asia",20
+"373","Ulva","Ulva",20
+"374","Yellow Sea","Yellow Sea",20
+"375","Nadu","State of Tamil Nādu",20
+"376","Annapolis Royal","Annapolis Royal",19
+"377","North sea","North Sea",19
+"378","Irish Sea","Irish Sea",19
+"379","puget","Puget Sound Federal Fire Department Puget Sound Naval Shipyard",19
+"380","Horns Rev","Horns Rev Wind Park",19
+"381","Park","Park Encinitas Trailer Park",19
+"382","Masdar","Mastar Dağı",19
+"383","Maui","Maui County",19
+"384","Myanmar","Union of Burma",19
+"385","Solomon Islands","Solomon Islands",19
+"386","Phragmites","Phragmites Pond",19
+"387","Madagascar","Republic of Madagascar",19
+"388","Jakarta","Daerah Khusus Ibukota Jakarta",19
+"389","Persian Gulf","Persian Gulf",19
+"390","Strangford Lough","Strangford Lough",18
+"391","Portland","Portland",18
+"392","Barents Sea","Barents Sea",18
+"393","Oman","Sultanate of Oman",18
+"394","Middelgrunden","Middelgronden",18
+"395","Hammerfest","Hammerfest",18
+"396","Ormen Lange","Ormen Lange",18
+"397","co2 ocean","Grande Shores Ocean Resorts Con",18
+"398","Mumbai","Mumbai",18
+"399","Ecuador","Republic of Ecuador",18
+"400","northern ireland","United Kingdom of Great Britain and Northern Ireland",18
+"401","Cobscook Bay","Cobscook Bay State Park",18
+"402","Posidonia","Posidonia Hotel",18
+"403","Wind Turbines","Umiterasu Nadachi Wind Turbine",18
+"404","cornwall","Cornwall",18
+"405","Taiwan Strait","Taiwan Strait",18
+"406","Leiden","Gemeente Leiden",18
+"407","Island","Island",17
+"408","salton sea","Salton Sea Beach",17
+"409","Norfolk","Norfolk County",17
+"410","abu dhabi","Abu Dhabi Municipality",17
+"411","Pendulor","Pendulum Cove",17
+"412","nova scotia","Nova Scotia",17
+"413","aegean sea","Aegean Sea",17
+"414","Nantucket","Town of Nantucket",17
+"415","East Africa","Republic of Mozambique",17
+"416","kyoto","Kyoto Prefecture",17
+"417","Vizhinjam","Vizhinjam",17
+"418","ghana","Ghana Hatti Reserved Forest",17
+"419","Estonia","Republic of Estonia",17
+"420","tobago","Republic of Trinidad and Tobago",17
+"421","Bohai Bay","Bowie County",17
+"422","FLNG","Kūh-e Falang",17
+"423","Edinburgh","City of Edinburgh",17
+"424","Kent","Kent",17
+"425","South Florida","University of South Florida Engineering Research Laboratory",17
+"426","AC","Moustoir-Ac",17
+"427","great britain","United Kingdom of Great Britain and Northern Ireland",17
+"428","South Australia","State of South Australia",17
+"429","Fukushima","Fukushima-ken",17
+"430","Malta","Republic of Malta",17
+"431","Lincolnshire","Lincolnshire",17
+"432","Pentland Firth","Pentland Firth",17
+"433","chile","Republic of Chile",17
+"434","Everglades","Everglades City",17
+"435","NbS","Baishan",17
+"436","North Sulawesi","Sulawesi Utara",17
+"437","Zhoushan","Zhoushan Dao",17

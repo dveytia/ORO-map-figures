@@ -1,7 +1,9 @@
 ## Large files
 *.sqlite 
 /data/geoparsing/.ipynb_checkpoints/
-/data/geoparsing/*.csv
+#/data/geoparsing/*.csv
+/data/geoparsing/geoparsed-text*.csv
+/data/geoparsing/shp_df_natural-earth-shapes.csv
 /data/geoparsing/geoparsed-text/*.csv
 /data/geoparsing.tar.gz
 /data/geoparsing.tar
