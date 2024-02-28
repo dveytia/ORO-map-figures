@@ -40,7 +40,7 @@ results = parallel::mclapply(1:nrow(mCDR_df_top10), function(i){
   
   ## Bind both together into dataframe to return
   matches <- data.frame(
-    analysis_id = mCDR_df_top10$analysis_id,
+    analysis_id = mCDR_df_top10$analysis_id[i],
     OAE = oae_match,
     OIF = oif_match,
     Artificial_upwelling = au_match,
@@ -57,7 +57,7 @@ results = parallel::mclapply(1:nrow(mCDR_df_top10), function(i){
 matches_all <- do.call(rbind.data.frame, results)
 
 ## Save
-save(matches_all, file = "mCDR_data_March2024_afterKeyword.RData")
+save(matches_all, file = "data/mCDR_data_March2024_afterKeyword.RData")
 
 
 

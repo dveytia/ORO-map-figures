@@ -26,7 +26,7 @@ sqliteDir <- here::here("data/sqlite-databases")
 sqliteFiles <- dir(sqliteDir)
 sqliteVersions <- as.numeric(gsub(".sqlite","",substring(sqliteFiles, regexpr("_v", sqliteFiles) + 2)))
 latestVersion <- sqliteFiles[which.max(sqliteVersions)]
-dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+
 ```
 
 
@@ -40,19 +40,14 @@ source(here::here("R", "utils.R"))
 source(here::here("R", "clean_string.R")) 
 source(here::here("R", "bool_detect.R")) 
 
-# list of countries for extracting country of 1st auth affiliation
-countries_ls <- read.csv(file = here::here("data", "external", "list_of_countries", "sql-pays.csv"), sep = ";") |>  # Countries names
-    dplyr::mutate(country = countrycode::countrycode(sourcevar   = name_en,
-                                        origin      = "country.name",
-                                        destination = "country.name"),
-                  iso_code = countrycode::countrycode(sourcevar   = country,
-                                         origin      = "country.name",
-                                         destination = "iso3c"))
+
 ```
 
 
 ```{r Retrieve and format data}
 ## Assemble necessary tables
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+
 # ML model predictions
 predRel <- tbl(dbcon, "pred_relevance") %>%
   select(analysis_id, relevance_mean) %>%
@@ -69,9 +64,7 @@ pred_empirical <- tbl(dbcon, "pred_method_type") %>%
 # database metadata
 uniquerefs <- tbl(dbcon, "allrefs") %>%
   select(analysis_id, affiliation, year, title, abstract, keywords)
-# # geoparsing tables
-# grid_df <- tbl(dbcon, "grid_df_res2.5") %>% collect()
-# shp_df_matches <- tbl(dbcon, "geoparsed-text_shp_df_matches")
+
 
 
 
@@ -88,12 +81,21 @@ mCDR_df <- predRel %>%
 ## disconnect
 DBI::dbDisconnect(dbcon)
 
+
+
 # Extract country of 1st auth affiliation
+# list of countries for extracting country of 1st auth affiliation
+countries_ls <- read.csv(file = here::here("data", "external", "list_of_countries", "sql-pays.csv"), sep = ";") |>  # Countries names
+    dplyr::mutate(country = countrycode::countrycode(sourcevar   = name_en,
+                                        origin      = "country.name",
+                                        destination = "country.name"),
+                  iso_code = countrycode::countrycode(sourcevar   = country,
+                                         origin      = "country.name",
+                                         destination = "iso3c"))
 data_1stA_country <- extract_1stA_affiliation(data = mCDR_df[,c("analysis_id", "affiliation")], countries_ls = countries_ls) 
 
 mCDR_df <- mCDR_df %>%
   left_join(data_1stA_country$oroAff_1stA[,c("analysis_id","country_aff")], by = "analysis_id")
-
 
 ## Identify the top 10 countries
 country_1stA_tab <- with(mCDR_df, table(country_aff))
@@ -112,56 +114,256 @@ mCDR_df_top10 <- mCDR_df %>%
 ## Clean workspace
 rm(mCDR_df, countries_ls, data_1stA_country)
 
+
+
 # Save
-save(mCDR_df_top10, file = here::here("data/mCDR_data_March2024_beforeKeyword.RData"))
+#save(mCDR_df_top10, file = here::here("data/mCDR_data_March2024_beforeKeyword.RData"))
 
 ```
 
-```{r keyword extract switch to rossi, eval=FALSE}
+```{r load results from keyword extract on rossi}
 load(here::here("data/mCDR_data_March2024_afterKeyword.RData"))
-
-# ## Extract keywords for different mCDR approaches
-# # clean text string
-# mCDR_df_top10 <- mCDR_df_top10 %>%
-#   mutate(text = clean_string(paste(title, abstract, keywords, collapse = " ")))
-# 
-# 
-# # I used the categories in this figure:
-# # https://oceanvisions.org/ocean-based-carbon-dioxide-removal/
-# 
-# # OAE keywords (including Electrochemical alkalinity enhancement)
-# oae_qry = "OAE OR 'alkalin* enhanc*' OR liming OR 'enhanc* weathering' OR olivine OR (electrochem* AND (remov* OR stor*)) OR 'bubble strip*' OR 'water split*'"
-# mCDR_df_top10$OAE <- bool_detect2(mCDR_df_top10$text, oae_qry)
-# 
-# # OIF keywords
-# oif_qry = "'iron fertil*'"
-# mCDR_df_top10$OIF <- bool_detect2(mCDR_df_top10$text, oif_qry)
-# 
-# # Artificial upwelling / downwelling
-# au_qry = "artificial AND (upwell* OR downwell*)"
-# mCDR_df_top10$Artificial_upwelling <- bool_detect2(mCDR_df_top10$text, au_qry)
-# 
-# # Deep sea storage
-# deep_qry = "(deep AND (sea OR seabed OR ocean) AND (stor* OR sequest*)) OR (biomass AND sink*)"
-# mCDR_df_top10$Deep_sea_storage <- bool_detect2(mCDR_df_top10$text, deep_qry)
-# 
-# # Algae cultivation
-# cultivation_qry = "(microalg* OR macroal* OR seaweed* OR kelp) AND (farm* OR cultivat*)"
-# mCDR_df_top10$Algae_cultivation <- bool_detect2(mCDR_df_top10$text, cultivation_qry)
-# 
-
-
 ```
 
 
 # Timeline of publications in top 10 countries
 
 ````{r plot a cumulative time series of the top 10 countries}
+load(here::here("data/mCDR_data_March2024_beforeKeyword.RData"))
+library(gcookbook)
+
+top10 <- with(mCDR_df_top10, table(country_aff))
+top10 <- top10[order(top10, decreasing = TRUE)]
+myPal <- viridis::mako(length(top10))
+myPal[which(names(top10) == "France")] <- "orange"
+names(myPal) <- names(top10)
+
+timeseries_ggp <- mCDR_df_top10 %>%
+  filter(!is.na(year)) %>%
+  mutate(country_aff = factor(country_aff, levels = names(top10))) %>%
+  group_by(year, country_aff) %>%
+  summarise(n_articles = n_distinct(analysis_id)) %>%
+  mutate(year_date = as.Date(paste0(year,"-01-01"))) %>% 
+  filter(year_date < as.Date("2023-01-01")) %>%
+  
+  ggplot(aes(x = year_date, y = n_articles, fill = country_aff)) +
+  geom_area(colour = "black", size = .2, alpha = .4) +
+  #scale_fill_brewer(palette = "Blues")+
+  scale_fill_manual(values = myPal) +
+  scale_x_date()+
+  labs(x="Year", y ="N articles", fill = "Country")+
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(size=13),
+    axis.text.y = element_text(size=13),
+    legend.text = element_text(size=13),
+    axis.title.x = element_text(size=15),
+    axis.title.y = element_text(size=15),
+    legend.title = element_text(size=15)
+  )
 
 
+ggsave(timeseries_ggp,
+       filename = here::here("figures/mCDR_research_in_france_March2024/timeseries.png"),
+       width = 7, height = 5, dpi = 600)
+
+```
+
+
+# Map geoparsed data in top 10 countries
+
+```{r format geoparsed data}
+## Assemble data
+# relevant articles
+load(here::here("data/mCDR_data_March2024_beforeKeyword.RData"))
+
+# geoparsing tables
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+grid_df <- tbl(dbcon, "grid_df_res2.5") %>% collect()
+shp_df_matches <- tbl(dbcon, "geoparsed-text_shp_df_matches") %>% collect()
+DBI::dbDisconnect(dbcon)
+
+# merge the two
+mCDR_df_top10_geo <- mCDR_df_top10 %>%
+  inner_join(shp_df_matches, by = "analysis_id")
+
+# clean workspace
+rm(shp_df_matches)
+
+# calculate the weighted sum
+weightedSum <- mCDR_df_top10_geo %>%
+  group_by(grid_df_id) %>%
+  summarise(n_articles = sum(cell_weight))
+
+# merge in with information on grid cell location
+grid_df_mCDR <- grid_df %>%
+  left_join(weightedSum, by = "grid_df_id")
+
+
+
+## Set new grid dataframe with new info
+grid_df2 <- grid_df
+
+
+# ## Within the EEZ----------------------------
+# require(raster)
+# eez_rast <- raster::raster(here::here("data", "external", "eez_rast", "rast_iso_eez.asc"))
+# eez_rast[eez_rast==0] <- NA
+# 
+# # extract eez value at grid cell points
+# grid_df2$eez_vals <- raster::extract(eez_rast, grid_df[,c("LON","LAT")])
+# 
+# # check
+# grid_df2 %>%
+#   filter(!is.na(eez_vals)) %>%
+#   ggplot(aes(LON, LAT, fill=eez_vals))+
+#   geom_tile()
+
+
+
+## Remove land cells > 200 km inland ---------------------------
+# Used this as inspo: https://dominicroye.github.io/en/2019/calculating-the-distance-to-the-sea-in-r/
+require(sf)
+
+coast <- giscoR::gisco_get_countries(
+  spatialtype = "COASTL",
+  epsg = "4326"
+)
+
+coast_utm <- st_transform(coast, 4087)
+
+landCells_sf <- grid_df %>% 
+  filter(is_land == 1) %>%
+  st_as_sf(coords = c('LON','LAT')) %>%
+  st_set_crs(4326) %>%
+  st_transform(4087)
+
+#transform from polygon shape to line
+coast_utm <- st_cast(coast_utm, "MULTILINESTRING")
+
+#calculation of the distance between the coast and our points
+dist <- st_distance(coast_utm, landCells_sf)
+dim(dist) # nrow = nrow of coast, ncol = nrow of land cells
+
+# will need to compute the minimum distance for each land cell
+minDist <- apply(dist, 2, function(x) min(x, na.rm=T))
+minDist <- minDist/1000 # convert to km
+landCells_sf$distInLand_km <- minDist
+landCells <- as.data.frame(landCells_sf)
+
+grid_df2 <- grid_df2 %>%
+  left_join(landCells %>% dplyr::select(grid_df_id, distInLand_km))
+
+# Plot to check -- this works!
+ggplot(grid_df2)+
+  geom_point(aes(LON, LAT, col = distInLand_km))
+
+
+
+## Make a new column to identify inland or coast
+grid_df2 <- grid_df2 %>%
+  mutate(ocean = ifelse(distInLand_km <= 200 | is_land == 0, 1, 0))
+
+# check
+grid_df2 %>%
+  ggplot(aes(LON, LAT, fill=ocean))+
+  geom_tile()
 
 
 ```
+
+```{r}
+
+coast <- giscoR::gisco_get_countries(
+  spatialtype = "COASTL",
+  epsg = "4326"
+)
+#coast <- st_transform(coast, st_crs("ESRI:54030"))
+
+# make a bounding box
+xmn <- -180
+xmx <- 180
+ymn <- -90
+ymx <- 90
+lout <- 100
+
+bbox_df <- data.frame(
+  LON = c(
+    rep(xmn, lout), 
+    seq(xmn, xmx, length.out = lout),
+    rep(xmx, lout),
+    seq(xmx, xmn, length.out = lout)
+  ),
+  LAT = c(
+    seq(ymn, ymx, length.out = lout),
+    rep(ymx, lout),
+    seq(ymx, ymn, length.out = lout),
+    rep(ymn, lout)
+  ),
+  group = rep("bbx", lout*4)
+)
+
+
+
+## Plot NbS GEoparsing
+# make a polygon from the grid tiles to plot with sf
+grid_df_poly1 <- grid_df2 %>% 
+  select(LON, LAT, grid_df_id, ocean) %>%
+  mutate(LON = LON-(2.5/2), LAT = LAT-(2.5/2))
+grid_df_poly2 <- grid_df2 %>% 
+  select(LON, LAT, grid_df_id, ocean) %>%
+  mutate(LON = LON-(2.5/2), LAT = LAT+(2.5/2))
+grid_df_poly3 <- grid_df2 %>% 
+  select(LON, LAT, grid_df_id, ocean) %>%
+  mutate(LON = LON+(2.5/2), LAT = LAT+(2.5/2))
+grid_df_poly4 <- grid_df2 %>% 
+  select(LON, LAT, grid_df_id, ocean) %>%
+  mutate(LON = LON+(2.5/2), LAT = LAT-(2.5/2))
+grid_df_poly <- rbind(grid_df_poly1,grid_df_poly2,grid_df_poly3,grid_df_poly4)
+
+grid_df_mCDR_poly <- grid_df_poly %>%
+  left_join(grid_df_mCDR %>% select(grid_df_id, n_articles), by="grid_df_id") %>%
+  arrange(grid_df_id)
+
+grid_df_mCDR_poly <- grid_df_mCDR_poly %>%
+  filter(ocean == 1)
+
+#brks <- quantile(grid_df_mCDR$n_articles, probs=seq(0,1, by=0.1), na.rm=T)
+#brkslabs <- formatC(brks,digits=2,format="e")
+#names(brks) <- brkslabs
+
+
+# Plot
+geoparsedMap_ggp <- ggplot() +
+  geom_polygon(data=grid_df_mCDR_poly, aes(LON, LAT, group=grid_df_id, fill=log(n_articles)))+
+  scale_fill_distiller(palette = "Blues", direction = 1, name = "log(weighted articles)",
+                       na.value = "transparent")+
+  
+  geom_sf(data=coast, col = "black", linewidth = 0.5)+
+  geom_polygon(data=bbox_df, aes(x=LON, y=LAT, group=group),col = "black", linewidth = 0.7, fill=NA)+
+  coord_sf(crs = st_crs('ESRI:54030'),default_crs = st_crs(4326))+
+  theme_bw()+
+  theme(
+    legend.position = "bottom",
+    panel.background = element_blank(),
+    panel.grid = element_blank(),
+    panel.border = element_blank(),
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    axis.ticks = element_blank()
+  )
+  
+
+ggsave(geoparsedMap_ggp,
+       filename = here::here("figures/mCDR_research_in_france_March2024/geoparsedMap.png"),
+       width = 7, height = 5, dpi = 600)
+```
+
+
+# Keyword matching -- types of mCDR 
+
+
+
 
 
 
