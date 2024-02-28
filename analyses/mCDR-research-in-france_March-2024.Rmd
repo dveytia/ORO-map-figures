@@ -9,22 +9,159 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
+# Set up
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r load libraries}
+library(dplyr)
+library(dbplyr)
+library(R.utils)
+library(RSQLite)
+library(ggplot2)
 ```
 
-## Including Plots
 
-You can also embed plots, for example:
+```{r Get the latest version of sqlite database and connect}
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+sqliteDir <- here::here("data/sqlite-databases")
+sqliteFiles <- dir(sqliteDir)
+sqliteVersions <- as.numeric(gsub(".sqlite","",substring(sqliteFiles, regexpr("_v", sqliteFiles) + 2)))
+latestVersion <- sqliteFiles[which.max(sqliteVersions)]
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+```{r import common aesthetics}
+factor_aes <- readxl::read_excel(here::here("R/factor_aesthetics.xlsx"))
+```
+
+```{r functions to format}
+source(here::here("R", "functions_to_format.R")) 
+source(here::here("R", "utils.R")) 
+source(here::here("R", "clean_string.R")) 
+source(here::here("R", "bool_detect.R")) 
+
+# list of countries for extracting country of 1st auth affiliation
+countries_ls <- read.csv(file = here::here("data", "external", "list_of_countries", "sql-pays.csv"), sep = ";") |>  # Countries names
+    dplyr::mutate(country = countrycode::countrycode(sourcevar   = name_en,
+                                        origin      = "country.name",
+                                        destination = "country.name"),
+                  iso_code = countrycode::countrycode(sourcevar   = country,
+                                         origin      = "country.name",
+                                         destination = "iso3c"))
+```
+
+
+```{r Retrieve and format data}
+## Assemble necessary tables
+# ML model predictions
+predRel <- tbl(dbcon, "pred_relevance") %>%
+  select(analysis_id, relevance_mean) %>%
+  filter(0.5 <= relevance_mean)
+pred_mCDR <- tbl(dbcon, "pred_oro_type_long") %>%
+  filter(oro_type == "CO2 removal or storage" & 0.5 <= mean) %>%
+  select(analysis_id)
+pred_blue_carbon <- tbl(dbcon, "pred_blue_carbon") %>%
+  select(analysis_id, "0 - relevance - mean_prediction") %>%
+  rename(blue_carbon = `0 - relevance - mean_prediction`)
+pred_empirical <- tbl(dbcon, "pred_method_type") %>%
+  select(analysis_id, "method_type.Empirical - mean_prediction") %>%
+  rename(empirical = `method_type.Empirical - mean_prediction`)
+# database metadata
+uniquerefs <- tbl(dbcon, "allrefs") %>%
+  select(analysis_id, affiliation, year, title, abstract, keywords)
+# # geoparsing tables
+# grid_df <- tbl(dbcon, "grid_df_res2.5") %>% collect()
+# shp_df_matches <- tbl(dbcon, "geoparsed-text_shp_df_matches")
+
+
+
+## Subset to only mCDR options
+# and add indicator column for blue carbon and method type
+# Also add in metadata on year, first author affiliation, and title+abstract text for keyword searches
+mCDR_df <- predRel %>%
+  inner_join(pred_mCDR, by = "analysis_id")%>%
+  inner_join(uniquerefs, by = "analysis_id") %>%
+  left_join(pred_blue_carbon, by = "analysis_id")%>%
+  left_join(pred_empirical, by = "analysis_id") %>%
+  collect()
+
+## disconnect
+DBI::dbDisconnect(dbcon)
+
+# Extract country of 1st auth affiliation
+data_1stA_country <- extract_1stA_affiliation(data = mCDR_df[,c("analysis_id", "affiliation")], countries_ls = countries_ls) 
+
+mCDR_df <- mCDR_df %>%
+  left_join(data_1stA_country$oroAff_1stA[,c("analysis_id","country_aff")], by = "analysis_id")
+
+
+## Identify the top 10 countries
+country_1stA_tab <- with(mCDR_df, table(country_aff))
+country_1stA_tab <- country_1stA_tab[order(country_1stA_tab, decreasing = TRUE)]
+top10 <- head(country_1stA_tab,10)
+# if france isn't in the top 10, add in
+if(sum(grepl("france", names(top10), ignore.case = TRUE)) == 0){
+  top10 <- c(top10, country_1stA_tab[grep("france", names(country_1stA_tab), ignore.case = TRUE)])
+}
+# subset data to these countries
+mCDR_df_top10 <- mCDR_df %>%
+  filter(country_aff %in% names(top10))
+
+
+
+## Clean workspace
+rm(mCDR_df, countries_ls, data_1stA_country)
+
+# Save
+save(mCDR_df_top10, file = here::here("data/mCDR_data_March2024_beforeKeyword.RData"))
+
+```
+
+```{r keyword extract switch to rossi, eval=FALSE}
+load(here::here("data/mCDR_data_March2024_afterKeyword.RData"))
+
+# ## Extract keywords for different mCDR approaches
+# # clean text string
+# mCDR_df_top10 <- mCDR_df_top10 %>%
+#   mutate(text = clean_string(paste(title, abstract, keywords, collapse = " ")))
+# 
+# 
+# # I used the categories in this figure:
+# # https://oceanvisions.org/ocean-based-carbon-dioxide-removal/
+# 
+# # OAE keywords (including Electrochemical alkalinity enhancement)
+# oae_qry = "OAE OR 'alkalin* enhanc*' OR liming OR 'enhanc* weathering' OR olivine OR (electrochem* AND (remov* OR stor*)) OR 'bubble strip*' OR 'water split*'"
+# mCDR_df_top10$OAE <- bool_detect2(mCDR_df_top10$text, oae_qry)
+# 
+# # OIF keywords
+# oif_qry = "'iron fertil*'"
+# mCDR_df_top10$OIF <- bool_detect2(mCDR_df_top10$text, oif_qry)
+# 
+# # Artificial upwelling / downwelling
+# au_qry = "artificial AND (upwell* OR downwell*)"
+# mCDR_df_top10$Artificial_upwelling <- bool_detect2(mCDR_df_top10$text, au_qry)
+# 
+# # Deep sea storage
+# deep_qry = "(deep AND (sea OR seabed OR ocean) AND (stor* OR sequest*)) OR (biomass AND sink*)"
+# mCDR_df_top10$Deep_sea_storage <- bool_detect2(mCDR_df_top10$text, deep_qry)
+# 
+# # Algae cultivation
+# cultivation_qry = "(microalg* OR macroal* OR seaweed* OR kelp) AND (farm* OR cultivat*)"
+# mCDR_df_top10$Algae_cultivation <- bool_detect2(mCDR_df_top10$text, cultivation_qry)
+# 
+
+
+```
+
+
+# Timeline of publications in top 10 countries
+
+````{r plot a cumulative time series of the top 10 countries}
+
+
+
+
+```
+
+
+
