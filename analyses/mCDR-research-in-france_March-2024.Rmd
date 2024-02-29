@@ -43,8 +43,11 @@ source(here::here("R", "bool_detect.R"))
 
 ```
 
+```{r load data formattted below}
+load(here::here("data/mCDR_data_March2024_beforeKeyword.RData"))
+```
 
-```{r Retrieve and format data}
+```{r Retrieve and format data - skip and load from prev chunk, eval = FALSE}
 ## Assemble necessary tables
 dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
 
@@ -117,9 +120,10 @@ rm(mCDR_df, countries_ls, data_1stA_country)
 
 
 # Save
-#save(mCDR_df_top10, file = here::here("data/mCDR_data_March2024_beforeKeyword.RData"))
+# save(mCDR_df_top10, file = here::here("data/mCDR_data_March2024_beforeKeyword.RData"))
 
 ```
+
 
 
 
@@ -167,7 +171,7 @@ ggsave(timeseries_ggp,
 ```
 
 
-# Map geoparsed data in top 10 countries
+# Map geoparsed data in top 10 countries for only empirical studies
 
 ```{r format geoparsed data}
 ## Assemble data
@@ -182,6 +186,7 @@ DBI::dbDisconnect(dbcon)
 
 # merge the two
 mCDR_df_top10_geo <- mCDR_df_top10 %>%
+  filter(0.5 <= empirical) %>%
   inner_join(shp_df_matches, by = "analysis_id")
 
 # clean workspace
@@ -251,13 +256,13 @@ landCells <- as.data.frame(landCells_sf)
 grid_df2 <- grid_df2 %>%
   left_join(landCells %>% dplyr::select(grid_df_id, distInLand_km))
 
-# Plot to check -- this works!
-ggplot(grid_df2)+
-  geom_point(aes(LON, LAT, col = distInLand_km))
+# # Plot to check -- this works!
+# ggplot(grid_df2)+
+#   geom_point(aes(LON, LAT, col = distInLand_km))
 
 
 
-## Make a new column to identify inland or coast
+## Make a new column to identify ocean vs inland
 grid_df2 <- grid_df2 %>%
   mutate(ocean = ifelse(distInLand_km <= 200 | is_land == 0, 1, 0))
 
@@ -418,12 +423,294 @@ ggsave(mapsInset_ggp,
 ```
 
 
+```{r clean environment}
+rm(coast, coast_utm, france_coast, france_bbox, bbox_df, grid_df, grid_df2, grid_df_mCDR,
+   grid_df_mCDR_poly, grid_df_poly1,grid_df_poly2, grid_df_poly3, grid_df_poly4,
+   landCells, landCells_sf, mCDR_df_top10_geo, weightedSum)
+```
+
 # Keyword matching -- types of mCDR 
 
 ```{r load results from keyword extract on rossi}
 load(here::here("data/mCDR_data_March2024_beforeKeyword.RData"))
 load(here::here("data/mCDR_data_March2024_afterKeyword.RData"))
 
+
+## Get the plotting and factoring aesthetics
+top10 <- with(mCDR_df_top10, table(country_aff))
+top10 <- top10[order(top10, decreasing = TRUE)]
+myPal <- viridis::mako(length(top10))
+myPal[which(names(top10) == "France")] <- "orange"
+myPal[which(names(top10) %in% c("United Kingdom","Germany","France"))] <- RColorBrewer::brewer.pal(3,"YlOrBr")
+names(myPal) <- names(top10)
+
+
+
+## For each type of option, tabulate the number of articles per country
+
+# Merge two data frames on metadata and keyword matching
+mCDR_type_tab <- mCDR_df_top10 %>%
+  inner_join(matches_all, by = "analysis_id") %>%
+  mutate(blue_carbon = ifelse(0.5 <= blue_carbon, TRUE, FALSE)) %>%
+  select(country_aff, blue_carbon, OAE, OIF, Artificial_upwelling, 
+         Deep_sea_storage, Algal_cultivation)
+
+# Melt data into long form and tabulate
+mCDR_type_tab <- reshape2::melt(mCDR_type_tab, 
+                                id.vars = "country_aff", variable.name = "mCDR_method") %>%
+  group_by(country_aff, mCDR_method) %>%
+  summarise(n_articles = sum(value))
+
+# Display tabulation as a proportion for each method
+mCDR_type_totals <- mCDR_type_tab %>% 
+  group_by(mCDR_method) %>%
+  summarise(total = sum(n_articles))
+
+mCDR_type_tab <- mCDR_type_tab %>%
+  left_join(mCDR_type_totals, by = "mCDR_method") %>%
+  mutate(percent_contribution = n_articles/total*100)
+
+# Factor variable levels
+mCDR_type_tab$country_aff <- factor(mCDR_type_tab$country_aff, levels= names(top10))
+mCDR_type_tab$mCDR_method <- factor(mCDR_type_tab$mCDR_method,
+                                    levels = c("blue_carbon", "OAE", "OIF",
+                                               "Artificial_upwelling", 
+                                               "Deep_sea_storage", "Algal_cultivation"),
+                                    labels = c("Blue carbon","Alkalinity enhancement",
+                                               "Iron fertilization",
+                                               "Artificial up/down-welling", 
+                                               "Deep sea storage",
+                                               "Micro/macro-algal cultivation"))
+
+```
+
+```{r plot stacked bar plot of mCDR method}
+mCDRMethodBar_ggp <- ggplot(mCDR_type_tab)+
+  geom_col(position = "stack",aes(x = mCDR_method, 
+                                  y = percent_contribution, 
+                                  fill = country_aff))+
+  geom_text(aes(x = mCDR_method, label = formatC(total, big.mark = " ")),
+            y=95, size=3, col="lightgrey")+
+  scale_fill_manual(values = myPal) +
+  labs(x="mCDR method", y ="% contribution", fill = "Country")+
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(size=13, angle = 45, hjust=1),
+    axis.text.y = element_text(size=13),
+    legend.text = element_text(size=13),
+    axis.title.x = element_text(size=15),
+    axis.title.y = element_text(size=15),
+    legend.title = element_text(size=15)
+  )
+
+
+
+ggsave(mCDRMethodBar_ggp,
+       filename = here::here("figures/mCDR_research_in_france_March2024/percent_contribution_method_bar.png"),
+       width = 7, height = 5, dpi = 600)
+```
+
+# Timeseries of different method types except blue carbon from keyword matching
+
+
+```{r format data for CDR method timeseries plot}
+load(here::here("data/mCDR_data_March2024_beforeKeyword.RData"))
+load(here::here("data/mCDR_data_March2024_afterKeyword.RData"))
+
+## For each type of option (except blue carbon), tabulate the number of articles per year
+
+# Merge two data frames on metadata and keyword matching
+mCDR_type_year_tab <- mCDR_df_top10 %>%
+  filter(blue_carbon < 0.5) %>% ## EXCLUDE BLUE CARBON
+  inner_join(matches_all, by = "analysis_id") %>%
+  select(year, OAE, OIF, Artificial_upwelling, 
+         Deep_sea_storage, Algal_cultivation)
+
+# Melt data into long form and tabulate
+mCDR_type_year_tab <- reshape2::melt(mCDR_type_year_tab, 
+                                id.vars = "year", variable.name = "mCDR_method") %>%
+  group_by(year, mCDR_method) %>%
+  summarise(n_articles = sum(value)) 
+  
+
+# Display tabulation as a proportion for each year
+year_totals <- mCDR_type_year_tab %>% 
+  group_by(year) %>%
+  summarise(total = sum(n_articles))
+
+mCDR_type_year_tab <- mCDR_type_year_tab %>%
+  left_join(year_totals, by = "year") %>%
+  mutate(percent_contribution = n_articles/total*100)
+
+
+# Factor variable levels
+mCDR_type_year_tab$year_date <- as.Date(paste0(mCDR_type_year_tab$year,"-01-01"))
+
+mCDR_type_year_tab$mCDR_method <- factor(mCDR_type_year_tab$mCDR_method,
+                                    levels = c("OAE", "OIF",
+                                               "Artificial_upwelling", 
+                                               "Deep_sea_storage", "Algal_cultivation"),
+                                    labels = c("Alkalinity enhancement",
+                                               "Iron fertilization",
+                                               "Artificial up/\ndown-welling", 
+                                               "Deep sea storage",
+                                               "Micro/macro-algal cultivation"))
+
+# Subset years to 1995 - 2022 (b/c 2023 is incomplete)
+mCDR_type_year_tab <- mCDR_type_year_tab %>%
+  filter(as.Date("1995-01-01") <= year_date & year_date < as.Date("2023-01-01"))
+
+```
+
+
+```{r}
+require(gcookbook)
+
+timeseriesMethod_ggp <- ggplot(mCDR_type_year_tab,
+                               aes(x = year_date, y = n_articles, fill = mCDR_method)) +
+  geom_area(colour = "black", size = .2) +
+  scale_fill_brewer(palette = "Dark2")+
+  #scale_fill_manual(values = myPal) +
+  scale_x_date()+
+  labs(x="Year", y ="N articles", fill = "CDR method")+
+  theme_bw()+
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(size=13),
+    axis.text.y = element_text(size=13),
+    legend.text = element_text(size=13),
+    axis.title.x = element_text(size=15),
+    axis.title.y = element_text(size=15),
+    legend.title = element_text(size=15)
+  )
+
+timeseriesMethod_ggp
+
+timeseriesMethodPercent_ggp <- ggplot(mCDR_type_year_tab,
+                               aes(x = year_date, y = percent_contribution, 
+                                   fill = mCDR_method)) +
+  geom_col(position = "stack") +
+  scale_fill_brewer(palette = "Dark2")+
+  #scale_fill_manual(values = myPal) +
+  scale_x_date()+
+  labs(x="Year", y ="% articles", fill = "CDR method")+
+  guides(fill=guide_legend(nrow=2,byrow=TRUE))+
+  theme_bw()+
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(size=13),
+    axis.text.y = element_text(size=13),
+    legend.text = element_text(size=13),
+    axis.title.x = element_text(size=15),
+    axis.title.y = element_text(size=15),
+    legend.title = element_text(size=15)
+  )
+
+timeseriesMethodPercent_ggp
+
+timeseriesMethodCombined <- egg::ggarrange(
+  timeseriesMethod_ggp + theme(plot.margin = unit(c(1,2,0.5,1), "cm")), 
+  timeseriesMethodPercent_ggp+ theme(plot.margin = unit(c(1,2,0.5,1), "cm")),
+  nrow = 2, ncol = 1,
+  heights = c(1,0.8),
+  labels = c("a. Total number of articles","b. Percent contribution"))
+
+
+ggsave(timeseriesMethodCombined,
+  filename = here::here("figures/mCDR_research_in_france_March2024/timeseriesByMethod.png"),
+       width = 8, height = 8, dpi = 600)
+
+```
+
+
+# Total number of publications ~ size of the EEZ for each country
+
+
+```{r calculate eez area for each country, eval = FALSE}
+
+# # Read the polygons of eez boundaries
+# eez <- sf::st_read(here::here("data/external/eez_rast/MarineRegions_EEZ_v12_20231025"), layer="eez_v12")
+# 
+# # Extract country and area values
+# eez_countries <- st_drop_geometry(eez)[,"SOVEREIGN1"]
+# eez_area <- st_drop_geometry(eez)[,"AREA_KM2"]
+# 
+# rm(eez)
+# 
+# # Bind into data frame and save
+# eez_area_df <- data.frame(
+#   country_aff = eez_countries,
+#   area_km2 = eez_area
+# )
+# 
+# 
+# save(eez_area_df, file = here::here("data/country_eez_area_df.RData"))
+
+```
+
+```{r}
+load(here::here("data/mCDR_data_March2024_beforeKeyword.RData"))
+load(here::here("data/country_eez_area_df.RData"))
+
+eez_area_df <- eez_area_df %>%
+  group_by(country_aff) %>%
+  summarise(total_area_km2 = sum(area_km2))
+
+mCDR_df_top10_eez <- mCDR_df_top10 %>%
+  group_by(country_aff) %>%
+  summarise(n_articles = n_distinct(analysis_id)) %>%
+  left_join(eez_area_df, by = "country_aff")
+
+## But try faceting by just blue carbon, and then all other techniques
+mCDR_df_top10_eez_bc <- mCDR_df_top10 %>%
+  filter(0.5 <= blue_carbon) %>%
+  group_by(country_aff) %>%
+  summarise(n_articles = n_distinct(analysis_id)) %>%
+  left_join(eez_area_df, by = "country_aff") %>%
+  mutate(method = "Blue carbon")
+
+mCDR_df_top10_eez_other <- mCDR_df_top10 %>%
+  filter(blue_carbon < 0.5) %>%
+  group_by(country_aff) %>%
+  summarise(n_articles = n_distinct(analysis_id)) %>%
+  left_join(eez_area_df, by = "country_aff") %>%
+  mutate(method = "Other CDR\nmethods")
+
+mCDR_df_top10_eez_bc_facet <- rbind(mCDR_df_top10_eez_bc, mCDR_df_top10_eez_other)
+
+
+pubs2eez_ggp <- ggplot()+
+  ggrepel::geom_text_repel(
+    data = mCDR_df_top10_eez_bc_facet %>%
+      filter(country_aff != "France"), 
+    aes(x = total_area_km2, y=n_articles, label = country_aff),
+    box.padding = 0.05
+  )+
+  ggrepel::geom_text_repel(
+    data = mCDR_df_top10_eez_bc_facet %>%
+      filter(country_aff == "France"), 
+    aes(x = total_area_km2, y=n_articles, label = country_aff), col = "red", size=5,
+    box.padding = 0.05
+  )+
+  facet_grid(method~., scales = "free_y")+
+  scale_x_continuous(expand = expansion(mult = 0.1))+
+  labs(x = "EEZ area (km2)",y="N articles")+
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(size=13),
+    axis.text.y = element_text(size=13),
+    legend.text = element_text(size=13),
+    axis.title.x = element_text(size=15),
+    axis.title.y = element_text(size=15),
+    legend.title = element_text(size=15),
+    strip.text = element_text(size=15)
+  )
+
+pubs2eez_ggp
+
+ggsave(pubs2eez_ggp,
+       filename = here::here("figures/mCDR_research_in_france_March2024/nArticles_vs_EEZarea.png"),
+       width = 7, height = 6, dpi = 600)
 ```
 
 
