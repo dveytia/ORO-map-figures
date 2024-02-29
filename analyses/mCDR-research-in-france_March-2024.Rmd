@@ -121,9 +121,6 @@ rm(mCDR_df, countries_ls, data_1stA_country)
 
 ```
 
-```{r load results from keyword extract on rossi}
-load(here::here("data/mCDR_data_March2024_afterKeyword.RData"))
-```
 
 
 # Timeline of publications in top 10 countries
@@ -272,7 +269,7 @@ grid_df2 %>%
 
 ```
 
-```{r}
+```{r plot world map of geoparsed data}
 
 coast <- giscoR::gisco_get_countries(
   spatialtype = "COASTL",
@@ -360,9 +357,74 @@ ggsave(geoparsedMap_ggp,
 ```
 
 
+```{r zoom in on france}
+
+france_coast <- giscoR::gisco_get_countries(
+  resolution = "20",
+  country = "France"
+)
+
+france_bbox <- st_bbox(france_coast)
+france_bbox <- c(ymin = 41.2632185, ymax = 51.268318,
+                 xmin = -5.4534286, xmax = 9.8678344)
+
+
+			
+
+# Plot
+geoparsedMapFrance_ggp <- ggplot() +
+  geom_polygon(data=grid_df_mCDR_poly, 
+               aes(LON, LAT, group=grid_df_id, fill=log(n_articles)))+
+  scale_fill_distiller(palette = "Blues", direction = 1, name = "log(weighted articles)",
+                       na.value = "transparent")+
+  
+  geom_sf(data=france_coast, col = "black", linewidth = 1, fill = NA)+
+  # geom_polygon(data=bbox_df, aes(x=LON, y=LAT, group=group),col = "black", linewidth = 0.7, fill=NA)+
+  coord_sf(crs = st_crs('ESRI:54030'),default_crs = st_crs(4326),
+           xlim = france_bbox[c("xmin","xmax")],
+           ylim = france_bbox[c("ymin","ymax")])+
+  theme_bw()+
+  theme(
+    legend.position = "none",
+    panel.background = element_blank(),
+    panel.grid = element_blank(),
+    #panel.border = element_line(colour = "black", linewidth = 0.75),
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    axis.ticks = element_blank()
+  )
+  
+
+ggsave(geoparsedMapFrance_ggp,
+       filename = here::here("figures/mCDR_research_in_france_March2024/geoparsedMapFrance.png"),
+       width = 7, height = 5, dpi = 600)
+```
+
+```{r try combining both maps as an inset}
+library(cowplot)
+
+mapsInset_ggp <- ggdraw() +
+  draw_plot(geoparsedMap_ggp)+
+  draw_plot(geoparsedMapFrance_ggp + 
+              ggtitle("France metropolitan")+
+              theme(title = element_text(size=9)), 
+            x = -0.05, y = 0.15, width = 0.4, height = 0.4)
+
+
+
+ggsave(mapsInset_ggp,
+       filename = here::here("figures/mCDR_research_in_france_March2024/geoparsedMapInset.png"),
+       width = 7, height = 5, dpi = 600)
+```
+
+
 # Keyword matching -- types of mCDR 
 
+```{r load results from keyword extract on rossi}
+load(here::here("data/mCDR_data_March2024_beforeKeyword.RData"))
+load(here::here("data/mCDR_data_March2024_afterKeyword.RData"))
 
+```
 
 
 
