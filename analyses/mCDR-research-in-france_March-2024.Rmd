@@ -492,7 +492,8 @@ mCDRMethodBar_ggp <- ggplot(mCDR_type_tab)+
   geom_text(aes(x = mCDR_method, label = formatC(total, big.mark = " ")),
             y=95, size=3, col="lightgrey")+
   scale_fill_manual(values = myPal) +
-  labs(x="mCDR method", y ="% contribution", fill = "Country")+
+  labs(x="mCDR method", y ="% contribution", fill = "Country",
+       caption = "Veytia et al., Machine Learning Evidence Map, In Prep.")+
   theme_bw()+
   theme(
     axis.text.x = element_text(size=13, angle = 45, hjust=1),
@@ -500,14 +501,15 @@ mCDRMethodBar_ggp <- ggplot(mCDR_type_tab)+
     legend.text = element_text(size=13),
     axis.title.x = element_text(size=15),
     axis.title.y = element_text(size=15),
-    legend.title = element_text(size=15)
+    legend.title = element_text(size=15),
+    plot.caption = element_text(size=13, face="italic")
   )
 
 
 
 ggsave(mCDRMethodBar_ggp,
        filename = here::here("figures/mCDR_research_in_france_March2024/percent_contribution_method_bar.png"),
-       width = 7, height = 5, dpi = 600)
+       width = 7, height = 5.5, dpi = 600)
 ```
 
 # Timeseries of different method types except blue carbon from keyword matching
@@ -593,7 +595,8 @@ timeseriesMethodPercent_ggp <- ggplot(mCDR_type_year_tab,
   scale_fill_brewer(palette = "Dark2")+
   #scale_fill_manual(values = myPal) +
   scale_x_date()+
-  labs(x="Year", y ="% articles", fill = "CDR method")+
+  labs(x="Year", y ="% articles", fill = "CDR method", 
+       caption = "Veytia et al., Machine Learning Evidence Map, In Prep.")+
   guides(fill=guide_legend(nrow=2,byrow=TRUE))+
   theme_bw()+
   theme(
@@ -603,14 +606,15 @@ timeseriesMethodPercent_ggp <- ggplot(mCDR_type_year_tab,
     legend.text = element_text(size=13),
     axis.title.x = element_text(size=15),
     axis.title.y = element_text(size=15),
-    legend.title = element_text(size=15)
+    legend.title = element_text(size=15),
+    plot.caption = element_text(size = 14, face = "italic")
   )
 
 timeseriesMethodPercent_ggp
 
 timeseriesMethodCombined <- egg::ggarrange(
   timeseriesMethod_ggp + theme(plot.margin = unit(c(1,2,0.5,1), "cm")), 
-  timeseriesMethodPercent_ggp+ theme(plot.margin = unit(c(1,2,0.5,1), "cm")),
+  timeseriesMethodPercent_ggp+ theme(plot.margin = unit(c(1,2,0.6,1), "cm")),
   nrow = 2, ncol = 1,
   heights = c(1,0.8),
   labels = c("a. Total number of articles","b. Percent contribution"))
@@ -618,7 +622,7 @@ timeseriesMethodCombined <- egg::ggarrange(
 
 ggsave(timeseriesMethodCombined,
   filename = here::here("figures/mCDR_research_in_france_March2024/timeseriesByMethod.png"),
-       width = 8, height = 8, dpi = 600)
+       width = 8.5, height = 8, dpi = 600)
 
 ```
 
@@ -694,7 +698,8 @@ pubs2eez_ggp <- ggplot()+
   )+
   facet_grid(method~., scales = "free_y")+
   scale_x_continuous(expand = expansion(mult = 0.1))+
-  labs(x = "EEZ area (km2)",y="N articles")+
+  labs(x = "EEZ area (km2)",y="N articles",
+       caption = "Veytia et al., Machine Learning Evidence Map, In Prep.")+
   theme_bw()+
   theme(
     axis.text.x = element_text(size=13),
@@ -703,7 +708,8 @@ pubs2eez_ggp <- ggplot()+
     axis.title.x = element_text(size=15),
     axis.title.y = element_text(size=15),
     legend.title = element_text(size=15),
-    strip.text = element_text(size=15)
+    strip.text = element_text(size=15),
+    plot.caption = element_text(size = 12, face = "italic")
   )
 
 pubs2eez_ggp
