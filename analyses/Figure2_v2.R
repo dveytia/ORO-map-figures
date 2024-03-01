@@ -300,6 +300,8 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
              perc = (count/total_count)*100) |> 
       group_split(group_land)
     
+  ## ---- DEVI, YOU CAN PUT THE CODE FOR THE MODEL HERE
+    
     
   ## ---- PLOT PANEL C
     
