@@ -20,7 +20,6 @@ univariate_map <- function(data_map, eez = NULL, color_scale, second.var, midpoi
                      color   = "grey10",
                      size    = 0.1,
                      show.legend = show.legend) +
-    
 
     
     # Add graticules
@@ -169,8 +168,8 @@ biplot_fig2c <- function(data, var.x, var.y, var.col, var.shape, xlab, ylab, one
            labels    = abs(residuals) >= quantile(abs(residuals), prob = quant.prob))
   
   
-  data$labelsFR <- FALSE
-  data$labelsFR[data$country == "France"] <- TRUE
+  # data$labelsFR <- FALSE
+  # data$labelsFR[data$country == "France"] <- TRUE
   
   plot <- ggplot(data    = data, 
                  mapping = aes(x = var_x, 
@@ -191,13 +190,13 @@ biplot_fig2c <- function(data, var.x, var.y, var.col, var.shape, xlab, ylab, one
                     show.legend  = FALSE,
                     min.segment.length = 0.1) +
     
-    geom_text_repel(data         = filter(data, labelsFR == TRUE), 
-                    mapping      = aes(label = country), # 
-                    # color = "darkred",
-                    max.overlaps = 100,
-                    size   = 10,
-                    show.legend  = FALSE,
-                    min.segment.length = 0.1) +
+    # geom_text_repel(data         = filter(data, labelsFR == TRUE), 
+    #                 mapping      = aes(label = country), # 
+    #                 # color = "darkred",
+    #                 max.overlaps = 100,
+    #                 size   = 10,
+    #                 show.legend  = FALSE,
+    #                 min.segment.length = 0.1) +
     
     scale_color_manual(values = c("SIDS" = "#0fbcd6",
                                  "Land-locked" = "#b36705",
@@ -357,7 +356,7 @@ correlation_btw_var <- function(data, log.transf, quant.prob, name = NULL){
 #' @export
 #'
 #' @examples
-bivariate_map <- function(data_map, data_map_univ, data_world, color, univariate_color_scale, xlab, ylab, lab_univ, name){
+bivariate_map <- function(data_map, data_map_univ, eez = NULL, data_world, color, univariate_color_scale, xlab, ylab, lab_univ, name){
   
   # data_map <- tibble::as.tibble(data_map)
   
@@ -456,7 +455,24 @@ bivariate_map <- function(data_map, data_map_univ, data_world, color, univariate
               color = "black",
               size  = 0.1)
   }
-  
+
+  if(!is.null(eez)){
+
+    map <- map +
+
+      # ggnewscale::new_scale_fill() +
+
+      ggplot2::geom_sf(data    = eez,
+                       mapping = ggplot2::aes(fill     = fill,
+                                              geometry = geometry),
+                       color   = "grey10",
+                       size    = 0.1,
+                       show.legend = FALSE) +
+
+      ggplot2::scale_fill_identity(na.value = "grey80")
+
+
+  }
 
   ## Separate groups
   data_col <- data_map$data |>  
@@ -465,6 +481,8 @@ bivariate_map <- function(data_map, data_map_univ, data_world, color, univariate
     filter(! is.na(fill)) |> 
     group_by(fill) |> 
     summarize(x=  x, y = y, count = n())
+  
+  x_quantile <- c(0, quantile(data$Count_ORO, probs = seq(0,1,0.1), na.rm = TRUE))
   
   color <- color |> 
     separate(col = group, into = c("x", "y"), sep = "\\.", convert = TRUE, remove = FALSE) 
@@ -480,26 +498,27 @@ bivariate_map <- function(data_map, data_map_univ, data_world, color, univariate
     # ggplot2::geom_tile(data    = color2, 
     #                    mapping = ggplot2::aes(x = Count_ORO, y = cumulative_co2_including_luc, fill = fill)) +
     
+    # ggplot2::scale_x_continuous(labels = as.vector(x_quantile), breaks = as.vector(x_quantile)) +
     ggplot2::scale_fill_identity() +
     
     ggplot2::geom_point(data = data_col, mapping = aes(x = x, y = y, size = count), show.legend = TRUE) +
     ggplot2::scale_size(range = c(0, 4)) +
     
     ggplot2::labs(x = xlab, y = ylab) +
-    # ggplot2::geom_hline(yintercept = 3.5, color = "red") +
+    ggplot2::geom_vline(xintercept = 3.5, color = "red") +
     cowplot::theme_map() +
     guides(size = guide_legend(title = "# country", title.position = "right", title.hjust = 0.5, ncol = 1)) +
     ggplot2::theme(axis.title      = ggplot2::element_text(size = 13), 
-                   axis.title.x    = ggplot2::element_text(margin = ggplot2::margin(t = 0, 
-                                                                                    r = 0, 
-                                                                                    b = 0, 
+                   axis.title.x    = ggplot2::element_text(margin = ggplot2::margin(t = 0,
+                                                                                    r = 0,
+                                                                                    b = 0,
                                                                                     l = 0)),
                    axis.title.y    = ggplot2::element_text(angle  = 90,
                                                            margin = ggplot2::margin(t = 0,
                                                                                     r = 5,
                                                                                     b = 0,
                                                                                     l = 0)),
-                   legend.key      = element_rect(fill = 'transparent', colour = 'transparent'), 
+                   legend.key      = element_rect(fill = 'transparent', colour = 'transparent'),
                    legend.position = "right",
                    legend.justification = "center",
                    legend.title         = element_text(angle = -90),

@@ -226,11 +226,13 @@ This section will clean the bad place matches from the geoparsing tables.
 
 Steps to clean:
 0. Select only empirical papers
+0.bis. Correct shp_id identification with the file called geoparsing_wordPlaceMatches95quantile_cleaned
 1. Select only data were a the place name matches a shapefile ID
 2. Remove acronym matches where the word matched is all capitalized letters, except UK and US
 3. Remove text between copyright symbol and next period (get rid of publisher matching)
 4. Remove land matches x distance from the coast when the spatial scale of the match is sub-national
-5. Remove affiliation text from abstract, and any resulting word matches
+<!-- 5. Remove affiliation text from abstract, and any resulting word matches -->
+
 6. Remove word matches that are a complete word in the English language
 7. Weight match by country_conf value (0.6 - 1)** -> consider removing low values using cluster analysis altogether
 
@@ -258,20 +260,20 @@ geoparsedText <- tbl(dbcon, "geoparsed_text")
 shp_df_matches <- tbl(dbcon, "geoparsed-text_shp_df_matches") 
 shp_df_sum <- tbl(dbcon, "geoparsed-text_grid-sums")
 uniquerefs <- tbl(dbcon, "uniquerefs")
-shp_df_matches <- tbl(dbcon, "geoparsed-text_shp_df_matches") 
 grid_df <- tbl(dbcon, "grid_df_res2.5") %>% collect() 
 ```
 
 
-```{r steps for cleaning}
+```{r steps for cleaning, include=FALSE}
 
 ### Global geoparsed data
 geoP_data <- tbl(dbcon, "geoparsed_text") |>  
     dplyr::select(analysis_id, word, country_predicted, place_name) |> 
     collect() 
 
-length(unique(geoP_data$analysis_id))
 nrow(geoP_data)
+length(unique(geoP_data$analysis_id))
+
 
 ### Note N°0: Select only empirical studies
 
@@ -284,10 +286,9 @@ nrow(geoP_data)
   
   ## Selection of empiral papers among all papers
   geoP_data_empirical <- filter(geoP_data, analysis_id %in% unique(predMethod$analysis_id))
-
-  length(unique(geoP_data_empirical$analysis_id))
+  
   nrow(geoP_data_empirical)
-
+  length(unique(geoP_data_empirical$analysis_id))
   
 ### Note N°1: Select only data where !is.na()
   
@@ -327,11 +328,17 @@ nrow(geoP_data)
     # Filter only analysis_id keept at previous filter
     filter(analysis_id %in% unique(geoP_data_empirical_cell_acronym$analysis_id)) |> 
     # Filter only analysis_id with the copyright symbole
-    filter(stringr::str_detect(abstract, pattern = "Â©")) |> 
+    filter(stringr::str_detect(abstract, pattern = "Â©"))
     # mutate(copyright_text = stringr::str_extract(abstract, "\\Â©\\w+$"))
-    mutate(copyright_text = stringr::str_split(abstract, "Â©")[[1]][2]) |> 
-    select(analysis_id, copyright_text)
+    
+   for(i in 1:nrow(geoparsedText_with_C)){
+     
+     geoparsedText_with_C$copyright_text[i] <- stringr::str_split(geoparsedText_with_C$abstract[i], "Â©")[[1]][2]
+     
+   } 
   
+  geoparsedText_with_C <- geoparsedText_with_C |> 
+    dplyr::select(analysis_id, copyright_text)
   
   ## Filter data with "word" matching with a name in "copyright_text
   geoP_data_empirical_cell_acronym_CR <- geoP_data_empirical_cell_acronym |> 
@@ -339,7 +346,7 @@ nrow(geoP_data)
     mutate(filter = case_when(stringr::str_detect(copyright_text, stringr::fixed(word)) ~ TRUE,
                               TRUE ~ FALSE)) |> 
     filter(filter == FALSE) |> 
-    select(-copyright_text, -filter)
+    dplyr::select(-copyright_text, -filter)
   
   nrow(geoP_data_empirical_cell_acronym_CR)
   length(unique(geoP_data_empirical_cell_acronym_CR$analysis_id))
@@ -405,25 +412,418 @@ nrow(geoP_data)
     
   ## Filter only cells that are at least 200km from coast
   geoP_data_empirical_cell_acronym_CR_200km <- geoP_data_empirical_cell_acronym_CR |> 
-    left_join(grid_df2 |> select(grid_df_id, coastal), by = "grid_df_id") |> 
-    filter(coastal == 1)
+    left_join(grid_df2 |> dplyr::select(grid_df_id, coastal), by = "grid_df_id") |> 
+    filter(coastal == 1) |> 
+    dplyr::select(-coastal)
     
   nrow(geoP_data_empirical_cell_acronym_CR_200km)
   length(unique(geoP_data_empirical_cell_acronym_CR_200km$analysis_id))
+  
+### Note N°0.bis: Correction of mis-identified shp_id
+  
+  ## Grid of shapefile and matching cells
+  load(here::here("data", "geoparsing", "land_eez_grid_country.RData"))
+  shp_df_matches_grid <- shp_df_matches |> 
+    collect() |> 
+    distinct(shp_id, grid_df_id) |> 
+    left_join(grid_df_eez_land |>  dplyr::select(-LAT, -LON), by = "grid_df_id") |> 
+    filter(!is.na(shp_id))
+ 
+  ## Join with the geoparsed matching location (grid cell level)
+  # geoP_data_empirical_cell <- geoP_data_empirical |> 
+  #   left_join(shp_df_matches, by = "analysis_id", copy = TRUE) |>
+  #   collect()
+  
+  ## Load the corrected table of shp_id
+  geoparsing_wordPlaceMatches95quantile_cleaned <- readr::read_csv(here::here("data", "geoparsing", "geoparsing_wordPlaceMatches95quantile_cleaned.csv")) |>
+    filter(true_match == FALSE & nchar(shp_id_correct) < 5)
+  
+  ## For loop to correct all results 
+  geoP_data_empirical_cell_acronym_CR_200km_Q95 <- geoP_data_empirical_cell_acronym_CR_200km
+  for(i in 1:nrow(geoparsing_wordPlaceMatches95quantile_cleaned)){
+    
+    print(i)
+    
+    # Extract the correct shp_id 
+    shp_id_correct <- geoparsing_wordPlaceMatches95quantile_cleaned$shp_id_correct[i]
+    
+    # Extract the wrong word
+    wrong_word <- geoparsing_wordPlaceMatches95quantile_cleaned$word[i]
+    
+    # Extract the wrong place_name
+    wrong_place_name <- geoparsing_wordPlaceMatches95quantile_cleaned$place_name[i]
+    
+    # tmp true grid 
+    shp_df_matches_grid_i <- shp_df_matches_grid |> 
+      filter(shp_id == shp_id_correct) |> 
+      distinct(shp_id, TERRITORY1, country_id, .keep_all = TRUE) # Keep one grid cell
+
+    # Extract and correct data in the main table
+    data_corr <- geoP_data_empirical_cell_acronym_CR_200km |> 
+      # filter(analysis_id == 348090) |> 
+      filter(word == wrong_word & place_name == wrong_place_name) |> 
+      dplyr::select(-grid_df_id) |>
+      mutate(shp_id = as.numeric(shp_id_correct)) |> 
+      left_join(shp_df_matches_grid_i, by = "shp_id") |> 
+      filter(word == TERRITORY1 | word == country_id) |> 
+      distinct(analysis_id, grid_df_id, TERRITORY1, country_id, .keep_all = T) |> 
+      dplyr::select(names(geoP_data_empirical_cell_acronym_CR_200km)) 
+    
+    
+  ## Replace wrong data by the true ones
+  geoP_data_empirical_cell_acronym_CR_200km_Q95 <- geoP_data_empirical_cell_acronym_CR_200km_Q95 |> 
+    filter(!(word == wrong_word & place_name == wrong_place_name)) |> # word != wrong_word & place_name != wrong_place_name
+    rbind(data_corr)
+  
+  # print(sum(geoP_data_empirical_cell_acronym_CR_200km_Q95$analysis_id == 348090))
+    
+  } # end FOR i
+  
+  nrow(geoP_data_empirical_cell_acronym_CR_200km_Q95)
+  length(unique(geoP_data_empirical_cell_acronym_CR_200km_Q95$analysis_id))
+
+  
+### Note 6: Remove word matches that are a complete word in the English language
+library(qdapDictionaries)
+library(maps)
+library(datasets)
+
+  # Identify rows with "word" being an english word
+  is.word  <- function(x) x %in% GradyAugmented
+  is.city <- function(x) x %in% as.data.frame(world.cities)$name
+  is.US.state <- function(x) x %in% state.name
+
+  geoP_data_empirical_cell_acronym_CR_200km_Q95_word <- geoP_data_empirical_cell_acronym_CR_200km_Q95 |> 
+    mutate(is_word = is.word(stringr::str_to_lower(word)),
+           country_word = countrycode::countrycode(sourcevar   = word,
+                                                   origin      = "country.name",
+                                                   destination = "country.name"),
+           is_city = is.city(stringr::str_to_title(word)),
+           is_USstate = is.US.state(stringr::str_to_title(word))) |> 
+    # Keep rows that are not word OR rows that are word but a country, city or US state
+    filter((is_word == FALSE) | (is_word == TRUE & !is.na(country_word)) | (is_word == TRUE & is_city == TRUE) | (is_word == TRUE  & is_USstate == TRUE))
+  
+  nrow(geoP_data_empirical_cell_acronym_CR_200km_Q95_word)
+  length(unique(geoP_data_empirical_cell_acronym_CR_200km_Q95_word$analysis_id))
+  
+### Note +1: Remove word matches that contains a number or that looks like species scientific name
+  
+  ## Filter all rows matching a species name like pattern
+  #     ^: Asserts the start of the string.
+  # [A-Z]: Matches any uppercase letter from A to Z.
+  # \.: Matches a period (dot) character literally.
+  # \s: Matches an space character (zero or one space).
+  # [a-zA-Z]+: Matches one or more alphabetic characters (both lowercase and uppercase). This ensures that there is at least one letter following the period.
+  # (\\s[a-zA-Z]+)?: This is an optional group. It starts with a space (\s) followed by one or more alphabetic characters for the third word. The ? quantifier   makes the entire group optional, meaning the third word is optional.
+  # $: Asserts the end of the string.
+  geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num <- geoP_data_empirical_cell_acronym_CR_200km_Q95_word |> 
+    filter(!stringr::str_detect(word, ".*[0-9].*") & !stringr::str_detect(word, "^[A-Z]\\.\\s[a-zA-Z]+(\\s[a-zA-Z]+)?$")) |> 
+    # Manual filter for genus names 
+    filter(! word %in% c("Spartina", "Avicennia", "avicennia", "Posidonia", "Saccharina", "Casuarina", "Saltmarshes", "saltmarshes", "Offshore Wind Farms", "Mangrove Forests", "sandy beach", "sandy beaches", "anthozoa", "sea water", "a Coral Reef", "- bay marsh", "a North Sea", "Corg", "Kandelia", "-bay marsh", "(South Pacific", "a Rhode Island", "west coast", "East Coast", "east coast", "West Coast", "s Pacific coast", "West coast", "East coast", "Mangrove Coast", "Nature Coast", "Northwest Coast", "sandy coast", "south coast", "Southern Coast", "Western Coast", "Westcoast", "Coastal dunes", "monopile", "marina", "Mobile", "Chelonia", "Codium", "	
+Phragmites", "amphipoda", "non-u.s.", "Puffinus", "Typha", "Douglas-fir", "statesâ€™", "chiroptera", "J.", "Reef Ballâ„¢", "salinas", "Savannah", "Sea Changes", "anoâ€™", "C.J.U", "ç¡«æ", "LNG RV", "llc", "lng terminals", "copepoda", "coral reef island", "d. peresta", "DC/DC", "Eocene", "ESTUARINE", "et al", "far east", "Far East", "FLNG", "Fungia", "GNSS", "GoA", "helianthus", "Heliconia", "HERIOT-WATT", "High Island", "Î”pHNBS", "Î±-carbonic",
+"Î¼g", "j.a.l.", "K+", "Jq", "kgC", "km coastal", "Marina", "Masui et al.", "Mg", "mhk", "milkfish ponds", "middle marsh", "Mn", "N-m", "nddc", "NDVI", "Nitzschia", "No Fishery", "	OC-OTEC", "Ocean Waves", "Ocean Station", "Ocean Worlds", "oxic", "Parcel F", "Pb", "Peatlands", "PETRONAS", "Pinus", "Plover Cove (", "Porites", "POST-ON", "RAMSAR", "Ramsar", "reef lagoon", "river valley", "salt marshes", "Salt Marshes", "Salt Ponds", "sCOD", "SE North Sea", "Sea Change", "sea coast", "silt+clays", "site M", "soc", "SoC", "sub sea", "Sylt", "Symbioses", "t.nguyen", "Trelleborgâ€™s", "Undaria", "X Field", "MeyGen", "Sandy beaches", "Low earth", "Coastal Waters", "Wave Hub", "L Parr")) |>
+    filter(! place %in% c("spártina")) 
+
+  nrow(geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num)
+  length(unique(geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num$analysis_id))
+  
+  
+### Note +2: Remove rows when the grid cell falls in a country without border with the corresponding "word" when it is a sea or an ocean
+### Example with word == "North Sea"
+load(here::here("data", "geoparsing", "land_eez_grid_country.RData"))
+
+  ## Load country and ocean/sea shapefiles
+  countries <- sf::st_read(here::here("data", "external", "country", "ne_50m_admin_0_countries.shp"))  # Update with correct path
+  oceans_seas <- sf::st_read(here::here("data", "external", "ocean", "ne_50m_geography_marine_polys.shp"))  # Update with correct path
+  
+  ## Identify countries having a border with a given sea/ocean
+  sf::sf_use_s2(FALSE)
+  oceans_seas_intersect <- sf::st_intersection(countries, oceans_seas) |> 
+    sf::st_drop_geometry() |> 
+    dplyr::select(name_en, SOVEREIGNT, ADMIN) |> 
+    dplyr::rename(ocean_sea     = name_en,
+                  country_sea   = SOVEREIGNT,
+                  territory_sea = ADMIN) |> 
+    mutate(country_id = countrycode::countrycode(sourcevar   = country_sea,
+                                                 origin      = "country.name",
+                                                 destination = "country.name"))
+  
+  oceans_seas_intersect$ocean_sea[oceans_seas_intersect$ocean_sea == "Gulf of Lion"] <- "Lion's Gulf"
+  
+  ## Format data
+  geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea <- geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num |>  
+    dplyr::select(analysis_id, word, shp_id, place_name, grid_df_id, place) |>
+    left_join(grid_df_eez_land |>  dplyr::select(-LAT, -LON), by = "grid_df_id") 
+  
+    # Select only data that need a check
+    data_test_sea_tmp <- geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea |> 
+      filter(stringr::str_to_title(word) %in% oceans_seas_intersect$ocean_sea) 
+
+    data_to_keep <- geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea |> 
+      filter(! stringr::str_to_title(word) %in% oceans_seas_intersect$ocean_sea)
+    
+  ## Remove rows when a grid cell falls in a country without any border with the corresponding "word" when it is a sea or an ocean
+    
+    # For loop for dectection
+    for(i in 1:nrow(data_test_sea_tmp)){
+      
+      # Row selection
+      row_i <- data_test_sea_tmp[i,]
+      
+      # If match a name in oceans_seas, make the check (and keep or remove the row), ELSE, keep the row
+      matching_sea <- stringr::str_to_title(row_i$word)
+      
+      if(row_i$country_id %in% oceans_seas_intersect$country_id[oceans_seas_intersect$ocean_sea == matching_sea]){
+        data_test_sea_tmp$keep[i] <- "yes"
+      } else {data_test_sea_tmp$keep[i] <- "no"}
+      
+    } ; sum(data_test_sea_tmp$keep == "no")
+    
+    # Keep only true data
+    geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea <- data_test_sea_tmp |> 
+      filter(keep == "yes") |> 
+      dplyr::select(-keep) |> 
+      rbind(data_to_keep)
+  
+  nrow(geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea)
+  length(unique(geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea$analysis_id))
+  
+### Note +3: For analysis_id with a country name in the title, keep only the country in the title (avoid scale mistakes and comparisons)
+### Example: analysis_id == 264937
+  
+  ## Identify unique analysis_id
+  ana_id_unique <- unique(geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea$analysis_id)
+  geopparsedText_sel <- geoparsedText |> dplyr::select(analysis_id, title) |>  distinct() |>  collect()
+  
+  ## For loop to check for each paper if there is a country in the title
+  geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title <- NULL
+  drop_data <- NULL
+  keep_data <- NULL
+  for(i in 1:length(ana_id_unique)){
+    
+    # # Select all row for the ith analysis_id
+    # analysis_id_i <- geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea |> 
+    #   filter(analysis_id == ana_id_unique[i]) |> 
+    #   left_join(geopparsedText_sel, by = "analysis_id", copy = TRUE) |> 
+    #   mutate(country_in_title = stringr::str_detect(title, TERRITORY1))
+    # 
+    # # Keep only TRUE data if country nale identified in the title, else, keep all data 
+    # if(sum(analysis_id_i$country_in_title == TRUE) > 0){
+    #   keep_data <- analysis_id_i |> filter(country_in_title == TRUE) |> dplyr::select(-country_in_title, -title)
+    #   drop_data <- rbind(drop_data, analysis_id_i |> filter(country_in_title == FALSE))
+    # } else {keep_data <- analysis_id_i |> dplyr::select(-country_in_title, -title)}
+    
+    # Select all row for the ith analysis_id
+    analysis_id_i <- geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea |> 
+      filter(analysis_id == ana_id_unique[i]) |> 
+      left_join(geopparsedText_sel, by = "analysis_id", copy = TRUE)
+    
+    # Replace abbreviations by country names
+    if(sum(stringr::str_detect(analysis_id_i$title, c("UK|USA|US"))) > 0){
+      
+      abbrev_i <- unique(stringr::str_extract(analysis_id_i$title, c("UK|USA|US")))
+      country_i <- countrycode::countrycode(sourcevar   = abbrev_i,
+                                            origin      = "country.name",
+                                            destination = "country.name")
+      analysis_id_i <- analysis_id_i |> 
+        mutate(title = stringr::str_replace(title, abbrev_i, country_i))
+      
+    }
+    
+    # Keep only TRUE data if country nale identified in the title, else, keep all data
+    analysis_id_i <- analysis_id_i |>  
+      mutate(country_in_title = stringr::str_detect(title, TERRITORY1) | stringr::str_detect(title, c("UK|USA|US")))
+    
+    if(sum(analysis_id_i$country_in_title == TRUE) > 0){
+      keep_data <- analysis_id_i |> filter(country_in_title == TRUE) |> dplyr::select(-country_in_title, -title)
+      drop_data <- rbind(drop_data, analysis_id_i |> filter(country_in_title == FALSE))
+    } else {keep_data <- analysis_id_i |> dplyr::select(-country_in_title, -title)}
+    
+    geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title <- rbind(geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title, keep_data)
+    
+  }
+
+  nrow(geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title)
+  length(unique(geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title$analysis_id))
+  # save(geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title, file = here::here("data", "geoparsing", "tmp_clean.RData"))
+  
+### Note +4: For analysis_id with a country name in the key_words, keep only the country in the key words (avoid scale mistakes and comparisons)
+### Example: analysis_id == 373172, 288215, 269903,335868
+  
+  ## Identify unique analysis_id
+  ana_id_unique <- unique(geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title$analysis_id)
+  uniquerefs_kw <- uniquerefs |> dplyr::select(analysis_id, keywords, keywords_other) |> filter(analysis_id %in% ana_id_unique) |>  distinct() |>  collect()
+  
+  ## Keep sea and gulf having a country names
+  sea_with_country_name <- oceans_seas_intersect |> 
+    filter(stringr::str_detect(stringr::str_to_lower(ocean_sea), stringr::str_to_lower(country_sea))) 
+  
+  sea_with_country_name <- unique(sea_with_country_name$ocean_sea)
+  
+  ## For loop to check for each paper if there is a country in the title
+  geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title_KW <- NULL
+  drop_data_KW <- NULL
+  for(i in 1:length(ana_id_unique)){
+    
+    # print(i)
+    
+    analysis_id_i <- geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title |> 
+      filter(analysis_id == ana_id_unique[i]) |> 
+      left_join(uniquerefs_kw, by = "analysis_id", copy = TRUE)
+    
+    # Replace abbreviations by country names
+    if(sum(stringr::str_detect(analysis_id_i$keywords, c(", uk|; uk|, usa|; usa|/usa/")), na.rm = TRUE) > 0){
+      
+      abbrev_i <- stringr::str_remove(unique(stringr::str_extract(analysis_id_i$keywords, c(", uk|; uk|, usa|; usa|/usa/"))), c(", |; |/"))
+      country_i <- countrycode::countrycode(sourcevar   = abbrev_i,
+                                            origin      = "country.name",
+                                            destination = "country.name")
+      analysis_id_i <- analysis_id_i |> 
+        mutate(keywords = stringr::str_replace(keywords, abbrev_i, country_i))
+      
+    }
+    
+    # print(i)
+    
+    # Select all row for the ith analysis_id
+    # analysis_id_i <- geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title |> 
+    #   filter(analysis_id == ana_id_unique[i]) |> 
+    #   left_join(uniquerefs_kw, by = "analysis_id", copy = TRUE) |> 
+    #   mutate(country_in_kw  = stringr::str_detect(keywords, stringr::str_to_lower(TERRITORY1)),
+    #          country_in_kwo = stringr::str_detect(keywords_other, stringr::str_to_lower(TERRITORY1)),
+    #          US_state_in_kw = case_when(stringr::str_detect(keywords, paste(stringr::str_to_lower(state.name), collapse = "|")) == TRUE & TERRITORY1 == "United States" ~ TRUE, 
+    #                                     TRUE ~ FALSE)) |>
+    #   tidyr::replace_na(list(country_in_kw = FALSE, country_in_kwo = FALSE, US_state_in_kw = FALSE))
+    analysis_id_i <- suppressWarnings(analysis_id_i |> 
+      mutate(country_in_kw  = case_when(stringr::str_detect(keywords, stringr::str_to_lower(TERRITORY1)) ~ TRUE,
+                                        (!stringr::str_detect(keywords, stringr::str_to_lower(TERRITORY1)) & sum(stringr::str_detect(keywords, stringr::str_to_lower(sea_with_country_name)) == TRUE, na.rm=T) > 0) ~ TRUE,
+                                        TRUE ~ FALSE),         
+             country_in_kwo = case_when(stringr::str_detect(keywords_other, stringr::str_to_lower(TERRITORY1)) ~ TRUE,
+                                        (!stringr::str_detect(keywords_other, stringr::str_to_lower(TERRITORY1)) & sum(stringr::str_detect(keywords_other, stringr::str_to_lower(sea_with_country_name)) == TRUE, na.rm=T) > 0) ~ TRUE,
+                                        TRUE ~ FALSE),
+             US_state_in_kw = case_when(stringr::str_detect(keywords, paste(stringr::str_to_lower(state.name), collapse = "|")) == TRUE & TERRITORY1 == "United States" ~ TRUE, 
+                                        TRUE ~ FALSE)) |>
+  tidyr::replace_na(list(country_in_kw = FALSE, country_in_kwo = FALSE, US_state_in_kw = FALSE)))
+    
+    # Keep only TRUE data if country nale identified in the title, else, keep all data 
+    if(sum(analysis_id_i$country_in_kw == TRUE) > 0 | sum(analysis_id_i$country_in_kwo == TRUE) > 0 | sum(analysis_id_i$US_state_in_kw == TRUE) > 0){
+      keep_data <- analysis_id_i |> filter(country_in_kw == TRUE | country_in_kwo == TRUE | US_state_in_kw == TRUE) |> 
+        dplyr::select(-country_in_kw, -country_in_kwo, -US_state_in_kw, -keywords, -keywords_other)
+      drop_data_KW <- rbind(drop_data_KW, analysis_id_i |> filter(country_in_kw == FALSE))
+    } else {keep_data <- analysis_id_i |> dplyr::select(-country_in_kw, -country_in_kwo, -US_state_in_kw, -keywords, -keywords_other)}
+    
+    geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title_KW <- rbind(geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title_KW, keep_data)
+    
+  }
+
+  nrow(geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title_KW)
+  length(unique(geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title_KW$analysis_id))
+  
+  # tmp <- geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title_KW |> 
+  #   distinct(analysis_id, TERRITORY1, country_id)
+  # 
+  # drop_tmp <- drop_data_KW |> 
+  #   distinct(analysis_id, word, TERRITORY1, country_id, keywords)
+
+### Remove High sea cells  
+geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title_KW_hs <- geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title_KW |> 
+  filter(country_id != "High-seas")
+
+nrow(geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title_KW_hs)
+length(unique(geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title_KW_hs$analysis_id))
+
+save(geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title_KW_hs, file = here::here("data", "geoparsing", "tmp_clean.RData"))
+
+test_verif_per_of_true <- geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title_KW_hs |> 
+  distinct(analysis_id, word, TERRITORY1, country_id)
+
+select_pubs <- unique(test_verif_per_of_true$analysis_id) ; sample_pubs <- sample(select_pubs, 100)
+
+x <- 100
+tmp <- test_verif_per_of_true |>  filter(analysis_id == sample_pubs[x]) ; sample_pubs[x] ; unique(tmp$country_id)
+testX <- uniquerefs |> 
+  collect() |> 
+  filter(analysis_id == sample_pubs[x]) ; testX$doi ; testX$title ; testX$keywords # ; testX$abstract 
 
 ```
 
+
 ```{r visualize data structure}
 # uniqueWordPlaceMatchesCountryPred <- geoparsedText %>% select(word, place_name) %>% distinct(word, place_name) 
+load(here::here("data", "geoparsing", "land_eez_grid_country.RData"))
 
-uniqueWordPlaceMatchesCountryPred <- geoparsedText %>% 
-  select(word, place_name, analysis_id, country_predicted) %>% 
-  group_by(word, place_name, country_predicted) |> 
-  summarise(n_articles = n()) |> 
-  collect()
+uniqueWordPlaceMatchesCountryPred <- geoP_data_empirical_cell_acronym_CR_200km_Q95_word_num_sea_title_KW_hs |>  
+  dplyr::select(word, shp_id, place_name, grid_df_id, analysis_id, place) |> 
+  # geoparsedText |> 
+  # collect() |> 
+  # filter(analysis_id %in% geoP_data_empirical_cell_acronym_CR_200km_word_num$analysis_id) |>
+  # dplyr::select(-cell_weight, -coastal, -is_word, -is_city, -is_USstate) |> 
+  # left_join(shp_df_matches, by = "analysis_id", copy = TRUE) |>
+  # right_join(geoP_data_empirical_cell_acronym_CR_200km_word_num |>  dplyr::select(shp_id, grid_df_id, analysis_id, place), by = "analysis_id") |>
+  left_join(grid_df_eez_land |>  dplyr::select(-LAT, -LON), by = "grid_df_id") |>
+  dplyr::select(word, place_name, analysis_id, shp_id, place, TERRITORY1, country_id) |>  
+  distinct(.keep_all = T) |> 
+  mutate(country_place = countrycode::countrycode(sourcevar   = place,
+                                                  origin      = "country.name",
+                                                  destination = "country.name"),
+         same_country = country_id == country_place,
+         same_territory = TERRITORY1 == country_place)
+  # group_by(word, place_name, country_predicted, shp_id, place, TERRITORY1, country_id) |> 
+  # summarise(n_articles = n())
 
-nrow(uniqueWordPlaceMatchesCountryPred) # 8261
+uniqueWordPlaceMatchesCountryPred2 <- uniqueWordPlaceMatchesCountryPred |> 
+  group_by(word, place_name, shp_id, place, TERRITORY1, country_id) |>
+  summarise(n_articles = n())
 
+tmp <- uniqueWordPlaceMatchesCountryPred |> 
+  filter(analysis_id == 264937) |>  
+  dplyr::select(word, TERRITORY1, country_id) |> 
+  distinct()
+
+  nrow(uniqueWordPlaceMatchesCountryPred)
+  length(unique(uniqueWordPlaceMatchesCountryPred$analysis_id))
+
+  test_false <- uniqueWordPlaceMatchesCountryPred |> 
+    filter((same_country == FALSE & same_territory == FALSE) | (is.na(same_country) & is.na(same_territory))) |> 
+    dplyr::select(-same_country, -same_territory) |> 
+    group_by(word, place_name, shp_id, place, TERRITORY1, country_id, country_place) |>
+    summarise(n_articles = n()) ; nrow(test_false)
+  
+  tmp <- test_false |> 
+    group_by(word, country_id) |> 
+    summarise(n = n())
+  
+  test_true <- uniqueWordPlaceMatchesCountryPred |> 
+    filter(same_country == TRUE | same_territory == TRUE) |> 
+    dplyr::select(-same_country, -same_territory) ; nrow(test_true)
+  
+  ### Filter 1 - rows with numbers
+
+    ## Extract all rows with a number
+    rows_with_number <- uniqueWordPlaceMatchesCountryPred |> 
+      filter(stringr::str_detect(word, ".*[0-9].*"))
+  
+    ## Filter all rows where there is a number
+    uniqueWordPlaceMatchesCountryPred_select1 <- uniqueWordPlaceMatchesCountryPred |> 
+      filter(! stringr::str_detect(word, ".*[0-9].*"))
+    
+  ### Filter 2 - rows matching with the name of a species
+    
+    ## Filter all rows matching a species name like pattern
+    #     ^: Asserts the start of the string.
+    # [A-Z]: Matches any uppercase letter from A to Z.
+    # \.: Matches a period (dot) character literally.
+    # \s: Matches an space character (zero or one space).
+    # [a-zA-Z]+: Matches one or more alphabetic characters (both lowercase and uppercase). This ensures that there is at least one letter following the period.
+    # (\\s[a-zA-Z]+)?: This is an optional group. It starts with a space (\s) followed by one or more alphabetic characters for the third word. The ? quantifier makes the entire group optional, meaning the third word is optional.
+    # $: Asserts the end of the string.
+    uniqueWordPlaceMatchesCountryPred_select2 <- uniqueWordPlaceMatchesCountryPred_select1 |> 
+      filter(!stringr::str_detect(word, "^[A-Z]\\.\\s[a-zA-Z]+(\\s[a-zA-Z]+)?$")) # "^[A-Z]\\.\\s[a-zA-Z]\\s?[a-z]+$"))
+    
+
+  # collect()
+
+nrow(uniqueWordPlaceMatchesCountryPred) # 15553
 
 
 # Filter to those for which we actually have matches to the natural earth database

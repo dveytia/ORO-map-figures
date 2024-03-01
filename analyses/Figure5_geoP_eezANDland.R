@@ -139,6 +139,8 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
         dplyr::select(grid_df_id, TERRITORY1, country_id) |> 
         left_join(grid_df |>  dplyr::select(-area_km, -is_land), by = "grid_df_id", copy = TRUE)
       
+      save(grid_df_eez_land, file = here::here("data", "geoparsing", "land_eez_grid_country.RData"))
+      
       # sum(grid_df_eez_land$country_id == "High-seas")/nrow(grid_df_eez_land) * 100
 
       
@@ -179,6 +181,9 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     subset_data2858  <- sf::st_as_sf(mitigation_grid_df |> filter(analysis_id == 2858), coords = c("LON", "LAT"), crs = 4326) # United States
     subset_data2932  <- sf::st_as_sf(mitigation_grid_df |> filter(analysis_id == 2932), coords = c("LON", "LAT"), crs = 4326) # United States
     
+    subset_data2932  <- sf::st_as_sf(word_in_capital_letters_TRUE |> filter(analysis_id == 321846), coords = c("LON", "LAT"), crs = 4326) # United States
+    
+    tmp <- shp_df_matches |>  filter(analysis_id == 321846) |>  collect()
     
     ggplot(data = subset_data35143) +
       geom_sf(data = world_shp, fill = "grey95") +

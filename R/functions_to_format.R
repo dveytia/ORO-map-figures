@@ -440,16 +440,16 @@ color_bivariate_map <- function(nquantiles, upperleft, upperright, bottomleft, b
 #' @export
 #'
 #' @examples
-format_data_bivariate_map <- function(data, data.x, data.y, color_table, probs.quant = seq(0,1,0.1)){
+format_data_bivariate_map <- function(data, data.x, data.y, color_table, probs.quant.y = seq(0,1,0.1), probs.quant.x = seq(0,1,0.1)){
   
   ### Calculate quantiles
   
     ## For data x
-    # x_quantile <- quantile(data[, data.x], probs = probs.quant, na.rm = TRUE)
+    # x_quantile <- quantile(data[, data.x], probs = probs.quant.x, na.rm = TRUE)
     # x_tile = ntile(x = data[, data.x], 10)
     # y_tile = ntile(x = data[, data.y], 10)
     ## For data y
-    # y_quantile <- quantile(data[, data.y], probs = probs.quant, na.rm = TRUE)
+    # y_quantile <- quantile(data[, data.y], probs = probs.quant.y, na.rm = TRUE)
   
     # data_xy <- data |> 
     #   mutate(group = 1:214)
@@ -463,11 +463,13 @@ format_data_bivariate_map <- function(data, data.x, data.y, color_table, probs.q
            group_y = ntile(get(data.y), 10),
            group   = paste0(group_x, ".", group_y)) |>
     left_join(color_table, by = "group")
+    
+  # sup = 10 - (length(unique(x_quantile))-1)
   
   # data_xy <- data |>
-  #   dplyr::mutate(x_quantile = cut(data[, data.x], breaks = unique(x_quantile), include.lowest = TRUE),
-  #                 y_quantile = cut(data[, data.y], breaks = unique(y_quantile), include.lowest = TRUE),
-  #                 group      = ifelse(!is.na(y_quantile) & !is.na(x_quantile), paste0(as.numeric(x_quantile), ".", as.numeric(y_quantile)), NA)) |>
+  #   dplyr::mutate(x_quantile = cut(data |> pull(get(data.x)), breaks = unique(x_quantile), include.lowest = TRUE),
+  #                 y_quantile = cut(data |> pull(get(data.y)), breaks = unique(y_quantile), include.lowest = TRUE),
+  #                 group      = ifelse(!is.na(y_quantile) & !is.na(x_quantile), paste0(as.numeric(x_quantile) + sup, ".", as.numeric(y_quantile)), NA)) |>
   #   dplyr::left_join(color_table, by = "group")
   
   return(data_xy)

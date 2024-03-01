@@ -1,7 +1,7 @@
 test_v4 <- tbl(dbcon, "geoparsed-text_shp_df_matches") |> 
   # filter(analysis_id == 35143) |>
   left_join(grid_df_eez_land, by = "grid_df_id", copy = TRUE) |>
-  filter(country_id == "Norway") |> 
+  filter(country_id == "Switzerland") |> 
   distinct(analysis_id, TERRITORY1, country_id) |>
   collect()
 
@@ -14,7 +14,7 @@ tmp_mitig <- pred_oro_branch |>
   # Select only relevant articles and get there shp_id
   left_join(shp_df_matches |> distinct(grid_df_id, analysis_id, shp_id, place), by = "analysis_id") |>
   right_join(grid_df_eez_land, by = "grid_df_id", copy = TRUE) |> 
-  filter(country_id == "Japan") |> 
+  filter(country_id == "Switzerland") |> 
   distinct(analysis_id, TERRITORY1, country_id) |>
   collect()
 
@@ -37,6 +37,8 @@ testX <- uniquerefs |>
 
 x = 33 ; id = testX$analysis_id[x] ; id ; testX$title[x] ; testX$author[x] ; testX$country_conf[x] 
 # testX$abstract[x]
+
+# id = 26324
 
 test_id <- tbl(dbcon, "geoparsed-text_shp_df_matches") |>
   filter(analysis_id == id) |>
@@ -100,3 +102,13 @@ ggplot(test_id) +
 
 
 ggplot(countryConf, aes(country_conf))+geom_density()+theme_bw()
+
+
+uniqueWordPlaceMatches <- geoparsedText %>% select(word, place_name, country_predicted) %>% distinct(word, place_name, .keep_all =T) |>  collect()
+tmp <- geoparsedText %>% select(word, place_name, country_predicted) %>% distinct(word, place_name, .keep_all =T) |>  collect()
+test <- geoparsedText %>% 
+  select(word, place_name, analysis_id) %>% 
+  group_by(word, place_name) |> 
+  summarise(n_articles = n()) |> 
+  # distinct(word, place_name) |>  
+  collect()
