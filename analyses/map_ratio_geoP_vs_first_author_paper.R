@@ -187,7 +187,9 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     # --- Common data at the country scale
     ORO_per_country_common_Aff_Geop <- full_join(data_per_country_aff, data_per_country_geoP, by = c("iso_code_aff" = "iso_code_geoP")) |> 
       replace_na(list(n_geop = 0, n_aff = 0)) |> 
-      mutate(layer = ((n_aff - n_geop)/n_geop)*100) |> 
+      mutate(tot = n_geop + n_aff, 
+             layer = (n_aff/tot)) |> 
+             # layer = ((n_aff - n_geop)/n_geop)*100) |> 
       ungroup() |> 
       rename(iso_code = iso_code_aff,
              country  = country_aff) |> 
@@ -217,13 +219,13 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   panelA <- univariate_map(data_map          = data_2_map,
                            eez               = eez_shp_SIDS,
                            color_scale       = c("darkred","white", "darkblue"),
-                           midpoint          = 0,
+                           midpoint          = 0.5,
                            second.var        = NULL,
                            # vals_colors_scale = NULL,
-                           title_color       = "Change in \n #paper (%)",
+                           title_color       = "% of 1st author",
                            title_size        = NULL,
                            show.legend       = TRUE,
-                           name              = "main/map_geoP_vs_affiliation")
+                           name              = "main/map_geoP_vs_affiliation_01")
   
   
 ### ----
