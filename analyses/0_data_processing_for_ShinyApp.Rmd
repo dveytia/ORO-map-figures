@@ -1,0 +1,82 @@
+---
+title: "0_data_processing_for_ShinyApp"
+author: "Gaël Mariani"
+date: "2024-03-24"
+output: html_document
+---
+
+This RMD file will arrange all data necessary to build the ShinyApp
+
+```{r load libraries}
+library(dplyr)
+library(dbplyr)
+library(R.utils)
+library(RSQLite)
+library(countrycode)
+```
+
+
+# Add files to sqlite database
+
+```{r Get the latest version of sqlite database}
+
+sqliteDir <- here::here("data/sqlite-databases")
+sqliteFiles <- dir(sqliteDir)
+sqliteVersions <- as.numeric(gsub(".sqlite","",substring(sqliteFiles, regexpr("_v", sqliteFiles) + 2)))
+latestVersion <- sqliteFiles[which.max(sqliteVersions)]
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+
+```
+
+
+# First Author Affiliation data
+```{r}
+
+### ----- LOAD DATA
+uniquerefs <- tbl(dbcon, "uniquerefs") # metadata on the unique references
+pred_relevance <- tbl(dbcon, "pred_relevance")  # which articles are relevant to OROs
+world_shp <- sf::read_sf(here::here("data", "external", "world_shp"))  # shape file of the world
+countries_ls <- read.csv(file = here::here("data", "external", "list_of_countries", "sql-pays.csv"), sep = ";") |>  # Countries names
+  dplyr::mutate(country = countrycode(sourcevar   = name_en,
+                                      origin      = "country.name",
+                                      destination = "country.name"),
+                iso_code = countrycode(sourcevar   = country,
+                                       origin      = "country.name",
+                                       destination = "iso3c"))
+
+### ----- LOAD FUNCTIONS -----
+source(here::here("R", "functions_to_format.R")) # all functions needed to format data
+
+### ----- FORMAT DATA 
+
+  ## ---- Subset to relevant rows and get the affiliation
+  oroAffiliations <- pred_relevance %>%
+    filter(0.5 <= relevance_mean) %>%
+    left_join(uniquerefs, by = "analysis_id") %>%
+    select(analysis_id, affiliation, year) %>%
+    collect()
+  
+  ## ---- Extract the country of the first author for each relevant publications
+  data_1stA_country <- extract_1stA_affiliation(data         = oroAffiliations, 
+                                                countries_ls = countries_ls)
+  
+  ## ---- Select the wanted data
+  data_1stA_country <- data_1stA_country$oroAff_1stA |> 
+      dplyr::filter(!is.na(country_aff)) |> 
+      dplyr::mutate(country_aff = countrycode(sourcevar   = country_aff,
+                                              origin      = "country.name",
+                                              destination = "country.name"),
+                    iso_code = countrycode(sourcevar   = country_aff,
+                                           origin      = "country.name",
+                                           destination = "iso3c")) |>
+      dplyr::group_by(country_aff, iso_code) |> 
+      dplyr::summarise(Count_ORO = n()) 
+```
+
+
+# Save all objects
+
+```{r}
+save(data_1stA_country, file = here::here("data", "data_for_ShinyApp.RData"))
+```
+
