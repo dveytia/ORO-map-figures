@@ -27,6 +27,12 @@ latestVersion <- sqliteFiles[which.max(sqliteVersions)]
 dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
 
 ```
+# Gather data informations for each analysis ID
+```{r}
+
+## DEVI, YOU CAN ADD THE CODE HERE ##
+
+```
 
 
 # First Author Affiliation data
@@ -45,6 +51,7 @@ countries_ls <- read.csv(file = here::here("data", "external", "list_of_countrie
                                        origin      = "country.name",
                                        destination = "iso3c"))
 
+  
 ### ----- LOAD FUNCTIONS -----
 source(here::here("R", "functions_to_format.R")) # all functions needed to format data
 
@@ -54,7 +61,7 @@ source(here::here("R", "functions_to_format.R")) # all functions needed to forma
   oroAffiliations <- pred_oro_branch |> 
     left_join(pred_relevance, by = "analysis_id") |> 
     filter(0.5 <= relevance_mean) |> 
-    left_join(uniquerefs, by = "analysis_id") |> 
+    left_join(uniquerefs |> mutate(year = as.numeric(year)), by = "analysis_id") |> 
     mutate(adaptation = ifelse(0.5 <= `oro_branch.Nature - mean_prediction` |
                                  0.5 <= `oro_branch.Societal - mean_prediction`,
                                  1, 0),
@@ -79,12 +86,58 @@ source(here::here("R", "functions_to_format.R")) # all functions needed to forma
                                            destination = "iso3c")) |>
       dplyr::group_by(country_aff, iso_code, year, ORO_type) |> 
       dplyr::summarise(Count_ORO = n()) 
+  
+  data_1stA_country_tot <- data_1stA_country |> 
+    dplyr::group_by(country_aff, iso_code) |> 
+    dplyr::summarise(Count_ORO = sum(Count_ORO, na.rm = TRUE))|>
+    dplyr::ungroup() |> 
+    tidyr::replace_na(list(Count_ORO = 0)) |> 
+    dplyr::mutate(percentage = (Count_ORO/sum(Count_ORO))*100)
+  
+  
+  # --- Format the shapefile of the world countries polygon and bind data
+  sf::sf_use_s2(FALSE)
+  world_shp <- format_shp_of_the_world(world_shp    = world_shp,
+                                                   data_to_bind = data_1stA_country_tot,
+                                                   PROJ         = sf::st_crs(world_shp)) |> 
+    sf::st_transform(crs = 4326) |> 
+    dplyr::group_by(country, iso_code) |> 
+    dplyr::summarise(geometry = sf::st_union(geometry))
+    # left_join(country_grp |>  select(-Country), by = "iso_code") |> 
+    # select(-country_aff) |> 
+    # rename(country_aff = country) |> 
+    # mutate(group_land = case_when(group_land %in% c("Land-locked", "SIDS", "Coastal") ~ group_land,
+    #                               !is.na(group_land) & NA2_DESCRI != country_aff ~ "Island",
+    #                               is.na(group_land)  & NA2_DESCRI != country_aff ~ "Island",
+    #                               is.na(group_land)  & NA2_DESCRI == country_aff ~ "Coastal"))
+  
 ```
+
+# Geoparsing data
+```{r}
+data_geoparsing <- get(load(here::here("data", "geoparsing", "tmp_clean.RData")))
+```
+
+
+# Datasource possibilities
+```{r}
+datasource_options <- c("Geoparsing", "First author affiliation")
+```
+
+
+# Years options
+```{r}
+year_values <- c(min(data_1stA_country$year, na.rm = TRUE), max(data_1stA_country$year, na.rm = TRUE))
+```
+
 
 
 # Save all objects
 
 ```{r}
-save(data_1stA_country, file = here::here("data", "data_for_ShinyApp.RData"))
+save(data_1stA_country, world_shp, data_geoparsing, datasource_options, year_values, file = here::here("data", "data_for_ShinyApp.RData"))
+
+save(data_1stA_country, world_shp, data_geoparsing, datasource_options, year_values, 
+     file = here::here("../ShinyApp/ORO.app/data/data_for_ShinyApp.RData"))
 ```
 
