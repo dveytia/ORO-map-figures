@@ -518,3 +518,218 @@ ggsave(here::here("figures/supplemental/mitigationOROsTimeline.pdf"), width=6, h
 
 
 
+
+
+# Supplementary figure: Multipanel timeline of all ORO types by branch
+
+
+```{r Sum n articles per mitigation ORO per year}
+predRel <- tbl(dbcon, "pred_relevance") 
+predType <- tbl(dbcon, "pred_oro_type_long") 
+uniquerefs <- tbl(dbcon, "uniquerefs")
+
+## Format and collect needed data
+predTypeDf <- predRel %>%
+  filter(0.5 <= relevance_mean) %>%
+  select(analysis_id) %>%
+  inner_join(predType, by ="analysis_id") %>%
+  left_join(uniquerefs %>% select(analysis_id, year), by = "analysis_id") %>%
+  collect()
+
+
+
+type_oro_by_year_sums <- predTypeDf %>%
+  filter(1980 <= year) %>%
+  group_by(oro_type, year) %>%
+  summarise(
+    mean = sum(0.5 <= mean),
+    lower = sum(0.5 <= lower),
+    upper = sum(0.5 <= upper)
+  ) 
+
+# Add branch columb for facetting
+source(here::here("R/branchMapFn.R"))
+type_oro_by_year_sums$oro_branch <- mapply(branchMapFn, type_oro_by_year_sums$oro_type)
+
+
+# Factor and format
+typeAES <- factor_aes[which(factor_aes$level %in% unique(type_oro_by_year_sums$oro_type)),]
+typeAES$order <- order(typeAES$order)
+typeAES <- typeAES[typeAES$order,]
+
+branchAES <- factor_aes[which(factor_aes$variable == "ORO_branch"),]
+branchAES$order <- order(branchAES$order)
+branchAES <- branchAES[branchAES$order,]
+
+type_oro_by_year_sums <- type_oro_by_year_sums%>%
+  na.omit() %>%
+  mutate(year = as.Date(paste0(year, "-01-01")),
+         oro_type = factor(oro_type, levels = typeAES$level, labels = typeAES$label),
+         oro_branch = factor(oro_branch, levels = branchAES$label))
+
+
+summary(type_oro_by_year_sums)
+
+
+# text labels
+type_oro_text <- type_oro_by_year_sums %>%
+  filter(year == as.Date("2020-01-01")) 
+
+type_oro_text$upper[which(type_oro_text$oro_type == "Socio-institutional")] <- 100
+
+```
+
+```{r PLOT timeline of all OROs}
+
+Sfig_oro_ggp <- ggplot()+
+  facet_grid(oro_branch~.)+
+  geom_ribbon(data = type_oro_by_year_sums, 
+              aes(x=year, ymin = log(lower), ymax=log(upper), fill = oro_type), alpha = 0.5)+
+  geom_line(data = type_oro_by_year_sums, aes(x=year, y=log(mean), col=oro_type), 
+            linewidth = 1,
+            na.rm=T)+
+  geom_text(data= type_oro_text, 
+            aes(x=year, y=log(upper), label = stringr::str_wrap(oro_type, width=50)),
+            vjust = "outward", hjust="inward", size=3, col="black")+
+
+  # Format scales
+  scale_color_manual(values = typeAES$colour, 
+                     name = "ORO type", guide=guide_legend(order=1, nrow=1))+
+  scale_fill_manual(values = typeAES$colour, guide = "none")+
+  labs(x="Year", y="log(N articles)")+
+  scale_x_date(limits = c(as.Date("1980-01-01"),as.Date("2022-12-31")))+
+  scale_y_continuous(sec.axis = sec_axis(trans = exp, name = "N articles", 
+                                         #breaks = c(0,100,1000,10000,30000,80000),
+                                         labels = function(x) formatC(x, big.mark=",", format="d")),
+                     breaks = seq(0,10, by= 2))+
+  theme_classic()+
+  theme(
+    legend.position = "none",
+    legend.box = "vertical",
+    legend.text = element_text(size=8),
+    legend.title = element_text(size=10),
+    axis.text = element_text(size=7)
+    )
+
+
+Sfig_oro_ggp
+
+ggsave(here::here("figures/supplemental/allOROsTimeline.pdf"), width=5, height=6, units="in")
+```
+
+
+
+# Supplementary figure: Timeline of blue carbon tag
+```{r Sum n articles per mitigation ORO per year}
+predRel <- tbl(dbcon, "pred_relevance") %>%
+  filter(0.5 <= relevance_mean) %>%
+  select(analysis_id)
+predBC <- tbl(dbcon, "pred_blue_carbon")%>%
+  rename(mean = `0 - relevance - mean_prediction`, 
+         lower = `0 - relevance - lower_pred`,
+         upper = `0 - relevance - upper_pred`) %>%
+  select(analysis_id, mean, upper, lower) %>%
+  filter(0.5 <= mean) 
+uniquerefs <- tbl(dbcon, "uniquerefs")
+
+## Format and collect needed data
+predBCDf <- predRel %>%
+  inner_join(predBC, by ="analysis_id") %>%
+  left_join(uniquerefs %>% select(analysis_id, year), by = "analysis_id") %>%
+  collect()
+
+
+
+BC_by_year_sums <- predBCDf %>%
+  filter(1980 <= year) %>%
+  group_by(year)%>%
+  summarise(
+    mean = sum(0.5 <= mean),
+    lower = sum(0.5 <= lower),
+    upper = sum(0.5 <= upper)
+  ) 
+
+
+# Factor and format
+BC_by_year_sums <- BC_by_year_sums%>%
+  na.omit() %>%
+  mutate(year = as.Date(paste0(year, "-01-01")))
+
+summary(BC_by_year_sums)
+
+
+# text labels
+BC_text <- BC_by_year_sums %>%
+  filter(year == as.Date("2020-01-01")) 
+
+```
+
+```{r PLOT timeline of mitigation OROs to compare to De Pryk and Boettcher 2023 -- NOT LOGGED}
+
+Sfig_BC_ggp <- ggplot()+
+  geom_ribbon(data = BC_by_year_sums, 
+              aes(x=year, ymin = lower, ymax=upper), alpha = 0.5, fill = "turquoise")+
+  geom_line(data = BC_by_year_sums, aes(x=year, y=mean), 
+            linewidth = 1,
+            na.rm=T, col = "turquoise4")+
+  geom_text(data= BC_text, 
+            aes(x=year, y=upper, label = stringr::str_wrap("Blue carbon", width=30)),
+            vjust = "outward", hjust="inward", size=3, col="black")+
+
+  # Format scales
+  labs(x="Year", y="N articles")+
+  scale_x_date(limits = c(as.Date("1980-01-01"),as.Date("2022-12-31")))+
+ 
+  theme_classic()+
+  theme(
+    legend.position = "none",
+    legend.box = "vertical",
+    legend.text = element_text(size=8),
+    legend.title = element_text(size=10),
+    axis.text = element_text(size=7)
+    )
+
+
+Sfig_BC_ggp
+
+ggsave(here::here("figures/supplemental/blueCarbonTimeline_DePryckAndBoettcher2024Compare.pdf"), width=6, height=4, units="in")
+```
+
+
+```{r PLOT timeline of Blue carbon OROs logged version}
+
+Sfig_BC_ggp <- ggplot()+
+  geom_ribbon(data = BC_by_year_sums, 
+              aes(x=year, ymin = log(lower), ymax=log(upper)), alpha = 0.5)+
+  geom_line(data = BC_by_year_sums, aes(x=year, y=log(mean)), 
+            linewidth = 1,
+            na.rm=T)+
+  geom_text(data= BC_text, 
+            aes(x=year, y=log(upper), label = stringr::str_wrap("Blue carbon", width=30)),
+            vjust = "outward", hjust="inward", size=3, col="black")+
+
+  # Format scales
+  labs(x="Year", y="log(N articles)")+
+  scale_x_date(limits = c(as.Date("1980-01-01"),max(BC_by_year_sums$year)))+
+  scale_y_continuous(sec.axis = sec_axis(trans = exp, name = "N articles", 
+                                         breaks = seq(0,500,by=100),
+                                         labels = function(x) formatC(x, big.mark=",", format="d")),
+                     breaks = seq(0,10, by= 2))+
+  theme_classic()+
+  theme(
+    legend.position = "none",
+    legend.box = "vertical",
+    legend.text = element_text(size=8),
+    legend.title = element_text(size=10),
+    axis.text = element_text(size=7)
+    )
+
+
+Sfig_BC_ggp
+
+
+```
+
+
+
+
