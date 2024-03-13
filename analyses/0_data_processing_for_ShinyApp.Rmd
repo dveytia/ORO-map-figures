@@ -32,6 +32,87 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
 
 ## DEVI, YOU CAN ADD THE CODE HERE ##
 
+# make a table with the following column names for each analysis_id please:
+# analysis_id | ecosystem_time | marine_system | year | ORO_type | ORO_branch | method_type
+
+# one thing to keep in mind is that for each variable, there are multiple labels, so you won't be able to have each row be a unique analysis_id like what you requested above. The naming convention for each column in <variable name>.<label name>
+
+# So what I've done is formatted the table in wide format, and each column contains the mean prediction for each label, and you can melt it how you want using reshape2::melt.data.frame() depending on which variables you want to look at. Or you can melt the whole thing, but knowing then that each row will have duplicate analysis_ids
+
+
+# Get all tables in wide format
+predRel <- tbl(dbcon, "pred_relevance") 
+
+uniquerefs <- tbl(dbcon, "uniquerefs")
+
+predBranch <- tbl(dbcon, "pred_oro_branch") %>%
+  rename(oro_branch.Mitigation = `oro_branch.Mitigation - mean_prediction`,
+         oro_branch.Nature = `oro_branch.Nature - mean_prediction`,
+         oro_branch.Societal = `oro_branch.Societal - mean_prediction`) %>%
+  select(analysis_id, oro_branch.Mitigation, oro_branch.Nature, oro_branch.Societal)
+
+predMitigation <- tbl(dbcon, "pred_oro_any_mitigation") %>%
+  rename(`oro_type.Marine Renewable Energy` = `oro_any.M_Renewables - mean_prediction`,
+         `oro_type.Increase Efficiency` = `oro_any.M_Increase_efficiency - mean_prediction`,
+         `oro_type.CO2 removal or storage` = `oro_any.M_CO2_removal_or_storage - mean_prediction`)%>%
+  select(analysis_id, `oro_type.Marine Renewable Energy`, 
+         `oro_type.Increase Efficiency`,`oro_type.CO2 removal or storage`)
+
+predNature <- tbl(dbcon, "pred_oro_any_nature") %>%
+  rename(`oro_type.Conservation` = `oro_any.N_Conservation - mean_prediction`,
+         `oro_type.Human assisted evolution` = `oro_any.N_Human_assisted_evolution - mean_prediction`) %>%
+  select(analysis_id, `oro_type.Conservation`, `oro_type.Human assisted evolution`)
+
+predSocietal <- tbl(dbcon, "pred_oro_any_societal") %>%
+  rename(`oro_type.Socio-institutional` = `oro_any.SA_Socioinstitutional - mean_prediction`,
+         `oro_type.Built infrastructure & technology` = `oro_any.SA_Built_infrastructure_and_technology - mean_prediction`) %>%
+  select(analysis_id, `oro_type.Socio-institutional`, `oro_type.Built infrastructure & technology`)
+
+predEcosys <- tbl(dbcon, "pred_ecosystem_type") %>%
+  rename(`ecosystem_type.Salt marsh` = `ecosystem_type.Salt_marsh - mean_prediction`,
+         `ecosystem_type.Mangrove` = `ecosystem_type.Mangrove - mean_prediction`,
+         `ecosystem_type.Coral reef` = `ecosystem_type.Coral_reef - mean_prediction`,
+         `ecosystem_type.Seagrass` = `ecosystem_type.Seagrass - mean_prediction`)%>%
+  select(analysis_id, `ecosystem_type.Salt marsh`, `ecosystem_type.Mangrove`, 
+         `ecosystem_type.Coral reef`, `ecosystem_type.Seagrass`)
+
+predMarSys <- tbl(dbcon, "pred_marine_system") %>%
+  rename(`marine_system.Coastal land` = `marine_system.land - mean_prediction`,
+         `marine_system.Coastal ocean` = `marine_system.coastal ocean - mean_prediction`,
+         `marine_system.Open-ocean` = `marine_system.open-ocean - mean_prediction`) %>%
+  select(analysis_id, `marine_system.Coastal land`, `marine_system.Coastal ocean`, 
+         `marine_system.Open-ocean`)
+
+predMethod <- tbl(dbcon, "pred_method_type") %>%
+  rename(`method_type.Mathematical_predictionsimulation` = `method_type.Mathematical_predictionsimulation - mean_prediction`,
+         `method_type.Social_primary` = `method_type.Social_primary - mean_prediction`,
+         `method_type.Empirical` = `method_type.Empirical - mean_prediction`) %>%
+  select(analysis_id, `method_type.Mathematical_predictionsimulation`, 
+         `method_type.Social_primary`, `method_type.Empirical`)
+
+
+
+## Combine into data frame (wide)
+
+df <- predRel%>%
+  # First subset to only the relevant articles and join with year meta data
+  filter(0.5 <= relevance_mean) %>%
+  select(analysis_id) %>%
+  left_join(uniquerefs %>% select(analysis_id, year), by = "analysis_id") %>%
+  # Then join with other predicted variables
+  left_join(predBranch, by = "analysis_id") %>%
+  left_join(predMitigation, by = "analysis_id") %>%
+  left_join(predNature, by = "analysis_id") %>%
+  left_join(predSocietal, by = "analysis_id") %>%
+  left_join(predEcosys, by = "analysis_id") %>%
+  left_join(predMarSys, by = "analysis_id") %>%
+  left_join(predMethod, by = "analysis_id") %>%
+  collect()
+
+
+summary(df)
+
+
 ```
 
 
