@@ -69,7 +69,7 @@ predSocietal <- tbl(dbcon, "pred_oro_any_societal") %>%
   select(analysis_id, `oro_type.Socio-institutional`, `oro_type.Built infrastructure & technology`)
 
 predEcosys <- tbl(dbcon, "pred_ecosystem_type") %>%
-  rename(`ecosystem_type.Salt marsh` = `ecosystem_type.Salt_marsh - mean_prediction`,
+  rename(`ecosystem_type.Salt marsh` = `ecosystem_type.Salt_marsh - upper_pred`, ## NOTE just for salt marsh use upper prediction boundary
          `ecosystem_type.Mangrove` = `ecosystem_type.Mangrove - mean_prediction`,
          `ecosystem_type.Coral reef` = `ecosystem_type.Coral_reef - mean_prediction`,
          `ecosystem_type.Seagrass` = `ecosystem_type.Seagrass - mean_prediction`)%>%
