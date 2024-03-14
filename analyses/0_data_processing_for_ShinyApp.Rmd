@@ -50,6 +50,12 @@ predBranch <- tbl(dbcon, "pred_oro_branch") %>%
          oro_branch.Societal = `oro_branch.Societal - mean_prediction`) %>%
   select(analysis_id, oro_branch.Mitigation, oro_branch.Nature, oro_branch.Societal)
 
+test <- predBranch |> 
+  tidyr::pivot_longer(cols = 2:4, names_to = "ORO_branch", values_to = "relevance") |>
+  collect() |> 
+  dplyr::mutate(ORO_branch = stringr::str_extract(ORO_branch, pattern = "(?<=\\.).*")) |> 
+  dplyr::filter(relevance >= 0.5)
+
 predMitigation <- tbl(dbcon, "pred_oro_any_mitigation") %>%
   rename(`oro_type.Marine Renewable Energy` = `oro_any.M_Renewables - mean_prediction`,
          `oro_type.Increase Efficiency` = `oro_any.M_Increase_efficiency - mean_prediction`,
@@ -68,7 +74,7 @@ predSocietal <- tbl(dbcon, "pred_oro_any_societal") %>%
   select(analysis_id, `oro_type.Socio-institutional`, `oro_type.Built infrastructure & technology`)
 
 predEcosys <- tbl(dbcon, "pred_ecosystem_type") %>%
-  rename(`ecosystem_type.Salt marsh` = `ecosystem_type.Salt_marsh - upper_pred`, ## NOTE just for salt marsh use upper prediction boundary
+  rename(`ecosystem_type.Salt marsh` = `ecosystem_type.Salt_marsh - upper_pred`,
          `ecosystem_type.Mangrove` = `ecosystem_type.Mangrove - mean_prediction`,
          `ecosystem_type.Coral reef` = `ecosystem_type.Coral_reef - mean_prediction`,
          `ecosystem_type.Seagrass` = `ecosystem_type.Seagrass - mean_prediction`)%>%
