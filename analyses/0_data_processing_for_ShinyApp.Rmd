@@ -42,7 +42,6 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
 
 # Get all tables in wide format
 predRel <- tbl(dbcon, "pred_relevance") 
-
 uniquerefs <- tbl(dbcon, "uniquerefs")
 
 predBranch <- tbl(dbcon, "pred_oro_branch") %>%
