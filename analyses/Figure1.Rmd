@@ -811,12 +811,22 @@ fig1_B_ggp
 # Assemble Panels and write figure
 
 ```{r assemble panels and write figure}
-pdf(here::here("figures/main/oroBranchTimeAndIpccMatches.pdf"),
-    width = 8, height=4.5)
-egg::ggarrange(fig1_A_ggp+theme(legend.position = "bottom"), fig1_B_ggp+theme(legend.position = "bottom"),
-          nrow=1, ncol=2, newpage = FALSE, labels = c("a.","b."))
-dev.off()
+# pdf(here::here("figures/main/oroBranchTimeAndIpccMatches.pdf"),
+#     width = 8, height=4.5)
+# egg::ggarrange(fig1_A_ggp+theme(legend.position = "bottom"), fig1_B_ggp+theme(legend.position = "bottom"),
+#           nrow=1, ncol=2, newpage = FALSE, labels = c("a.","b."))
+# dev.off()
 
+fig1_ggp <- plot_grid(fig1_A_ggp+theme(legend.position = "bottom"), 
+                      fig1_B_ggp+theme(legend.position = "bottom"),
+          nrow=1, ncol=2, labels = c("a.","b."), align = "v", axis="b")
+
+fig1_ggp
+
+## Save as supplementary file
+ggsave(filename = "oroBranchTimeAndIpccMatches.svg",
+       path = here::here("figures/main"), device = 'svg',
+       plot = fig1_ggp, width = 8, height = 4.5, units = 'in')
 ```
 
 
