@@ -463,6 +463,90 @@ ggsave(filename = "mitigationBranchInflectionYear.svg",
 ```
 
 
+
+```{r Supplement - When to the breaking points in the trends occur for all branches?}
+
+# Get data frame
+allBranchDf <- by_dataset3 %>%
+   filter(Dataset %in% c("Mitigation","Natural resilience",
+                         "Societal adaptation") & 1980 <= year) %>%
+   droplevels()
+
+# Fit a spline to get a function that estimates the time series
+xl <- seq(1980, 2022, length.out = 100) # the years to estimate over
+
+# Funciton to fit the model
+spline_fit <- function(dat){
+  y = log(dat$n_articles)
+  x = dat$year[is.finite(y)]
+  y = y[is.finite(y)]
+  splinefun(x,y)
+}
+splineFits <- lapply(split(allBranchDf, allBranchDf$Dataset), spline_fit)
+splinePredictions <- lapply(splineFits, function(f) f(xl))
+splineDerivatives <- lapply(splineFits, function(f) f(xl, deriv=1))
+
+
+## Format for a nice ggplot
+panelADf <- rbind(
+  data.frame(year = allBranchDf$year, log_articles = log(allBranchDf$n_articles),
+             Dataset = paste("raw data"), ORO_branch = allBranchDf$Dataset),
+  data.frame(year=rep(xl, 3), log_articles=unlist(splinePredictions), 
+             ORO_branch = c(rep("Mitigation",100), rep("Natural resilience", 100),
+                            rep("Societal adaptation",100)),
+             Dataset = paste("spline function"))
+)
+
+inflect_A_ggp <- ggplot(data = panelADf %>% filter(is.finite(log_articles)), 
+                        aes(year, log_articles, col= Dataset))+
+  facet_grid(.~ORO_branch)+
+  geom_line(linewidth=1, alpha=0.5)+
+  labs(y="log(N articles)", x="Year")+
+  scale_colour_manual(values = c("raw data"="black","spline function"="red"))+
+  theme_bw()+
+  theme(
+    legend.position = "top"
+  )
+inflect_A_ggp
+
+
+panelBDf <- data.frame(year = rep(xl, 3), derivative_est = unlist(splineDerivatives),
+                       ORO_branch = c(rep("Mitigation",100), rep("Natural resilience", 100),
+                            rep("Societal adaptation",100)))
+
+# Select the outliers
+panelBText <- panelBDf %>%
+  group_by(ORO_branch) %>%
+  mutate(isOutlier = rstatix::is_outlier(derivative_est, coef = 2)) %>%
+  filter(isOutlier, 0 < derivative_est, 1981 < year) %>%
+  mutate(year = as.integer(year))%>%
+  group_by(year, ORO_branch) %>%
+  slice(which.max(derivative_est))
+
+inflect_B_ggp <- ggplot(data=panelBDf, aes(year, derivative_est))+
+  facet_grid(.~ORO_branch)+
+  geom_line(col="blue")+
+  geom_text(data= panelBText, aes(year, derivative_est, label = formatC(year)), 
+            vjust = -0.2, hjust = -0.2)+
+  labs(y="1st derivative", x="Year")+
+  theme_bw()
+
+inflect_B_ggp
+
+# Combine panels
+require(cowplot)
+inflect_ggp <- plot_grid(inflect_A_ggp, inflect_B_ggp, labels = c("a.","b."), align = 'v',
+                         nrow=2)
+inflect_ggp
+
+## Save as supplementary file
+ggsave(filename = "allBranchInflectionYear.svg",
+       path = here::here("figures/supplemental"), device = 'svg',
+       plot = inflect_ggp, width = 7, height = 6, units = 'in')
+```
+
+
+
 ```{r PLOT PANEL A}
 # Plot
 fig1_A_ggp <- ggplot()+
