@@ -31,6 +31,7 @@ Panel B: Barplot of # articles for each ORO type, filled by % articles in IPCC r
 ```{r load libraries}
 library(dplyr)
 library(dbplyr)
+library(broom)
 library(R.utils)
 library(RSQLite)
 library(ggplot2)
@@ -111,6 +112,11 @@ oro_branch_by_year_sums$ORO_branch <- factor(
 summary(oro_branch_by_year_sums)
 
 
+# Remove incomplete year
+oro_branch_by_year_sums <- oro_branch_by_year_sums %>%
+  filter(year < as.Date("2023-01-01"))
+
+
 # use the max year to set the x limits
 xmax = max(oro_branch_by_year_sums$year)
 xmin = min(oro_branch_by_year_sums$year)
@@ -142,28 +148,329 @@ scopus_by_year <- scopus_by_year %>%
 
 ```
 
-```{r get the timeline of policy moments}
+```{r get the timeline of policy moments decide not to include this after all, eval = FALSE}
 
-policyTimeline <- readxl::read_xlsx(here::here("data/external/policyMoments.xlsx"))
-policyTimeline$year <- as.Date(paste0(policyTimeline$year,"-01-01"))
-policyTimeline <- merge(policyTimeline, wos_by_year, bu="year") 
+# policyTimeline <- readxl::read_xlsx(here::here("data/external/policyMoments.xlsx"))
+# policyTimeline$year <- as.Date(paste0(policyTimeline$year,"-01-01"))
+# policyTimeline <- merge(policyTimeline, wos_by_year, bu="year") 
 ```
 
-```{r PLOT PANEL A}
-# For publications in an incomplete year, plot with different linetype
-# separaret into complete and incompelete years
-oro_branch_by_year_sums1 <- oro_branch_by_year_sums %>%
-  filter(year < as.Date("2023-01-01"))
-oro_branch_by_year_sums2 <- oro_branch_by_year_sums %>%
-  filter(as.Date("2022-01-01") <= year)
+```{r supplement - model temporal trends}
+library(nlme)
+library(mgcv)
 
+
+## 1/ Format dataset
+by_dataset <- rbind(oro_branch_by_year_sums %>% 
+                      rename(Dataset = ORO_branch, n_articles = mean) %>%
+                      select(year, n_articles, Dataset),
+  scopus_by_year %>% mutate(Dataset = paste("Scopus")),
+  wos_by_year %>% mutate(Dataset = paste("WOS"))) %>%
+  mutate(year = as.numeric(format(year, "%Y")),
+         log_articles = log(n_articles)) %>%
+  filter(is.finite(log_articles)) %>% 
+  group_by(Dataset) %>%
+  arrange(year) %>%
+  ungroup()
+
+# check that this looks right
+ggplot(by_dataset, aes(year, log_articles, col = Dataset))+geom_line()
+
+
+
+
+
+
+## 2/ Fit individual models for exploration
+
+
+## Fit a gls with AR1 correlation -- seperate model for each dataset
+gls_corAR1_fit <- function(dat){
+  gls(log_articles ~ year, data = dat, correlation=corAR1())
+}
+
+modFits <- lapply(split(by_dataset, by_dataset$Dataset), gls_corAR1_fit)
+
+summaryTable <- do.call(rbind, lapply(modFits, function(x) summary(x)$tTable['year',]))
+summaryTable <- summaryTable %>% as.data.frame %>% arrange(desc(Value))
+summaryTable
+# the phi values for the corAR1
+phis <- lapply(modFits, function(x) coef(x$modelStruct$corStruct, unconstrained = FALSE))
+phis <- do.call(rbind, phis) 
+phis
+
+
+## Try using auto.arima to estimate the rho and phi for each time series to compare if the autocorrelation differs
+# They do, but its difficult to interpret and no real 'significance' to compare
+library(forecast)
+fit <- auto.arima(d$Temp)
+
+my_auto_arima <- function(dat){
+  dat <- dat %>% arrange(year)
+  # fill in yearly gaps as NAs
+  all_years <- data.frame(year = seq(min(dat$year), max(dat$year)))
+  dat <- all_years %>% left_join(dat, by="year")
+  auto.arima(dat$log_articles)
+}
+
+modFitsAutoArima <- lapply(split(by_dataset, by_dataset$Dataset), my_auto_arima)
+modFitsAutoArima
+
+
+
+
+
+## 3/ Test for difference in temporal trends
+
+## 3.1/ Granger test
+# Use granger test to see if the Scopus timeseries caues the trends in each of the branch-specific time series
+# H0: Scopus trends DO NOT cause time series for ORO_branch 
+# HA: Scopus trends DO cause time series for ORO_branch 
+# But not really what I'm looking for -- not looking to assess causality in any direction, more to see if the trends
+# are just significantly different
+
+## Data for testing
+Y = by_dataset_branch[which(by_dataset_branch$Dataset == "Natural resilience"),]
+with(Y, plot(year, log_articles))
+
+grangertest_fit <- function(Y){
+  X <- by_dataset[which(by_dataset$Dataset == "Scopus")]
+  dat <- merge(X, Y, by = 'year', all=TRUE) %>% arrange(year) %>% filter(1980 <= year)
+  lmtest::grangertest(dat$log_articles.x,dat$log_articles.y, na.action = na.omit, order = 1)
+}
+
+by_dataset_branch <- by_dataset%>%
+  filter(Dataset %in% c("Mitigation","Natural resilience","Societal adaptation")) %>%
+  droplevels()
+
+grangerTests <- lapply(split(by_dataset_branch, by_dataset_branch$Dataset), grangertest_fit)
+do.call(rbind, lapply(grangerTests, function(x) x$`Pr(>F)`[2])) %>% formatC(digits = 2)
+# odd that HA is significant for all
+
+
+
+## 3.2/ GLS model with dataset as a factor
+# To compare regression slopes (starting in year 1980 because data before is sparse), treat the Dataset as a factor, and main interest is in the interaction between year:Dataset.
+
+by_dataset2 <- by_dataset %>%
+  filter(Dataset != "WOS") %>%
+  droplevels() %>%
+  mutate(Dataset = factor(Dataset, levels = c("Scopus","Mitigation","Natural resilience","Societal adaptation")))
+
+all_fit <- gls(log_articles ~ year*Dataset, data = by_dataset2 %>% filter(1980 <= year), correlation=corAR1(form=~year|Dataset))
+all_fit_sum <- summary(all_fit)
+
+trendCoeff <- all_fit_sum$tTable[c("year","year:DatasetMitigation","year:DatasetNatural resilience","year:DatasetSocietal adaptation"),c("Value","p-value")] %>% as.data.frame()
+trendCoeff$Dataset <- rownames(trendCoeff)
+
+trendCoeff$Value_abs <- trendCoeff$Value
+trendCoeff$Value_abs[which(trendCoeff$Dataset != "year")] <- trendCoeff$Value[which(trendCoeff$Dataset == "year")]+trendCoeff$Value[which(trendCoeff$Dataset != "year")]
+trendCoeff$Value_abs_exp <- exp(trendCoeff$Value_abs) # Compare and the Value_abs column produces similar results to the gls fit to each dataset individually 
+rownames(trendCoeff) <- NULL
+trendCoeff <- trendCoeff[,c("Dataset","Value","Value_abs","Value_abs_exp","p-value")]
+trendCoeff$`p-value` <- ifelse(trendCoeff$`p-value` <= 0.05, 
+                               paste(formatC(trendCoeff$`p-value`, digits = 2),"*", collpase=""),
+                               paste(formatC(trendCoeff$`p-value`, digits = 2)))
+trendCoeff$Dataset <- c("Scopus","Mitigation","Natural resilience","Societal adaptation")
+print(trendCoeff)
+#               Dataset      Value  Value_abs Value_abs_exp    p-value
+# 1              Scopus 0.07670911 0.07670911      1.079728 5.7e-08 * 
+# 2          Mitigation 0.01103464 0.08774375      1.091708       0.57
+# 3  Natural resilience 0.07652435 0.15323346      1.165597 0.00011 * 
+# 4 Societal adaptation 0.06440174 0.14111085      1.151552  0.0019 *
+
+# Finding: So mitigation is not significantly different, but that's because it's the overall trend and does not account for the change in slope -- need a smoothing term
+
+
+
+# 3.3/ Correlation
+# Considering no difference between mitigation and Scopus, maybe it's more accurate to look at correlation -- no correlation is very high for all time series
+cor_fit <- function(Y){
+  X <- by_dataset[which(by_dataset$Dataset == "Scopus"),]
+  dat <- merge(X, Y, by = 'year', all=TRUE) %>% arrange(year)
+  dat <- dat %>%
+    select(year, log_articles.x, log_articles.y) %>%
+    na.omit()
+  cor(dat$log_articles.x, dat$log_articles.y)
+}
+
+corToScopus <- lapply(split(by_dataset_branch, by_dataset_branch$Dataset), cor_fit)
+unlist(corToScopus)
+         # Mitigation  Natural resilience Societal adaptation 
+         #  0.9332444           0.9724696           0.9606556 
+
+
+
+## 3.4/ Gamm smooth over time to capture differences in non-linearity
+# An alternative method of recognising that the trend may not be perfectly linear is to fit a GAM to fit a smooth temporal trend and AR1 correlation structure
+
+# Format data so 0 values are kept in -- don't need to worry about infinite values because using link function
+by_dataset3 <- rbind(oro_branch_by_year_sums %>% 
+                      rename(Dataset = ORO_branch, n_articles = mean) %>%
+                      select(year, n_articles, Dataset),
+  scopus_by_year %>% mutate(Dataset = paste("Scopus")),
+  wos_by_year %>% mutate(Dataset = paste("WOS"))) %>%
+  mutate(year = as.numeric(format(year, "%Y"))) %>%
+  group_by(Dataset) %>%
+  arrange(year) %>%
+  ungroup()
+
+# Fit separate gams to explore
+my_gamm <- function(dat){
+  gamm(n_articles ~ s(year),correlation=corAR1(),data=dat, family = poisson())
+}
+modFitsGamm <- lapply(split(by_dataset, by_dataset$Dataset), my_gamm)
+plot(modFitsGamm$Mitigation$gam)
+
+# Fit gams with dataset as a grouping factor
+# NB have to add Dataset as fixed term as well, otherwise the smooths don't look sensible
+gammFit <- gamm(n_articles ~ s(year, by = Dataset)+Dataset, correlation=corAR1(form=~year|Dataset),
+                family = poisson(link = "log"),
+                data=by_dataset3 %>% filter(Dataset != "WOS") %>% droplevels())
+anova(gammFit$gam) # all are significant
+
+plot(gammFit$gam, pages=1)
+
+# Compare ACF residuals to gamm without AR1 -- oddly not a huge difference
+gammFitNoAR1 <- gamm(n_articles ~ s(year, by = Dataset)+Dataset,
+                family = poisson(link = "log"),
+                data=by_dataset3 %>% filter(Dataset != "WOS") %>% droplevels())
+
+opar <- par(mfrow = c(2,2))
+acf(residuals(gammFit$gam),main="raw residual ACF")
+acf(residuals(gammFit$lme,type="normalized"),main="standardized residual ACF")
+acf(residuals(gammFitNoAR1$gam),main="AR1 exclude - raw residual ACF")
+acf(residuals(gammFitNoAR1$lme,type="normalized"),main="AR1 exclude - standardized residual ACF")
+par(opar)
+
+
+
+
+
+# Plot model fits
+library(tidymv)
+
+interannualTrendText <- trendCoeff %>% 
+  select(Dataset, Value_abs) %>%
+  mutate(Value_abs = formatC(Value_abs, digits = 3))
+interannualTrendText$Value_abs_label <- paste0("~e^{",interannualTrendText$Value_abs,"}")
+interannualTrendText$year <- rep(2020, 4)
+interannualTrendText <- interannualTrendText %>%
+  inner_join(by_dataset3 %>% 
+               filter(Dataset != "WOS" & year == 2020) %>% 
+               droplevels() %>% 
+               select(Dataset, n_articles),
+             by = "Dataset")
+
+  
+
+gamm_ggp <- plot_smooths(model = gammFit$gam, series = year, comparison = Dataset)+
+  geom_point(data = by_dataset3 %>% filter(Dataset != "WOS" & 1980 <= year) %>% droplevels(),
+             aes(x=year, y = log(n_articles), col = Dataset), size = 0.5, alpha = 0.5)+
+  labs(y = "log(N articles)", x= "Year", caption = "All smoothing terms significant, shown on link scale\n Each line labelled with linear trend (1980 - 2022) quantified using gls model of the form:\nlog(N articles) ~ year * Dataset with correlation = corAR1(Year|Dataset)")+
+  geom_text(label = "N articles ~ s(Year, by = Dataset) + Dataset\nFamily = poisson(link = 'log')\nCorrelation = corAR1(Year | Dataset)",
+            x = 1980, y=12, vjust = 'inward', hjust = 'inward', size = 3)+
+  geom_text(data = interannualTrendText %>%
+              filter(Dataset != "Societal adaptation"), aes(x=year, y=log(n_articles), label = Value_abs_label),
+            parse=TRUE, vjust = -0.5)+
+  geom_text(data = interannualTrendText %>%
+              filter(Dataset == "Societal adaptation"), aes(x=year, y=log(n_articles), label = Value_abs_label),
+            parse=TRUE, vjust = 1.2)+
+  xlim(c(1980, 2022))+ ylim(c(0, 12))+
+  scale_color_manual(values = c("Scopus"="black", "Mitigation"=varAES$colour[1],
+                                "Natural resilience" = varAES$colour[2],
+                                "Societal adaptation" = varAES$colour[3]),
+                     name = "Dataset",
+                     guide=guide_legend(order=2, nrow=2), position = "bottom")+
+  scale_fill_manual(values = c("Scopus"="black", "Mitigation"=varAES$colour[1],
+                                "Natural resilience" = varAES$colour[2],
+                                "Societal adaptation" = varAES$colour[3]),
+                     name = "Dataset", guide=guide_legend(order=2, nrow=2), position = "bottom")+
+  scale_linetype(name = "Dataset", guide=guide_legend(order=2, nrow=2), position = "bottom")+
+  theme_bw()+
+  theme(
+    legend.position = "bottom"
+  )
+gamm_ggp
+
+
+## Save supplemental figure
+ggsave(filename = "oroBranchTimeSeriesModelFits.svg",
+       path = here::here("figures/supplemental"), device = 'svg',
+       plot = gamm_ggp, width = 5, height = 5, units = 'in')
+
+```
+
+```{r Supplement - For mitigation quantify the breaking point in the trend?}
+
+# Get data frame
+mitigationDf <- by_dataset3 %>%
+   filter(Dataset == "Mitigation" & 1980 <= year) %>%
+   droplevels()
+
+# Fit a spline to get a function that estimates the time series
+xl <- seq(1980, 2022, length.out = 100)
+f<- splinefun(mitigationDf$year,log(mitigationDf$n_articles))
+year_est <- f(xl)
+
+with(mitigationDf, plot(year, log(n_articles),type="l"))
+lines(xl, year_est,   col = 'blue')
+
+# Plot derivative -- where it spikes is there is a big inflection in the yearly publication rate
+d_est <- f(xl, deriv = 1)
+plot(xl, d_est, type = 'l')
+xl[which.max(d_est)]
+
+
+## Format for a nice ggplot
+panelADf <- rbind(
+  data.frame(year = mitigationDf$year, log_articles = log(mitigationDf$n_articles),
+             Dataset = paste("raw data")),
+  data.frame(year=xl, log_articles=year_est, Dataset = paste("spline function"))
+)
+
+inflect_A_ggp <- ggplot(data = panelADf, aes(year, log_articles, col= Dataset))+
+  geom_line(linewidth=1, alpha=0.5)+
+  labs(y="log(N articles)", x="Year")+
+  scale_colour_manual(values = c("raw data"="black","spline function"="red"))+
+  theme_bw()+
+  theme(
+    legend.position = "bottom"
+  )
+inflect_A_ggp
+
+
+panelBDf <- data.frame(year = xl, derivative_est = d_est)
+inflect_B_ggp <- ggplot(data=panelBDf, aes(year, derivative_est))+
+  geom_line(col="blue")+
+  geom_text(x=xl[which.max(d_est)], y=d_est[which.max(d_est)], label = formatC(xl[which.max(d_est)]),
+            vjust = 'outward')+
+  labs(y="1st derivative", x="Year")+
+  theme_bw()
+
+inflect_B_ggp
+
+# Combine panels
+require(cowplot)
+inflect_ggp <- plot_grid(inflect_A_ggp, inflect_B_ggp, labels = c("a.","b."), align = 'h',
+                         axis = 'b')
+inflect_ggp
+
+## Save as supplementary file
+ggsave(filename = "mitigationBranchInflectionYear.svg",
+       path = here::here("figures/supplemental"), device = 'svg',
+       plot = inflect_ggp, width = 7, height = 4.5, units = 'in')
+```
+
+
+```{r PLOT PANEL A}
 # Plot
 fig1_A_ggp <- ggplot()+
   
   # Plot complete years
   geom_ribbon(data = oro_branch_by_year_sums, 
               aes(x=year, ymin = log(lower), ymax=log(upper), fill = ORO_branch), alpha = 0.5)+
-  geom_line(data = oro_branch_by_year_sums1, aes(x=year, y=log(mean), col=ORO_branch), linewidth = 1,
+  geom_line(data = oro_branch_by_year_sums, aes(x=year, y=log(mean), col=ORO_branch), linewidth = 1,
             na.rm=T)+
   geom_line(data = wos_by_year, 
             aes(x=year, y=log(n_articles), linetype = "WOS"), col="black", linewidth = 1,
@@ -171,13 +478,13 @@ fig1_A_ggp <- ggplot()+
   geom_line(data = scopus_by_year, 
             aes(x=year, y=log(n_articles), linetype = "Scopus"), col="black", linewidth = 1,
             na.rm=T)+
-  # Plot incomplete years
-  geom_line(data = oro_branch_by_year_sums2, aes(x=year, y=log(mean), col=ORO_branch), linewidth = 0.7,
-            na.rm=T, linetype = "dashed")+
-  # Add policy moments
-  geom_vline(data=policyTimeline, aes(xintercept = year), col="red", linewidth=0.5)+
-  geom_text(data=policyTimeline, aes(x = year, y=log(n_articles), label = stringr::str_wrap(event_name,14)), 
-            col="red", angle = 90,size=2, vjust=1, hjust=1, nudge_x = 100, nudge_y = -0.5)+
+  
+  # # Add policy moments
+  # geom_vline(data=policyTimeline, aes(xintercept = year), col="red", linewidth=0.5)+
+  # geom_text(data=policyTimeline, aes(x = year, y=log(n_articles), label = stringr::str_wrap(event_name,14)), 
+  #           col="red", angle = 90,size=2, vjust=1, hjust=1, nudge_x = 100, nudge_y = -0.5)+
+  
+  
   # Format scales
   scale_color_manual(values = varAES$colour, 
                      name = "ORO branch", guide=guide_legend(order=1, nrow=3), position = "top")+
@@ -185,11 +492,12 @@ fig1_A_ggp <- ggplot()+
   scale_linetype_manual(values = c("solid","dotted"), name = "Oceans & climate literature\ndatabase:",
                         guide=guide_legend(order=2, nrow=2), position = "bottom")+
   labs(x="Year", y="log(N articles)")+
-  scale_x_date(limits = c(as.Date("1980-01-01"),xmax))+
+  scale_x_date(limits = c(as.Date("1980-01-01"),as.Date("2022-12-31")))+
   scale_y_continuous(sec.axis = sec_axis(trans = exp, name = "N articles", 
                                          breaks = c(0,100,1000,10000,30000,80000),
                                          labels = function(x) formatC(x, big.mark=",", format="d")),
-                     breaks = seq(0,10, by= 2))+
+                     breaks = seq(0,10, by= 2))+ #, limits = c(0,13)
+  
   theme_classic()+
   theme(
     legend.position = "bottom",
