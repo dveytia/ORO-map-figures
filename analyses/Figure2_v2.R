@@ -222,7 +222,47 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
   ## ---- DEVI, YOU CAN PUT THE CODE TO MODEL #OROpub ~ f(year) HERE
   ## ---- You can use the dataframe called ORO_per_country_year
+  ORO_per_country_year_trends_df <- ORO_per_country_year %>%
+    mutate(year_num = as.numeric(year),
+           log_articles = log(Count_ORO)) %>%
+    filter(1980 <= year & year <= 2022 & is.finite(log_articles))
   
+  # Function to fit simple overall exponential trend with corAR1 autocorrelation
+  corAR1_fit <- function(dat){
+    tryCatch(
+      {
+        suppressWarnings(gls(log_articles ~ year_num, data = dat, correlation=corAR1()))
+      },
+      error = function(cond){
+        paste("Error message:", message(conditionMessage(cond)), collapse = " ")
+      },
+      warning = function(cond){
+        paste("Warning message:", message(conditionMessage(cond)), collapse = " ")
+      },
+      finally = {
+        message(paste("Processed", dat$country_aff[1]))
+      }
+    )
+  }
+  
+  # Split data by country group to fit models separately
+  splitDat <- split(ORO_per_country_year_trends_df, 
+                    ORO_per_country_year_trends_df$country_aff)
+  # Fit model to each country
+  modFits <- lapply(splitDat, corAR1_fit)
+  # subset to only the model fits that worked
+  modFits <- modFits[which(unlist(lapply(modFits, class)) == "gls")] 
+  
+  # Extract the summary statistics for just the slope (year)
+  summaryTable <- do.call(rbind, lapply(modFits, function(x) summary(x)$tTable['year_num',]))
+  summaryTable <- summaryTable %>%
+    as.data.frame %>%
+    arrange(desc(Value)) %>%
+    mutate(Coefficient = "Year", country_aff = names(modFits)) %>%
+    select(country_aff,Coefficient, Value, Std.Error, `t-value`, `p-value`)
+  
+  # quick plot of only the significant exponential trends
+  ggplot(summaryTable %>% filter(`p-value` <= 0.05), aes(Value))+ geom_density()
   
 ### -----
     
