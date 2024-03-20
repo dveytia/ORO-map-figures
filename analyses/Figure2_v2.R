@@ -341,7 +341,42 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       group_split(group_land)
     
   ## ---- DEVI, YOU CAN PUT THE CODE FOR THE MODEL HERE
-    
+  ## Model the odds ratio of Mitigation vs Adaptation for each country type
+  panelC_fit_Df <- data_panelC %>%
+    select(group_land, mitigation, adaptation) %>%
+    mutate(group_land = factor(group_land, levels = c("Land-locked","Coastal","SIDS")))
+  
+  panelC_fit <- glm(cbind(mitigation, adaptation) ~ group_land, family = binomial, data = panelC_fit_Df)
+  panelC_fit_sum <- summary(panelC_fit) 
+  print(panelC_fit_sum)
+  
+  # ^These results report the odds ratio (on the link scale) relative to the land group.
+  # To interpret, put back on response scale by taking the exponent
+  exp(panelC_fit_sum$coefficients[,"Estimate"]) # odds ratio on response scale
+  (exp(panelC_fit_sum$coefficients[,"Estimate"])-1)*100 # expressed as a percentage
+  
+  # Interpretation:
+  # Land-locked countries are 5.2 times (420 %) more likely to favor mitigation measures (p << 0.01)
+  # Compared to land-locked, Coastal countries are 0.85 times the odds (-15 %) to favor mitigation (not sig, p = 0.4)
+  # Compared to land-locked, SIDS have 0.41 times the odds (-58%) of using a mitigation measure (p << 0.01)
+  
+  # Does country group as a whole predict ratio?
+  # Yes, country group has a statistically significant effect on mitigation/adaptation ratio (p << 0.01)
+  drop1(panelC_fit, .~., test="Chisq")
+  
+  # Export model results to a text file
+  sink(here::here("outputs/mitigationVsAdaptationByCountryTypeBinomialModel.txt"))
+  print("## MODEL SUMMARY")
+  print(panelC_fit_sum)
+  print("## COEFFICIENT TRANSFORMATIONS")
+  print("Odds ratio on the response scale (i.e. exp(B))")
+  exp(panelC_fit_sum$coefficients[,"Estimate"]) # odds ratio on response scale
+  print("Expressed as a percentage (i.e. (exp(B)-1)*100)")
+  (exp(panelC_fit_sum$coefficients[,"Estimate"])-1)*100 # as a percentage
+  print("## GLOBAL SIGNIFICANCE OF COUNTRY TYPE TERM")
+  drop1(panelC_fit, .~., test="Chisq")
+  sink()
+  
     
   ## ---- PLOT PANEL C
     

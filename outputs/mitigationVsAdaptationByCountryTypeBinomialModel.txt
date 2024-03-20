@@ -1,0 +1,43 @@
+[1] "## MODEL SUMMARY"
+
+Call:
+glm(formula = cbind(mitigation, adaptation) ~ group_land, family = binomial, 
+    data = panelC_fit_Df)
+
+Deviance Residuals: 
+    Min       1Q   Median       3Q      Max  
+-34.639   -1.840    0.593    1.791   30.018  
+
+Coefficients:
+                  Estimate Std. Error z value Pr(>|z|)    
+(Intercept)         1.6487     0.1846   8.932  < 2e-16 ***
+group_landCoastal  -0.1595     0.1850  -0.862    0.389    
+group_landSIDS     -0.8787     0.2153  -4.081 4.48e-05 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 4528.5  on 140  degrees of freedom
+Residual deviance: 4490.1  on 138  degrees of freedom
+AIC: 4879.3
+
+Number of Fisher Scoring iterations: 4
+
+[1] "## COEFFICIENT TRANSFORMATIONS\n"
+[1] "Odds ratio on the response scale (i.e. exp(B))"
+      (Intercept) group_landCoastal    group_landSIDS 
+        5.2000000         0.8525544         0.4153200 
+[1] "Expressed as a percentage (i.e. (exp(B)-1)*100)"
+      (Intercept) group_landCoastal    group_landSIDS 
+        420.00000         -14.74456         -58.46800 
+[1] "## GLOBAL SIGNIFICANCE OF COUNTRY TYPE TERM"
+Single term deletions
+
+Model:
+cbind(mitigation, adaptation) ~ group_land
+           Df Deviance    AIC    LRT Pr(>Chi)    
+<none>          4490.1 4879.3                    
+group_land  2   4528.5 4913.7 38.421 4.54e-09 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
