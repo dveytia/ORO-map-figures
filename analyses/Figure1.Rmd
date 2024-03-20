@@ -203,7 +203,6 @@ phis
 ## Try using auto.arima to estimate the rho and phi for each time series to compare if the autocorrelation differs
 # They do, but its difficult to interpret and no real 'significance' to compare
 library(forecast)
-fit <- auto.arima(d$Temp)
 
 my_auto_arima <- function(dat){
   dat <- dat %>% arrange(year)
@@ -230,18 +229,18 @@ modFitsAutoArima
 # are just significantly different
 
 ## Data for testing
+by_dataset_branch <- by_dataset%>%
+  filter(Dataset %in% c("Mitigation","Natural resilience","Societal adaptation")) %>%
+  droplevels()
+
 Y = by_dataset_branch[which(by_dataset_branch$Dataset == "Natural resilience"),]
 with(Y, plot(year, log_articles))
 
 grangertest_fit <- function(Y){
-  X <- by_dataset[which(by_dataset$Dataset == "Scopus")]
+  X <- by_dataset[which(by_dataset$Dataset == "Scopus"),]
   dat <- merge(X, Y, by = 'year', all=TRUE) %>% arrange(year) %>% filter(1980 <= year)
   lmtest::grangertest(dat$log_articles.x,dat$log_articles.y, na.action = na.omit, order = 1)
 }
-
-by_dataset_branch <- by_dataset%>%
-  filter(Dataset %in% c("Mitigation","Natural resilience","Societal adaptation")) %>%
-  droplevels()
 
 grangerTests <- lapply(split(by_dataset_branch, by_dataset_branch$Dataset), grangertest_fit)
 do.call(rbind, lapply(grangerTests, function(x) x$`Pr(>F)`[2])) %>% formatC(digits = 2)
@@ -371,10 +370,12 @@ gamm_ggp <- plot_smooths(model = gammFit$gam, series = year, comparison = Datase
   geom_text(label = "N articles ~ s(Year, by = Dataset) + Dataset\nFamily = poisson(link = 'log')\nCorrelation = corAR1(Year | Dataset)",
             x = 1980, y=12, vjust = 'inward', hjust = 'inward', size = 3)+
   geom_text(data = interannualTrendText %>%
-              filter(Dataset != "Societal adaptation"), aes(x=year, y=log(n_articles), label = Value_abs_label),
+              filter(Dataset != "Societal adaptation"), 
+            aes(x=year, y=log(n_articles), label = Value_abs_label),
             parse=TRUE, vjust = -0.5)+
   geom_text(data = interannualTrendText %>%
-              filter(Dataset == "Societal adaptation"), aes(x=year, y=log(n_articles), label = Value_abs_label),
+              filter(Dataset == "Societal adaptation"), 
+            aes(x=year, y=log(n_articles), label = Value_abs_label),
             parse=TRUE, vjust = 1.2)+
   xlim(c(1980, 2022))+ ylim(c(0, 12))+
   scale_color_manual(values = c("Scopus"="black", "Mitigation"=varAES$colour[1],
@@ -395,8 +396,8 @@ gamm_ggp
 
 
 ## Save supplemental figure
-ggsave(filename = "oroBranchTimeSeriesModelFits.svg",
-       path = here::here("figures/supplemental"), device = 'svg',
+ggsave(filename = "oroBranchTimeSeriesModelFits.pdf",
+       path = here::here("figures/supplemental"), device = 'pdf',
        plot = gamm_ggp, width = 5, height = 5, units = 'in')
 
 ```
@@ -457,8 +458,8 @@ inflect_ggp <- plot_grid(inflect_A_ggp, inflect_B_ggp, labels = c("a.","b."), al
 inflect_ggp
 
 ## Save as supplementary file
-ggsave(filename = "mitigationBranchInflectionYear.svg",
-       path = here::here("figures/supplemental"), device = 'svg',
+ggsave(filename = "mitigationBranchInflectionYear.pdf",
+       path = here::here("figures/supplemental"), device = 'pdf',
        plot = inflect_ggp, width = 7, height = 4.5, units = 'in')
 ```
 
@@ -540,8 +541,8 @@ inflect_ggp <- plot_grid(inflect_A_ggp, inflect_B_ggp, labels = c("a.","b."), al
 inflect_ggp
 
 ## Save as supplementary file
-ggsave(filename = "allBranchInflectionYear.svg",
-       path = here::here("figures/supplemental"), device = 'svg',
+ggsave(filename = "allBranchInflectionYear.pdf",
+       path = here::here("figures/supplemental"), device = 'pdf',
        plot = inflect_ggp, width = 7, height = 6, units = 'in')
 ```
 
@@ -824,8 +825,8 @@ fig1_ggp <- plot_grid(fig1_A_ggp+theme(legend.position = "bottom"),
 fig1_ggp
 
 ## Save as supplementary file
-ggsave(filename = "oroBranchTimeAndIpccMatches.svg",
-       path = here::here("figures/main"), device = 'svg',
+ggsave(filename = "oroBranchTimeAndIpccMatches.pdf",
+       path = here::here("figures/main"), device = 'pdf',
        plot = fig1_ggp, width = 8, height = 4.5, units = 'in')
 ```
 
