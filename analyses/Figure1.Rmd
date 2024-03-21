@@ -53,6 +53,19 @@ factor_aes <- readxl::read_excel(here::here("R/factor_aesthetics.xlsx"))
 
 ```
 
+```{r import the summary of model scores}
+modelScoresFileName <- dir(here::here("data"))
+modelScoresFileName <- modelScoresFileName[grep("model_scores", modelScoresFileName)]
+
+if(length(modelScoresFileName) > 1){
+  versionScores <- as.Date(gsub(".csv","", gsub("summary_model_scores_","",modelScoresFileName)))
+  modelScoresFileName <- modelScoresFileName[which.max(versionScores)]
+}
+
+modelScores <- readr::read_csv(here::here("data", paste(modelScoresFileName)))
+
+```
+
 # Panel A: Line plot of # articles for each ORO branch and Ocean & climate research by year
 
 For each year, and for each branch, count the number of lower, mean and upper articles relevant for each branch
@@ -549,6 +562,14 @@ ggsave(filename = "allBranchInflectionYear.pdf",
 
 
 ```{r PLOT PANEL A}
+
+# Join branch labels with model scores to add F1 statistic to label
+branchLabels <- merge(factor_aes[which(factor_aes$variable == "ORO_branch"),],
+                      modelScores%>% filter(model == "oro_branch") %>% select(`label name`, `F1 - label`),
+                      by.x = "level", by.y = "label name")%>%
+  mutate(branchLabelF1 = paste0(label,", F1 = ", signif(`F1 - label`, 2)))
+
+
 # Plot
 fig1_A_ggp <- ggplot()+
   
@@ -572,8 +593,13 @@ fig1_A_ggp <- ggplot()+
   
   # Format scales
   scale_color_manual(values = varAES$colour, 
+                     breaks = factor_aes$label[which(factor_aes$variable == "ORO_branch")],
+                     labels = branchLabels$branchLabelF1,## this line adds F1 statistic to label
                      name = "ORO branch", guide=guide_legend(order=1, nrow=3), position = "top")+
-  scale_fill_manual(values = factor_aes$colour[which(factor_aes$variable == "ORO_branch")], guide = "none")+
+  scale_fill_manual(values = factor_aes$colour[which(factor_aes$variable == "ORO_branch")],
+                    breaks = factor_aes$label[which(factor_aes$variable == "ORO_branch")], 
+                    labels = branchLabels$branchLabelF1, # this line adds F1 statistic to label
+                    guide = "none")+
   scale_linetype_manual(values = c("solid","dotted"), name = "Oceans & climate literature\ndatabase:",
                         guide=guide_legend(order=2, nrow=2), position = "bottom")+
   labs(x="Year", y="log(N articles)")+
@@ -768,6 +794,28 @@ oroMatchesProp <- oroMatchesProp %>%
 
 
 ```{r plot panel B}
+typeLabels <- merge(factor_aes[which(factor_aes$variable == "oro_type"),],
+                      modelScores[grep("oro_any", modelScores$model),] %>% 
+                      select(`label name`, `F1 - label`) %>%
+                      mutate(`label name` = ifelse(
+                        grepl("Renewable", `label name`), "Marine renewable energy", ifelse(
+                          grepl("CO2", `label name`), "CO2 removal or storage", ifelse(
+                            grepl("Increase", `label name`),"Increase efficiency", ifelse(
+                              grepl("Human", `label name`),"Human assisted evolution", ifelse(
+                              grepl("Conservation", `label name`),"Conservation", ifelse(
+                                grepl("Built", `label name`),"Built infrastructure & technology", ifelse(
+                                  grepl("Socio", `label name`),"Socio-institutional", NA
+                                )
+                              )
+                            )
+                          )
+                        )
+                      ))) %>%
+                      na.omit(),
+                      by.x = "level", by.y = "label name")%>%
+  mutate(branchLabelF1 = paste0(label,", F1 = ", signif(`F1 - label`, 2)))
+typeLabels <- typeLabels[order(typeLabels$order),]
+
 fig1_B_ggp <- ggplot()+
   # plot bars number of model predictions
   geom_col(data=oroTypeSums, aes(x=order, y=n_mean, fill = oro_type))+
@@ -787,7 +835,8 @@ fig1_B_ggp <- ggplot()+
   #                   values = as.vector(branchAES$colour), 
   #                   guide = guide_legend(nrow=3))+
   scale_fill_manual(name = "ORO\ntype", 
-                    values = as.vector(typeAES$colour[order(typeAES$order)]), 
+                    values = as.vector(typeAES$colour[order(typeAES$order)]),
+                    labels = typeLabels$branchLabelF1, ## this adds F1 to label
                     guide = guide_legend(ncol=2))+
   scale_x_discrete(limits = levels(oroTypeSums$order), 
                     labels = levels(oroTypeSums$oro_type))+
@@ -819,7 +868,8 @@ fig1_B_ggp
 # dev.off()
 
 fig1_ggp <- plot_grid(fig1_A_ggp+theme(legend.position = "bottom"), 
-                      fig1_B_ggp+theme(legend.position = "bottom"),
+                      fig1_B_ggp+theme(legend.position = "bottom", 
+                                       plot.margin = margin(0.1,0.8,0.1,0.1, unit="cm")),
           nrow=1, ncol=2, labels = c("a.","b."), align = "v", axis="b")
 
 fig1_ggp
