@@ -1,0 +1,27 @@
+
+Family: poisson 
+Link function: log 
+
+Formula:
+n_articles ~ s(year, by = Dataset) + Dataset
+
+Parametric coefficients:
+                           Estimate Std. Error t value Pr(>|t|)    
+(Intercept)                 4.33492    0.05659   76.61   <2e-16 ***
+DatasetNatural resilience  -3.52899    0.05702  -61.89   <2e-16 ***
+DatasetSocietal adaptation -4.75743    0.08194  -58.06   <2e-16 ***
+DatasetScopus               3.46797    0.05813   59.66   <2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Approximate significance of smooth terms:
+                                     edf Ref.df      F p-value    
+s(year):DatasetMitigation          8.327  8.327  25743  <2e-16 ***
+s(year):DatasetNatural resilience  1.000  1.000 538185  <2e-16 ***
+s(year):DatasetSocietal adaptation 8.098  8.098  78765  <2e-16 ***
+s(year):DatasetScopus              8.147  8.147  31361  <2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+R-sq.(adj) =  0.999   
+  Scale est. = 1         n = 266

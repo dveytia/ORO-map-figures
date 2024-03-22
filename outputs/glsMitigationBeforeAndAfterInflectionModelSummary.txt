@@ -1,0 +1,56 @@
+[1] "BEFORE 2002 -------------"
+Generalized least squares fit by REML
+  Model: log_articles ~ year 
+  Data: mitigationDf_gls %>% filter(year <= 2002) 
+       AIC      BIC    logLik
+  10.91314 15.09123 -1.456571
+
+Correlation Structure: AR(1)
+ Formula: ~1 
+ Parameter estimate(s):
+       Phi 
+0.08890207 
+
+Coefficients:
+                Value Std.Error   t-value p-value
+(Intercept) 21.809645 13.955569  1.562792  0.1330
+year        -0.008575  0.007009 -1.223426  0.2347
+
+ Correlation: 
+     (Intr)
+year -1    
+
+Standardized residuals:
+          Min            Q1           Med            Q3           Max 
+-1.6962568106 -0.7108451150  0.0005659929  0.5802662971  1.8675479386 
+
+Residual standard error: 0.2065638 
+Degrees of freedom: 23 total; 21 residual
+[1] "AFTER 2002 -------------"
+Generalized least squares fit by REML
+  Model: log_articles ~ year 
+  Data: mitigationDf_gls %>% filter(2002 <= year) 
+       AIC      BIC    logLik
+  19.06081 22.83856 -5.530403
+
+Correlation Structure: AR(1)
+ Formula: ~1 
+ Parameter estimate(s):
+      Phi 
+0.9999966 
+
+Coefficients:
+                Value Std.Error   t-value p-value
+(Intercept) -368.4066  176.8734 -2.082883  0.0510
+year           0.1863    0.0669  2.784080  0.0118
+
+ Correlation: 
+     (Intr)
+year -0.761
+
+Standardized residuals:
+          Min            Q1           Med            Q3           Max 
+-2.197051e-07  2.895651e-03  7.753716e-03  8.664023e-03  1.057438e-02 
+
+Residual standard error: 114.7505 
+Degrees of freedom: 21 total; 19 residual

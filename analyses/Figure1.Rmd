@@ -285,14 +285,18 @@ trendCoeff$`p-value` <- ifelse(trendCoeff$`p-value` <= 0.05,
                                paste(formatC(trendCoeff$`p-value`, digits = 2)))
 trendCoeff$Dataset <- c("Scopus","Mitigation","Natural resilience","Societal adaptation")
 print(trendCoeff)
-#               Dataset      Value  Value_abs Value_abs_exp    p-value
-# 1              Scopus 0.07670911 0.07670911      1.079728 5.7e-08 * 
-# 2          Mitigation 0.01103464 0.08774375      1.091708       0.57
-# 3  Natural resilience 0.07652435 0.15323346      1.165597 0.00011 * 
-# 4 Societal adaptation 0.06440174 0.14111085      1.151552  0.0019 *
+#               Dataset       Value  Value_abs Value_abs_exp    p-value
+# 1              Scopus 0.078531447 0.07853145      1.081697 7.5e-08 * 
+# 2          Mitigation 0.009208354 0.08773980      1.091704       0.64
+# 3  Natural resilience 0.074701318 0.15323276      1.165596 0.00021 * 
+# 4 Societal adaptation 0.062577907 0.14110935      1.151551  0.0029 * 
 
 # Finding: So mitigation is not significantly different, but that's because it's the overall trend and does not account for the change in slope -- need a smoothing term
 
+# Write all model output
+sink(here::here("outputs/glsOROBranchTemporalTrendModelSummary.txt"))
+print(all_fit_sum)
+sink()
 
 
 # 3.3/ Correlation
@@ -354,6 +358,11 @@ acf(residuals(gammFit$lme,type="normalized"),main="standardized residual ACF")
 acf(residuals(gammFitNoAR1$gam),main="AR1 exclude - raw residual ACF")
 acf(residuals(gammFitNoAR1$lme,type="normalized"),main="AR1 exclude - standardized residual ACF")
 par(opar)
+
+# Write model summary
+sink(here::here("outputs/gammOROBranchTemporalTrendModelSummary.txt"))
+print(summary(gammFit$gam))
+sink()
 
 
 
@@ -474,6 +483,30 @@ inflect_ggp
 ggsave(filename = "mitigationBranchInflectionYear.pdf",
        path = here::here("figures/supplemental"), device = 'pdf',
        plot = inflect_ggp, width = 7, height = 4.5, units = 'in')
+
+
+
+## What is the trend before and after the inflection?
+mitigationDf_gls <- mitigationDf %>%
+  mutate(log_articles = log(n_articles)) %>%
+  filter(is.finite(log_articles))
+# Before 2002
+before_fit <- gls(log_articles ~ year, data = mitigationDf_gls %>% filter(year <= 2002), correlation=corAR1())
+summary(before_fit)
+# After 2002
+after_fit <- gls(log_articles ~ year, data = mitigationDf_gls %>% filter(2002 <= year), correlation=corAR1())
+summary(after_fit)
+
+exp(after_fit$coefficients)
+
+# Export model summaries
+sink(here::here("outputs/glsMitigationBeforeAndAfterInflectionModelSummary.txt"))
+print("BEFORE 2002 -------------")
+print(summary(before_fit))
+print("AFTER 2002 -------------")
+print(summary(after_fit))
+sink()
+
 ```
 
 
