@@ -241,7 +241,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       left_join(pred_relevance, by = "analysis_id") |> 
       filter(0.5 <= relevance_mean) %>%
       mutate(adaptation = ifelse(0.5 <= `oro_branch.Nature - mean_prediction` |
-                                   0.5 <= `oro_branch.Societal - mean_prediction`,
+                                 0.5 <= `oro_branch.Societal - mean_prediction`,
                                  1, 0),
              mitigation = ifelse(0.5 <= `oro_branch.Mitigation - mean_prediction`, 1 ,0)) %>% 
       select(analysis_id, adaptation, mitigation) %>%
