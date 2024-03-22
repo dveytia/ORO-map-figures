@@ -482,7 +482,7 @@ bivariate_map <- function(data_map, data_map_univ, eez = NULL, data_world, color
     group_by(fill) |> 
     summarize(x=  x, y = y, count = n())
   
-  x_quantile <- c(0, quantile(data$Count_ORO, probs = seq(0,1,0.1), na.rm = TRUE))
+  # x_quantile <- c(0, quantile(data$Count_ORO, probs = seq(0,1,0.1), na.rm = TRUE))
   
   color <- color |> 
     separate(col = group, into = c("x", "y"), sep = "\\.", convert = TRUE, remove = FALSE) 
