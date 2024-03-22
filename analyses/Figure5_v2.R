@@ -354,8 +354,8 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     data_bivar_n_article_vulne <- format_data_bivariate_map(data        = vulne_adaPubs_country,
                                                             data.x      = "Count_ORO",
                                                             data.y      = "vulnerability",
-                                                            color_table = bivariate_color_scale,
-                                                            probs.quant = seq(0,1,0.1)) |> 
+                                                            color_table = bivariate_color_scale) |> 
+                                                            # probs.quant = seq(0,1,0.1)) |> 
       mutate(iso_code = countrycode::countrycode(sourcevar   = country_id,
                                                  origin      = "country.name",
                                                  destination = "iso3c"))

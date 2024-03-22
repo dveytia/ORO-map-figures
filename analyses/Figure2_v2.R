@@ -23,6 +23,8 @@ library(rgdal)
 library(countrycode)
 library(broom)
 library(ggrepel)
+library(nlme)
+library(tibble)
 
 ### ----- LOAD FUNCTIONS -----
 source(here::here("R", "functions_to_format.R")) # all functions needed to format data
@@ -137,8 +139,8 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       mutate(Count_ORO = ifelse(is.na(Count_ORO), 0 , Count_ORO),
              layer     = (Count_ORO/Record.Count)*100) 
     
-      # Save for devi
-      save(ratio_ORO_totPub, file = here::here("data", "ratio_ORO_totPub.RData"))
+      # Save for Devi
+      # save(ratio_ORO_totPub, file = here::here("data", "ratio_ORO_totPub.RData"))
     
     # --- Format the shapefile of the world countries polygon and bind data
     world_shp_boundaries <- format_shp_of_the_world(world_shp    = world_shp,
@@ -227,42 +229,97 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
            log_articles = log(Count_ORO)) %>%
     filter(1980 <= year & year <= 2022 & is.finite(log_articles))
   
-  # Function to fit simple overall exponential trend with corAR1 autocorrelation
-  corAR1_fit <- function(dat){
-    tryCatch(
-      {
-        suppressWarnings(gls(log_articles ~ year_num, data = dat, correlation=corAR1()))
-      },
-      error = function(cond){
-        paste("Error message:", message(conditionMessage(cond)), collapse = " ")
-      },
-      warning = function(cond){
-        paste("Warning message:", message(conditionMessage(cond)), collapse = " ")
-      },
-      finally = {
-        message(paste("Processed", dat$country_aff[1]))
-      }
-    )
-  }
+    # Function to fit simple overall exponential trend with corAR1 autocorrelation
+    corAR1_fit <- function(dat){
+      tryCatch(
+        {
+          suppressWarnings(gls(log_articles ~ year_num, data = dat, correlation = corAR1()))
+        },
+        error = function(cond){
+          paste("Error message:", message(conditionMessage(cond)), collapse = " ")
+        },
+        warning = function(cond){
+          paste("Warning message:", message(conditionMessage(cond)), collapse = " ")
+        },
+        finally = {
+          message(paste("Processed", dat$country_aff[1]))
+        }
+      )
+    }
   
-  # Split data by country group to fit models separately
-  splitDat <- split(ORO_per_country_year_trends_df, 
-                    ORO_per_country_year_trends_df$country_aff)
-  # Fit model to each country
-  modFits <- lapply(splitDat, corAR1_fit)
-  # subset to only the model fits that worked
-  modFits <- modFits[which(unlist(lapply(modFits, class)) == "gls")] 
-  
-  # Extract the summary statistics for just the slope (year)
-  summaryTable <- do.call(rbind, lapply(modFits, function(x) summary(x)$tTable['year_num',]))
-  summaryTable <- summaryTable %>%
-    as.data.frame %>%
-    arrange(desc(Value)) %>%
-    mutate(Coefficient = "Year", country_aff = names(modFits)) %>%
-    select(country_aff,Coefficient, Value, Std.Error, `t-value`, `p-value`)
-  
-  # quick plot of only the significant exponential trends
-  ggplot(summaryTable %>% filter(`p-value` <= 0.05), aes(Value))+ geom_density()
+    # Split data by country group to fit models separately
+    splitDat <- split(ORO_per_country_year_trends_df, 
+                      ORO_per_country_year_trends_df$country_aff)
+    
+    # Fit model to each country
+    modFits <- lapply(splitDat, corAR1_fit)
+    
+    # subset to only the model fits that worked
+    modFits <- modFits[which(unlist(lapply(modFits, class)) == "gls")] 
+    
+    # Extract the summary statistics for just the slope (year)
+    summaryTable <- do.call(rbind, lapply(modFits, function(x) summary(x)$tTable['year_num',]))
+    summaryTable <- summaryTable |> 
+      as.data.frame() |> 
+      arrange(desc(Value)) |> 
+      mutate(Coefficient = "Year") |> 
+             # country_aff = names(modFits)) |>
+      tibble::rownames_to_column(var = "country") |>
+      select(country, Coefficient, Value, Std.Error, `t-value`, `p-value`) |> 
+      mutate(iso_code = countrycode(sourcevar   = country,
+                                    origin      = "country.name",
+                                    destination = "iso3c")) |> 
+      filter(`p-value` <= 0.05) |> 
+      rename(layer = Value)
+    
+    # quick plot of only the significant exponential trends
+    ggplot(summaryTable %>% filter(`p-value` <= 0.05), aes(layer))+ geom_density()+ theme_bw()
+    
+  ## ---- Format map data
+    
+    # --- Format the shapefile of the world countries polygon and bind data
+    world_shp_boundaries <- format_shp_of_the_world(world_shp    = world_shp,
+                                                    data_to_bind = summaryTable,
+                                                    PROJ         = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs") |> 
+      left_join(country_grp |>  select(-Country), by = "iso_code") |> 
+      select(-country.y) |> 
+      rename(country = country.x) |> 
+      mutate(group_land = case_when(group_land %in% c("Land-locked", "SIDS", "Coastal") ~ group_land,
+                                    !is.na(group_land) & NA2_DESCRI != country ~ "Island",
+                                    is.na(group_land)  & NA2_DESCRI != country ~ "Island",
+                                    is.na(group_land)  & NA2_DESCRI == country ~ "Coastal"))
+    
+    # --- Format the shapefile of the eez countries polygon and bind data
+    eez_shp_islands <- full_join(eez_shp, summaryTable, by = "iso_code") |> 
+      # left_join(country_grp |>  select(-Country), by = "iso_code") |> 
+      mutate(country = str_replace_all(country, c("Côte d’Ivoire" = "Ivory Coast",
+                                                  "Congo - Brazzaville" = "Republic of the Congo",
+                                                  "Congo - Kinshasa"    = "Democratic Republic of the Congo",
+                                                  "Somalia"             = "Federal Republic of Somalia")),
+             group_land = case_when(group_land %in% c("Island", "Land-locked", "SIDS", "Coastal") ~ group_land,
+                                    !is.na(group_land) & TERRITORY1 != country ~ "Island",
+                                    is.na(group_land)  & TERRITORY1 != country ~ "Island",
+                                    is.na(group_land)  & TERRITORY1 == country ~ "Coastal")) |> 
+      filter(group_land %in% c("Island", "SIDS", "AMUNRC") & !is.na(MRGID) & !is.na(layer)) |>
+      filter(group_land == "SIDS" & !is.na(MRGID) & !is.na(layer)) |>
+      filter(! TERRITORY1 %in% c("French Guiana", "Greenland")) |> 
+      sf::st_transform(crs = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+    
+    # --- Format the data to produce the map
+    data_2_map_panelB <- format_data2map(data = world_shp_boundaries,
+                                         PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+    
+  ## ---- PLOT PANEL B 
+  panelB <- univariate_map(data_map          = data_2_map_panelB,
+                           eez               = eez_shp_islands,
+                           color_scale       = viridis::mako(10, direction = -1),
+                           midpoint          = NULL,
+                           second.var        = NULL,
+                           # vals_colors_scale = NULL,
+                           title_color       = "Slope",
+                           title_size        = NULL,
+                           show.legend       = TRUE,
+                           name              = "main/map_temporal_trends")
   
 ### -----
     
@@ -281,7 +338,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       left_join(pred_relevance, by = "analysis_id") |> 
       filter(0.5 <= relevance_mean) %>%
       mutate(adaptation = ifelse(0.5 <= `oro_branch.Nature - mean_prediction` |
-                                   0.5 <= `oro_branch.Societal - mean_prediction`,
+                                 0.5 <= `oro_branch.Societal - mean_prediction`,
                                  1, 0),
              mitigation = ifelse(0.5 <= `oro_branch.Mitigation - mean_prediction`, 1 ,0)) %>% 
       select(analysis_id, adaptation, mitigation) %>%
@@ -449,7 +506,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
     # ggplot2::ggsave(plot = plot_final, here::here("figures", "main", "donuts_test.jpeg"), width = 15, height = 5, device = "jpeg")
     # ggplot2::ggsave(plot = plot_final, here::here("figures", "main", "figure2_panelC_donuts4.jpeg"), width = 13, height = 7, device = "jpeg")
-    ggplot2::ggsave(plot = plot_final, here::here("figures", "main", "biplot_donuts_mitigation_vs_adaptation.jpeg"), width = 15, height = 7, device = "jpeg")
+    ggplot2::ggsave(plot = plot_final, here::here("figures", "main", "biplot_donuts_mitigation_vs_adaptation.pdf"), width = 15, height = 7, device = "pdf")
     
     
 ### -----
@@ -617,5 +674,5 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       cowplot::draw_text(text = c("Coastal", "Land-locked", "SIDS"), x = c(0.4, 0.78, 0.925), y = rep(0.985, 3), size = 19) ; plot_final_sids
     
     # ggsave(here::here("figures", "main", "Figure6_test2.jpeg"), width = 15, height = 7, device = "jpeg")
-    ggsave(here::here("figures", "main", "stacked_barplot_OROtype_per_country2.jpeg"), width = 20, height = 10, device = "jpeg")
+    ggsave(here::here("figures", "main", "stacked_barplot_OROtype_per_country.pdf"), width = 20, height = 10, device = "pdf")
     

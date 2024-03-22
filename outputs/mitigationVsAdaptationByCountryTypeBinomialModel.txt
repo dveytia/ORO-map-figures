@@ -14,7 +14,7 @@ Coefficients:
 group_landCoastal  -0.1595     0.1850  -0.862    0.389    
 group_landSIDS     -0.8787     0.2153  -4.081 4.48e-05 ***
 ---
-Signif. codes:  0 â€˜***â€™ 0.001 â€˜**â€™ 0.01 â€˜*â€™ 0.05 â€˜.â€™ 0.1 â€˜ â€™ 1
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
 
 (Dispersion parameter for binomial family taken to be 1)
 
@@ -24,7 +24,7 @@ AIC: 4879.3
 
 Number of Fisher Scoring iterations: 4
 
-[1] "## COEFFICIENT TRANSFORMATIONS\n"
+[1] "## COEFFICIENT TRANSFORMATIONS"
 [1] "Odds ratio on the response scale (i.e. exp(B))"
       (Intercept) group_landCoastal    group_landSIDS 
         5.2000000         0.8525544         0.4153200 
@@ -40,4 +40,4 @@ cbind(mitigation, adaptation) ~ group_land
 <none>          4490.1 4879.3                    
 group_land  2   4528.5 4913.7 38.421 4.54e-09 ***
 ---
-Signif. codes:  0 â€˜***â€™ 0.001 â€˜**â€™ 0.01 â€˜*â€™ 0.05 â€˜.â€™ 0.1 â€˜ â€™ 1
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1

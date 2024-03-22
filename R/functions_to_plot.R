@@ -125,7 +125,7 @@ univariate_map <- function(data_map, eez = NULL, color_scale, second.var, midpoi
   ### Save map
   if(! is.null(name)) {
     
-    ggplot2::ggsave(here::here("figures", paste0(name, ".jpeg")), width = 7, height = 4.5, device = "jpeg")
+    ggplot2::ggsave(here::here("figures", paste0(name, ".pdf")), width = 7, height = 4.5, device = "pdf")
     
   }
   
@@ -229,7 +229,7 @@ biplot_fig2c <- function(data, var.x, var.y, var.col, var.shape, xlab, ylab, one
                                          vjust = 0.5),
                                          # angle = -90),
           legend.title.align = 0.5, 
-          legend.position    = c(0.17,0.90), # "right" 
+          legend.position    = c(0.17,0.85), # "right" 
           legend.direction   = "horizontal") 
   
   if(one_one_line == TRUE){plot <- plot + geom_abline(slope = 1, linetype = "dotted")}
@@ -247,7 +247,7 @@ biplot_fig2c <- function(data, var.x, var.y, var.col, var.shape, xlab, ylab, one
     
   if(! is.null(name)) {
     
-    ggplot2::ggsave(here::here("figures", paste0(name, ".jpeg")), width = 9, height = 5, device = "jpeg")
+    ggplot2::ggsave(here::here("figures", paste0(name, ".pdf")), width = 9, height = 5, device = "pdf")
     
   }
   
@@ -339,7 +339,7 @@ correlation_btw_var <- function(data, log.transf, quant.prob, name = NULL){
   
   if(! is.null(name)) {
     
-    ggplot2::ggsave(here::here("figures", paste0(name, ".jpeg")), width = 7, height = 5, device = "jpeg")
+    ggplot2::ggsave(here::here("figures", paste0(name, ".pdf")), width = 7, height = 5, device = "pdf")
     
   }
   
@@ -482,7 +482,7 @@ bivariate_map <- function(data_map, data_map_univ, eez = NULL, data_world, color
     group_by(fill) |> 
     summarize(x=  x, y = y, count = n())
   
-  x_quantile <- c(0, quantile(data$Count_ORO, probs = seq(0,1,0.1), na.rm = TRUE))
+  # x_quantile <- c(0, quantile(data$Count_ORO, probs = seq(0,1,0.1), na.rm = TRUE))
   
   color <- color |> 
     separate(col = group, into = c("x", "y"), sep = "\\.", convert = TRUE, remove = FALSE) 
@@ -540,7 +540,7 @@ bivariate_map <- function(data_map, data_map_univ, eez = NULL, data_world, color
   ### Save map
   if(! is.null(name)) {
     
-    ggplot2::ggsave(here::here("figures", paste0(name, ".jpeg")), width = 8.5, height = 6, device = "jpeg")
+    ggplot2::ggsave(here::here("figures", paste0(name, ".pdf")), width = 8.5, height = 6, device = "pdf")
     
   }
   

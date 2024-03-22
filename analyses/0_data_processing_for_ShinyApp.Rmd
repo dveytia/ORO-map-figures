@@ -8,6 +8,8 @@ output: html_document
 This RMD file will arrange all data necessary to build the ShinyApp
 
 ```{r load libraries}
+rm(list = ls(), envir = .GlobalEnv) # clean the environment
+
 library(dplyr)
 library(dbplyr)
 library(R.utils)
@@ -27,95 +29,135 @@ latestVersion <- sqliteFiles[which.max(sqliteVersions)]
 dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
 
 ```
+
+
 # Gather data informations for each analysis ID
 ```{r}
-
-## DEVI, YOU CAN ADD THE CODE HERE ##
-
-# make a table with the following column names for each analysis_id please:
+# Make a table with the following column names for each analysis_id:
 # analysis_id | ecosystem_time | marine_system | year | ORO_type | ORO_branch | method_type
 
-# one thing to keep in mind is that for each variable, there are multiple labels, so you won't be able to have each row be a unique analysis_id like what you requested above. The naming convention for each column in <variable name>.<label name>
-
-# So what I've done is formatted the table in wide format, and each column contains the mean prediction for each label, and you can melt it how you want using reshape2::melt.data.frame() depending on which variables you want to look at. Or you can melt the whole thing, but knowing then that each row will have duplicate analysis_ids
+# The naming convention for each column in <variable name>.<label name>
 
 
-# Get all tables in wide format
+### ----- Load relevant data
 predRel <- tbl(dbcon, "pred_relevance") 
 uniquerefs <- tbl(dbcon, "uniquerefs")
 
-predBranch <- tbl(dbcon, "pred_oro_branch") %>%
-  rename(oro_branch.Mitigation = `oro_branch.Mitigation - mean_prediction`,
-         oro_branch.Nature = `oro_branch.Nature - mean_prediction`,
-         oro_branch.Societal = `oro_branch.Societal - mean_prediction`) %>%
-  select(analysis_id, oro_branch.Mitigation, oro_branch.Nature, oro_branch.Societal)
-
-test <- predBranch |> 
-  tidyr::pivot_longer(cols = 2:4, names_to = "ORO_branch", values_to = "relevance") |>
+### ----- ORO branch data
+ORO_branch <- tbl(dbcon, "pred_oro_branch") |> 
+  dplyr::rename(oro_branch.Mitigation = `oro_branch.Mitigation - mean_prediction`,
+                oro_branch.Nature     = `oro_branch.Nature - mean_prediction`,
+                oro_branch.Societal   = `oro_branch.Societal - mean_prediction`) |> 
+  dplyr::select(analysis_id, oro_branch.Mitigation, oro_branch.Nature, oro_branch.Societal) |> 
   collect() |> 
+  tidyr::pivot_longer(cols = 2:4, names_to = "ORO_branch", values_to = "relevance") |>
   dplyr::mutate(ORO_branch = stringr::str_extract(ORO_branch, pattern = "(?<=\\.).*")) |> 
-  dplyr::filter(relevance >= 0.5)
+  dplyr::filter(relevance >= 0.5) |> 
+  dplyr::select(-relevance)
 
-predMitigation <- tbl(dbcon, "pred_oro_any_mitigation") %>%
-  rename(`oro_type.Marine Renewable Energy` = `oro_any.M_Renewables - mean_prediction`,
-         `oro_type.Increase Efficiency` = `oro_any.M_Increase_efficiency - mean_prediction`,
-         `oro_type.CO2 removal or storage` = `oro_any.M_CO2_removal_or_storage - mean_prediction`)%>%
-  select(analysis_id, `oro_type.Marine Renewable Energy`, 
-         `oro_type.Increase Efficiency`,`oro_type.CO2 removal or storage`)
+### ----- ORO type data
 
-predNature <- tbl(dbcon, "pred_oro_any_nature") %>%
-  rename(`oro_type.Conservation` = `oro_any.N_Conservation - mean_prediction`,
-         `oro_type.Human assisted evolution` = `oro_any.N_Human_assisted_evolution - mean_prediction`) %>%
-  select(analysis_id, `oro_type.Conservation`, `oro_type.Human assisted evolution`)
+  ## ---- For mitigation
+  ORO_type_mitigation <- tbl(dbcon, "pred_oro_any_mitigation") |> 
+    dplyr::rename(`oro_type.Marine Renewable Energy` = `oro_any.M_Renewables - mean_prediction`,
+                  `oro_type.Increase Efficiency`     = `oro_any.M_Increase_efficiency - mean_prediction`,
+                  `oro_type.CO2 removal or storage`  = `oro_any.M_CO2_removal_or_storage - mean_prediction`) |> 
+    dplyr::select(analysis_id, `oro_type.Marine Renewable Energy`, 
+                  `oro_type.Increase Efficiency`,`oro_type.CO2 removal or storage`) |> 
+    collect() |> 
+    tidyr::pivot_longer(cols = 2:4, names_to = "ORO_type", values_to = "relevance") |>
+    dplyr::mutate(ORO_type = stringr::str_extract(ORO_type, pattern = "(?<=\\.).*")) |> 
+    dplyr::filter(relevance >= 0.5) |> 
+    dplyr::select(-relevance)
+  
+  ## ---- For Nature
+  ORO_type_adap_nature <- tbl(dbcon, "pred_oro_any_nature") |> 
+    dplyr::rename(`oro_type.Conservation`             = `oro_any.N_Conservation - mean_prediction`,
+                  `oro_type.Human assisted evolution` = `oro_any.N_Human_assisted_evolution - mean_prediction`) |> 
+    dplyr::select(analysis_id, `oro_type.Conservation`, `oro_type.Human assisted evolution`) |> 
+    collect() |> 
+    tidyr::pivot_longer(cols = 2:3, names_to = "ORO_type", values_to = "relevance") |>
+    dplyr::mutate(ORO_type = stringr::str_extract(ORO_type, pattern = "(?<=\\.).*")) |> 
+    dplyr::filter(relevance >= 0.5) |> 
+    dplyr::select(-relevance)
+  
+  ## ---- For societal adaptation
+  ORO_type_adap_societal <- tbl(dbcon, "pred_oro_any_societal") |> 
+    dplyr::rename(`oro_type.Socio-institutional`               = `oro_any.SA_Socioinstitutional - mean_prediction`,
+                  `oro_type.Built infrastructure & technology` = `oro_any.SA_Built_infrastructure_and_technology - mean_prediction`) |> 
+    dplyr::select(analysis_id, `oro_type.Socio-institutional`, `oro_type.Built infrastructure & technology`) |> 
+    collect() |> 
+    tidyr::pivot_longer(cols = 2:3, names_to = "ORO_type", values_to = "relevance") |>
+    dplyr::mutate(ORO_type = stringr::str_extract(ORO_type, pattern = "(?<=\\.).*")) |> 
+    dplyr::filter(relevance >= 0.5) |> 
+    dplyr::select(-relevance)
+  
+  ## ---- All ORO types
+  ORO_type_all <- rbind(ORO_type_adap_nature, ORO_type_adap_societal, ORO_type_mitigation)
+  
+  ## ---- ORO types with their branches
+  ORO_type_branch <- data.frame(ORO_type = unique(ORO_type_all$ORO_type),
+                                ORO_branch = c("Nature", "Nature", "Societal", "Societal", "Mitigation", "Mitigation", "Mitigation"))
 
-predSocietal <- tbl(dbcon, "pred_oro_any_societal") %>%
-  rename(`oro_type.Socio-institutional` = `oro_any.SA_Socioinstitutional - mean_prediction`,
-         `oro_type.Built infrastructure & technology` = `oro_any.SA_Built_infrastructure_and_technology - mean_prediction`) %>%
-  select(analysis_id, `oro_type.Socio-institutional`, `oro_type.Built infrastructure & technology`)
+### ----- Ecosystem type data
+Ecosystem_type <- tbl(dbcon, "pred_ecosystem_type") |> 
+  dplyr::rename(`ecosystem_type.Salt marsh` = `ecosystem_type.Salt_marsh - upper_pred`,
+                `ecosystem_type.Mangrove`   = `ecosystem_type.Mangrove - mean_prediction`,
+                `ecosystem_type.Coral reef` = `ecosystem_type.Coral_reef - mean_prediction`,
+                `ecosystem_type.Seagrass`   = `ecosystem_type.Seagrass - mean_prediction`) |> 
+  dplyr::select(analysis_id, `ecosystem_type.Salt marsh`, `ecosystem_type.Mangrove`, 
+                `ecosystem_type.Coral reef`, `ecosystem_type.Seagrass`) |> 
+  collect() |> 
+  tidyr::pivot_longer(cols = 2:5, names_to = "ecosystem_type", values_to = "relevance") |>
+  dplyr::mutate(ecosystem_type = stringr::str_extract(ecosystem_type, pattern = "(?<=\\.).*")) |> 
+  dplyr::filter(relevance >= 0.5) |> 
+  dplyr::select(-relevance)
 
-predEcosys <- tbl(dbcon, "pred_ecosystem_type") %>%
-  rename(`ecosystem_type.Salt marsh` = `ecosystem_type.Salt_marsh - upper_pred`,
-         `ecosystem_type.Mangrove` = `ecosystem_type.Mangrove - mean_prediction`,
-         `ecosystem_type.Coral reef` = `ecosystem_type.Coral_reef - mean_prediction`,
-         `ecosystem_type.Seagrass` = `ecosystem_type.Seagrass - mean_prediction`)%>%
-  select(analysis_id, `ecosystem_type.Salt marsh`, `ecosystem_type.Mangrove`, 
-         `ecosystem_type.Coral reef`, `ecosystem_type.Seagrass`)
+### ----- Marine System
+Marine_system <- tbl(dbcon, "pred_marine_system") |> 
+  dplyr::rename(`marine_system.Coastal land`  = `marine_system.land - mean_prediction`,
+                `marine_system.Coastal ocean` = `marine_system.coastal ocean - mean_prediction`,
+                `marine_system.Open-ocean`    = `marine_system.open-ocean - mean_prediction`) |> 
+  dplyr::select(analysis_id, `marine_system.Coastal land`, `marine_system.Coastal ocean`, 
+                `marine_system.Open-ocean`) |> 
+  collect() |> 
+  tidyr::pivot_longer(cols = 2:4, names_to = "marine_system", values_to = "relevance") |>
+  dplyr::mutate(marine_system = stringr::str_extract(marine_system, pattern = "(?<=\\.).*")) |> 
+  dplyr::filter(relevance >= 0.5) |> 
+  dplyr::select(-relevance)
 
-predMarSys <- tbl(dbcon, "pred_marine_system") %>%
-  rename(`marine_system.Coastal land` = `marine_system.land - mean_prediction`,
-         `marine_system.Coastal ocean` = `marine_system.coastal ocean - mean_prediction`,
-         `marine_system.Open-ocean` = `marine_system.open-ocean - mean_prediction`) %>%
-  select(analysis_id, `marine_system.Coastal land`, `marine_system.Coastal ocean`, 
-         `marine_system.Open-ocean`)
-
-predMethod <- tbl(dbcon, "pred_method_type") %>%
-  rename(`method_type.Mathematical_predictionsimulation` = `method_type.Mathematical_predictionsimulation - mean_prediction`,
-         `method_type.Social_primary` = `method_type.Social_primary - mean_prediction`,
-         `method_type.Empirical` = `method_type.Empirical - mean_prediction`) %>%
-  select(analysis_id, `method_type.Mathematical_predictionsimulation`, 
-         `method_type.Social_primary`, `method_type.Empirical`)
-
+### ----- Method type
+Method_type <- tbl(dbcon, "pred_method_type") |> 
+  dplyr::rename(`method_type.Mathematical_predictionsimulation` = `method_type.Mathematical_predictionsimulation - mean_prediction`,
+                `method_type.Social_primary`                    = `method_type.Social_primary - mean_prediction`,
+                `method_type.Empirical`                         = `method_type.Empirical - mean_prediction`) |> 
+  dplyr::select(analysis_id, `method_type.Mathematical_predictionsimulation`, 
+                `method_type.Social_primary`, `method_type.Empirical`) |> 
+  collect() |> 
+  tidyr::pivot_longer(cols = 2:4, names_to = "method_type", values_to = "relevance") |>
+  dplyr::mutate(method_type = stringr::str_extract(method_type, pattern = "(?<=\\.).*")) |> 
+  dplyr::filter(relevance >= 0.5) |> 
+  dplyr::select(-relevance)
 
 
 ## Combine into data frame (wide)
-
-df <- predRel%>%
-  # First subset to only the relevant articles and join with year meta data
-  filter(0.5 <= relevance_mean) %>%
-  select(analysis_id) %>%
-  left_join(uniquerefs %>% select(analysis_id, year), by = "analysis_id") %>%
-  # Then join with other predicted variables
-  left_join(predBranch, by = "analysis_id") %>%
-  left_join(predMitigation, by = "analysis_id") %>%
-  left_join(predNature, by = "analysis_id") %>%
-  left_join(predSocietal, by = "analysis_id") %>%
-  left_join(predEcosys, by = "analysis_id") %>%
-  left_join(predMarSys, by = "analysis_id") %>%
-  left_join(predMethod, by = "analysis_id") %>%
-  collect()
-
-
-summary(df)
+# df <- predRel%>%
+#   # First subset to only the relevant articles and join with year meta data
+#   filter(0.5 <= relevance_mean) %>%
+#   select(analysis_id) %>%
+#   left_join(uniquerefs %>% select(analysis_id, year), by = "analysis_id") %>%
+#   # Then join with other predicted variables
+#   left_join(predBranch, by = "analysis_id") %>%
+#   left_join(predMitigation, by = "analysis_id") %>%
+#   left_join(predNature, by = "analysis_id") %>%
+#   left_join(predSocietal, by = "analysis_id") %>%
+#   left_join(predEcosys, by = "analysis_id") %>%
+#   left_join(predMarSys, by = "analysis_id") %>%
+#   left_join(predMethod, by = "analysis_id") %>%
+#   collect()
+# 
+# 
+# summary(df)
 
 
 ```
@@ -128,7 +170,6 @@ summary(df)
 uniquerefs <- tbl(dbcon, "uniquerefs") # metadata on the unique references
 pred_relevance <- tbl(dbcon, "pred_relevance")  # which articles are relevant to OROs
 pred_oro_branch <- tbl(dbcon, "pred_oro_branch") # predictions for ORO branch
-world_shp <- sf::read_sf(here::here("data", "external", "world_shp"))  # shape file of the world
 countries_ls <- read.csv(file = here::here("data", "external", "list_of_countries", "sql-pays.csv"), sep = ";") |>  # Countries names
   dplyr::mutate(country = countrycode(sourcevar   = name_en,
                                       origin      = "country.name",
@@ -148,13 +189,13 @@ source(here::here("R", "functions_to_format.R")) # all functions needed to forma
     left_join(pred_relevance, by = "analysis_id") |> 
     filter(0.5 <= relevance_mean) |> 
     left_join(uniquerefs |> mutate(year = as.numeric(year)), by = "analysis_id") |> 
-    mutate(adaptation = ifelse(0.5 <= `oro_branch.Nature - mean_prediction` |
-                                 0.5 <= `oro_branch.Societal - mean_prediction`,
-                                 1, 0),
-           mitigation = ifelse(0.5 <= `oro_branch.Mitigation - mean_prediction`, 1 ,0),
-           ORO_type   = case_when(mitigation == 1 ~ "Mitigation",
-                                  TRUE ~ "Adaptation")) |> 
-    select(analysis_id, ORO_type, affiliation, year) |> 
+    # mutate(adaptation = ifelse(0.5 <= `oro_branch.Nature - mean_prediction` |
+    #                            0.5 <= `oro_branch.Societal - mean_prediction`,
+    #                            1, 0),
+    #        mitigation = ifelse(0.5 <= `oro_branch.Mitigation - mean_prediction`, 1 ,0),
+    #        ORO_type   = case_when(mitigation == 1 ~ "Mitigation",
+    #                               TRUE ~ "Adaptation")) |> 
+    select(analysis_id, affiliation, year) |> 
     collect()
   
   ## ---- Extract the country of the first author for each relevant publications
@@ -162,30 +203,41 @@ source(here::here("R", "functions_to_format.R")) # all functions needed to forma
                                                 countries_ls = countries_ls)
   
   ## ---- Select the wanted data
-  data_1stA_country <- data_1stA_country$oroAff_1stA |> 
-      dplyr::filter(!is.na(country_aff)) |> 
-      dplyr::mutate(country_aff = countrycode(sourcevar   = country_aff,
-                                              origin      = "country.name",
-                                              destination = "country.name"),
-                    iso_code = countrycode(sourcevar   = country_aff,
-                                           origin      = "country.name",
-                                           destination = "iso3c")) |>
-      dplyr::group_by(country_aff, iso_code, year, ORO_type) |> 
-      dplyr::summarise(Count_ORO = n()) 
+  data_1stA <- data_1stA_country$oroAff_1stA |> 
+    dplyr::filter(!is.na(country_aff)) |> 
+    dplyr::mutate(country_aff = countrycode(sourcevar   = country_aff,
+                                            origin      = "country.name",
+                                            destination = "country.name"),
+                  iso_code = countrycode(sourcevar   = country_aff,
+                                         origin      = "country.name",
+                                         destination = "iso3c"))
   
-  data_1stA_country_tot <- data_1stA_country |> 
-    dplyr::group_by(country_aff, iso_code) |> 
-    dplyr::summarise(Count_ORO = sum(Count_ORO, na.rm = TRUE))|>
-    dplyr::ungroup() |> 
-    tidyr::replace_na(list(Count_ORO = 0)) |> 
-    dplyr::mutate(percentage = (Count_ORO/sum(Count_ORO))*100)
+  # data_anaID_1stAcountry <- data_1stA |> dplyr::select(analysis_id, country_aff)
+  
+  # data_1stA_country <- data_1stA_country$oroAff_1stA |> 
+  #     dplyr::filter(!is.na(country_aff)) |> 
+  #     dplyr::mutate(country_aff = countrycode(sourcevar   = country_aff,
+  #                                             origin      = "country.name",
+  #                                             destination = "country.name"),
+  #                   iso_code = countrycode(sourcevar   = country_aff,
+  #                                          origin      = "country.name",
+  #                                          destination = "iso3c")) |>
+  #     dplyr::group_by(country_aff, iso_code, year) |> 
+  #     dplyr::summarise(Count_ORO = n()) 
+  # 
+  # data_1stA_country_tot <- data_1stA_country |> 
+  #   dplyr::group_by(country_aff, iso_code) |> 
+  #   dplyr::summarise(Count_ORO = sum(Count_ORO, na.rm = TRUE))|>
+  #   dplyr::ungroup() |> 
+  #   tidyr::replace_na(list(Count_ORO = 0)) |> 
+  #   dplyr::mutate(percentage = (Count_ORO/sum(Count_ORO))*100)
   
   
   # --- Format the shapefile of the world countries polygon and bind data
   sf::sf_use_s2(FALSE)
   world_shp <- format_shp_of_the_world(world_shp    = world_shp,
-                                                   data_to_bind = data_1stA_country_tot,
-                                                   PROJ         = sf::st_crs(world_shp)) |> 
+                                       data_to_bind = data_1stA_country_tot,
+                                       PROJ         = sf::st_crs(world_shp)) |> 
     sf::st_transform(crs = 4326) |> 
     dplyr::group_by(country, iso_code) |> 
     dplyr::summarise(geometry = sf::st_union(geometry))
@@ -198,6 +250,42 @@ source(here::here("R", "functions_to_format.R")) # all functions needed to forma
     #                               is.na(group_land)  & NA2_DESCRI == country_aff ~ "Coastal"))
   
 ```
+
+# World shapefile data formating
+```{r}
+sf::sf_use_s2(FALSE)
+world_shp <- sf::read_sf(here::here("data", "external", "world_shp")) |>  # shape file of the world
+  dplyr::mutate(country  = countrycode(sourcevar   = NA2_DESCRI,
+                                         origin      = "country.name",
+                                         destination = "country.name"),
+                  country  = case_when(is.na(country) == FALSE ~ country,
+                                       is.na(country) == TRUE & NA2_DESCRI == "Ashmore and Cartier Islands" ~ "Australia",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Navassa Island" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Coral Sea Islands" ~ "Australia",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Jarvis Island" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Europa Island" ~ "France",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Baker Island" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Glorioso Islands" ~ "France",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Howland Island" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Clipperton Island" ~ "France",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Jan Mayen" ~ "Norway",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Johnston Atoll" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Juan De Nova Island" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Kingman Reef" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Palmyra Atoll" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Midway Islands" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Paracel Islands" ~ "China",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Tromelin Island" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Virgin Islands" ~ "United States",
+                                       is.na(country) == TRUE & NA2_DESCRI == "Wake Island" ~ "United States"),
+                  iso_code = countrycode(sourcevar   = country,
+                                         origin      = "country.name",
+                                         destination = "iso3c"),
+                  admin_iso = paste0(NA2_DESCRI, ", ", iso_code)) |> 
+    dplyr::select(NA2_DESCRI, iso_code, country, admin_iso)
+
+```
+
 
 # Geoparsing data
 ```{r}
@@ -216,6 +304,12 @@ datasource_options <- c("Geoparsing", "First author affiliation")
 year_values <- c(min(data_1stA_country$year, na.rm = TRUE), max(data_1stA_country$year, na.rm = TRUE))
 ```
 
+# Labels 
+```{r}
+labels <- data.frame(names = c("ORO type (all)", "ORO type (mitigation)", "ORO type (societal)",  "ORO type (nature)",  "ORO branch",  "Ecosystem type",  "Marine system", "Country"),
+                     var   = c("ORO_type_all", "ORO_type_mitigation", "ORO_type_adap_societal", "ORO_type_adap_nature", "ORO_branch", "Ecosystem_type", "Marine_system", "data_1stA"))
+
+```
 
 
 # Save all objects
@@ -223,7 +317,17 @@ year_values <- c(min(data_1stA_country$year, na.rm = TRUE), max(data_1stA_countr
 ```{r}
 save(data_1stA_country, world_shp, data_geoparsing, datasource_options, year_values, file = here::here("data", "data_for_ShinyApp.RData"))
 
-save(data_1stA_country, world_shp, data_geoparsing, datasource_options, year_values, 
+save(# Data origin
+     data_1stA, data_1stA_country, data_geoparsing,
+     # Spatialized data
+     world_shp,
+     # Description data
+     ORO_branch, ORO_type_mitigation, ORO_type_adap_nature, ORO_type_adap_societal,
+     Method_type, Marine_system, Ecosystem_type, datasource_options, year_values, 
+     ORO_type_all, ORO_type_branch,
+     # Labels
+     labels,
+     # File
      file = here::here("../ShinyApp/ORO.app/data/data_for_ShinyApp.RData"))
 ```
 
