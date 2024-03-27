@@ -236,8 +236,9 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                                                             data.x      = "Count_ORO",
                                                             data.y      = "cumulative_co2_including_luc",
                                                             color_table = bivariate_color_scale,
-                                                            probs.quant.x = seq(0,1,0.1),
-                                                            probs.quant.y = seq(0,1,0.1)) |> 
+                                                            nquantiles  = 10,
+                                                            probs.quant.x = seq(0, 1, 0.1),
+                                                            probs.quant.y = seq(0, 1, 0.1)) |> 
       mutate(iso_code = countrycode::countrycode(sourcevar   = country_id,
                                                  origin      = "country.name",
                                                  destination = "iso3c"))
@@ -259,13 +260,13 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
     
   ## ---- PLOT DATA
-  bivariate_map(data_map   = data_2_map,
-                eez        = eez_shp_SIDS, 
-                data_world = NULL,
-                color      = bivariate_color_scale,
-                ylab       = "CO2eq. emissions",
-                xlab       = "# mit. paper",
-                name       = "main/bivar_map_GHGemi_mitPubs")
+  panelA <- bivariate_map(data_map   = data_2_map,
+                          eez        = eez_shp_SIDS, 
+                          data_world = NULL,
+                          color      = bivariate_color_scale,
+                          ylab       = "CO2eq. emissions",
+                          xlab       = "# mit. paper",
+                          name       = "main/bivar_map_GHGemi_mitPubs_test5Q_dplyr")
 
     
       
@@ -354,7 +355,8 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     data_bivar_n_article_vulne <- format_data_bivariate_map(data        = vulne_adaPubs_country,
                                                             data.x      = "Count_ORO",
                                                             data.y      = "vulnerability",
-                                                            color_table = bivariate_color_scale) |> 
+                                                            color_table = bivariate_color_scale,
+                                                            nquantiles  = 10) |> 
                                                             # probs.quant = seq(0,1,0.1)) |> 
       mutate(iso_code = countrycode::countrycode(sourcevar   = country_id,
                                                  origin      = "country.name",
@@ -377,14 +379,33 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
   
   ## ---- PLOT DATA
-  bivariate_map(data_map   = data_2_map,
-                eez        = eez_shp_SIDS, 
-                data_world = NULL,
-                color      = bivariate_color_scale,
-                ylab       = "Exposure",
-                xlab       = "# ada. paper",
-                name       = "main/bivar_map_exposure_adaPubs")
+  panelB <- bivariate_map(data_map   = data_2_map,
+                          eez        = eez_shp_SIDS, 
+                          data_world = NULL,
+                          color      = bivariate_color_scale,
+                          ylab       = "Exposure",
+                          xlab       = "# ada. paper",
+                          name       = "main/bivar_map_exposure_adaPubs_test10Q_dplyr")
   
   
     
 ### -----  
+  
+
+### ----- Arrange the figure -----
+
+figure5 <- cowplot::ggdraw() +  
+  cowplot::draw_plot(panelA, x = 0.0, y = 0.56, width = 1.0, height = 0.5) +
+  cowplot::draw_plot(panelB, x = 0.0, y = 0.20, width = 1.0, height = 0.5) +
+  cowplot::draw_plot_label(label = c("(a)", "(b)"),
+                           size = 15,
+                           x = c(0, 0),
+                           y = c(0.97, 0.60)) 
+
+ggplot2::ggsave(plot = figure5, here::here("figures", "main", "Figure5.pdf"), width = 15, height = 15, device = "pdf")
+
+
+### -----
+
+  
+  
