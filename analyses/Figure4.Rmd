@@ -50,6 +50,19 @@ factor_aes <- readxl::read_excel(here::here("R/factor_aesthetics.xlsx"))
 
 ```
 
+```{r import the summary of model scores}
+modelScoresFileName <- dir(here::here("data"))
+modelScoresFileName <- modelScoresFileName[grep("model_scores", modelScoresFileName)]
+
+if(length(modelScoresFileName) > 1){
+  versionScores <- as.Date(gsub(".csv","", gsub("summary_model_scores_","",modelScoresFileName)))
+  modelScoresFileName <- modelScoresFileName[which.max(versionScores)]
+}
+
+modelScores <- readr::read_csv(here::here("data", paste(modelScoresFileName)))
+
+```
+
 
 # Panel A: Infographic of coastal land & built waterfronts (?) / coastal ocean / open ocean
 
@@ -416,6 +429,7 @@ fig4_B_percent_ggp
 
 
 ```{r plot panel B normalizing by oro type ie by row to make a percentage with nonlinear colour scale}
+## Calculate totals to normalize by ORO type
 paneltotals <- marSysTypeThreatSums %>%
   group_by(oro_type) %>%
   summarise(total = sum(n_articles))
@@ -430,12 +444,77 @@ marSysTypeThreatSumsNorm <- marSysTypeThreatSums %>%
 #             filter(climate_threat == "Unidentified") %>%
 #             rename(na_articles = percent_articles)
 
-
 # get breaks for the data
 breaksFill <- unique(c(seq(0,60,by=5), seq(50, 100, by=25)))
 
+
+
+## Join legend labels with model scores to add F1 statistic to label
+
+# For marine system (strip label)
+marSysTypeScores <- modelScores%>% 
+  filter(model == "marine_system") %>% 
+  select(`label name`, `F1 - label`) %>%
+  filter(!is.na(`F1 - label`)) %>%
+  mutate(`label name` = recode(`label name`,
+                          `land` = "Coastal land",
+                          `coastal ocean` = "Coastal ocean",
+                          `open-ocean` = "Open-ocean"
+                        )) %>%
+  rename(label = `label name`, F1_marSys = `F1 - label`)
+
+# For CID (y-axis)
+climThreatScores <- modelScores%>% 
+  filter(model == "climate_threat_simplified") %>% 
+  select(`label name`, `F1 - label`) %>%
+  filter(!is.na(`F1 - label`)) %>%
+  mutate(`label name` = recode(`label name`,
+                          `climate_threat.General_CC` = "Unidentified",
+                          `climate_threat.Extreme_weather` = "Extreme weather",
+                          `climate_threat.SLR` = "Sea level rise",
+                          `climate_threat.Temperature` = "Temperature"
+                        )) %>%
+  rename(label = `label name`, F1_climThreat = `F1 - label`)%>%
+  mutate(label2 = paste0(label,", F1 = ", signif(F1_climThreat, 2))) 
+
+climThreatScoresLabelKey <- climThreatScores$label2
+names(climThreatScoresLabelKey) <- climThreatScores$label
+
+# For ORO type (x axis)
+oroTypeScores <- modelScores[grep("oro_any", modelScores$model),] %>% 
+  select(`label name`, `F1 - label`)%>%
+  filter(!is.na(`F1 - label`)) %>%
+  mutate(`label name` = recode(`label name`,
+                          `oro_any.M_Renewables` = "Marine renewable energy",
+                          `oro_any.M_Increase_efficiency` = "CO2 removal or storage",
+                          `oro_any.M_CO2_removal_or_storage` = "Increase efficiency",
+                          `oro_any.N_Human_assisted_evolution` = "Human-assisted evolution",
+                          `oro_any.N_Conservation` = "Conservation",
+                          `oro_any.SA_Built_infrastructure_and_technology` = "Built infrastructure & technology",
+                          `oro_any.SA_Socioinstitutional` = "Socio-institutional"
+                        )) %>%
+  rename(label = `label name`, F1_oroType = `F1 - label`) %>%
+  mutate(label2 = paste0(label,", F1 = ", signif(F1_oroType, 2))) %>%
+  filter(!(label %in% c("oro_any.N_Protection", "oro_any.N_Restoration")))
+
+oroTypeScoresLabelKey <- oroTypeScores$label2
+names(oroTypeScoresLabelKey) <- oroTypeScores$label
+
+
+# Merge labels into dataframe for plotting
+marSysTypeThreatSumsNorm2 <- marSysTypeThreatSumsNorm %>%
+  merge(climThreatScores,by.x = "climate_threat", by.y = "label", all.x = TRUE) %>% 
+  mutate(climate_threat = recode_factor(climate_threat, !!!climThreatScoresLabelKey)) %>%
+  merge(marSysTypeScores,by.x = "marine_system", by.y = "label", all.x = TRUE) %>%
+  mutate(marine_system = paste0(marine_system,", F1 = ", signif(F1_marSys, 2))) 
+  # merge(oroTypeScores,by.x = "oro_type", by.y = "label", all.x = TRUE, all.y = FALSE) %>%
+  # mutate(oro_type = recode_factor(oro_type, !!!oroTypeScoresLabelKey))
+  
+
+
+
 ## plot
-fig4_B_percent_nonlinear_ggp <- ggplot(marSysTypeThreatSumsNorm, 
+fig4_B_percent_nonlinear_ggp <- ggplot(marSysTypeThreatSumsNorm2, 
                                        aes(y = climate_threat, x=oro_type))+
   facet_grid(vars(marine_system), labeller = label_wrap_gen(width=15))+
   # Fill for all articles
@@ -447,7 +526,9 @@ fig4_B_percent_nonlinear_ggp <- ggplot(marSysTypeThreatSumsNorm,
   #                   show.limits = TRUE, limits = c(0, max(nDat$percent_articles, na.rm = T)),
   #                   na.value = "transparent")+ 
   scale_fill_binned(name = "% articles", 
-               type = "viridis",
+               type = "gradient", 
+               low = RColorBrewer::brewer.pal(5,"Blues")[1], 
+               high = "#0570b0",
                breaks = breaksFill, nice.breaks = FALSE,
                labels = function(x) ifelse(1000 <= x, paste(x/1000, "k"), paste(x)),
                rescaler = scales::rescale,
@@ -459,10 +540,9 @@ fig4_B_percent_nonlinear_ggp <- ggplot(marSysTypeThreatSumsNorm,
                guide = guide_coloursteps(order = 1), #barwidth = unit(0.5, 'cm') 
                position = "top")+ 
   
-  #scale_x_discrete(labels = stringr::str_wrap(typeAES$label, width=20))+
   
   geom_text(aes(label = formatC(n_articles, format="d", big.mark = ",")), 
-            col="darkgrey", size=3)+
+            col="black", size=3)+
   
   # other aesthetics
   labs(y="Climate impact driver", x="ORO type")+ 
@@ -473,8 +553,8 @@ fig4_B_percent_nonlinear_ggp <- ggplot(marSysTypeThreatSumsNorm,
   theme_bw()+
   theme(
     panel.grid = element_blank(),
-    axis.text.x = element_text(angle = 30, hjust=1, vjust=1, size=11),
-    axis.text.y = element_text(size=11),
+    axis.text.x = element_text(angle = 30, hjust=1, vjust=1, size=9),
+    axis.text.y = element_text(size=9),
     #legend.position = "right",
     legend.position = "top",
     axis.title.x = element_blank(),
@@ -1107,6 +1187,23 @@ cii_text <- data.frame(
   labs = c("Nature", "Human")
 )
 
+## Join y axis labels for ecosystem type with model scores
+ecoTypeScores <- modelScores[modelScores$model == "ecosystem_type_simplified2",] %>% 
+  select(`label name`, `F1 - label`)%>%
+  filter(!is.na(`F1 - label`)) %>%
+  mutate(`label name` = recode(`label name`,
+                          `ecosystem_type.Salt_marsh` = "Salt marsh",
+                          `ecosystem_type.Mangrove` = "Mangrove",
+                          `ecosystem_type.Coral_reef` = "Seagrass",
+                          `ecosystem_type.Seagrass` = "Coral reef"
+                        )) %>%
+  rename(label = `label name`, F1_ecoType = `F1 - label`) %>%
+  mutate(label2 = paste0(label,", F1 = ", signif(F1_ecoType, 2))) 
+
+ecoTypeScoresLabelKey <- ecoTypeScores$label2
+names(ecoTypeScoresLabelKey) <- ecoTypeScores$label
+  
+
 
 ## 1. Plot figure
 fig4_C_simplified <- ggplot()+
@@ -1135,7 +1232,7 @@ fig4_C_simplified <- ggplot()+
 
   
   # # Format axes
-  scale_x_continuous(breaks = 1:nrow(ecoTypeAES),labels = ecoTypeAES$label)+
+  scale_x_continuous(breaks = 1:nrow(ecoTypeAES),labels = ecoTypeScoresLabelKey)+
   scale_y_continuous(breaks = 1:nrow(typeAES),labels = stringr::str_wrap(typeAES$label, width=20))+
   # scale_y_binned(breaks = 1:nrow(typeAES),labels = typeAES$label)+ #, limits = c(1,nrow(typeAES))
   # 
@@ -1150,8 +1247,8 @@ fig4_C_simplified <- ggplot()+
     axis.title.x = element_blank(),
     panel.grid = element_blank(),
     legend.position = "bottom",
-    axis.text.x = element_text(angle=45, vjust=1, hjust=1, size=11),
-    axis.text.y = element_text(size=11)
+    axis.text.x = element_text(angle=45, vjust=1, hjust=1, size=9),
+    axis.text.y = element_text(size=9)
     #axis.title.x = element_text(vjust = -8)
   )
 
@@ -1257,7 +1354,8 @@ pdf(file = here::here("figures/main/marineSystemsAndClimateImpactDrivers.pdf"),
 plot_grid(fig4_A_ggp+theme(plot.margin = unit(c(0,0,2,0), "cm")),
           fig4_B_percent_nonlinear_ggp+theme(plot.margin = unit(c(0,0.75,0,0), "cm")), 
           fig4_C_simplified2, #+theme(plot.margin = unit(c(2,0,0,0), "cm"))
-          rel_widths = c(0.7,1,1), ncol=3, labels = list("a.","b.","c."), label_size = 19)
+          rel_widths = c(0.7,1,1), ncol=3, labels = list("a.","b.","c."), label_size = 19,
+          align = "v", axis = "b")
 while (!is.null(dev.list())) dev.off()
 
 ```
