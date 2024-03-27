@@ -21,19 +21,25 @@ extract_1stA_affiliation <- function(data, countries_ls){
                                                                  "Papua N Guinea"              = "Papua New Guinea",
                                                                  "\\, ENGLAND"                 = ", United Kingdom",
                                                                  "Engl\\,"                     = "United Kingdom,", # cf ref 378521
-                                                                 "Wales"                       = "United Kingdom", 
+                                                                 "Univ\\ New\\ S\\ Wales" = "Univ.New.S.Wales", # to avoid transforming it to UK since it is an Australian univ.
+                                                                 "Wales\\."                       = "United Kingdom", 
                                                                  "New South United Kingdom"    = "New South Wales", # ref 259903
                                                                  "South United Kingdom"        = "South Wales", # ref 327284
-                                                                 "WALES"                       = "United Kingdom",
+                                                                 "WALES\\."                       = "United Kingdom",
                                                                  "Scotland\\."                 = "United Kingdom", # \\ to avoid replacing in ref 353573 and other
-                                                                 "Irel,"                       = "United Kingdom.",
-                                                                 "\\, North Ireland\\."        = ", United Kingdom.",
-                                                                 "\\,NORTH IRELAND\\."         = ", United Kingdom.",
-                                                                 "\\, Ireland\\."              = ", United Kingdom.",
-                                                                 "North Irel"                  = "United Kingdom",
+                                                                 # "Irel,"                       = "United Kingdom.",
+                                                                 # "\\, North Ireland\\."        = ", United Kingdom.",
+                                                                 # "\\,NORTH IRELAND\\."         = ", United Kingdom.",
+                                                                 # "\\, Ireland\\."              = ", United Kingdom.",
+                                                                 # "North Irel"                  = "United Kingdom",
+                                                                 "Irel,"                       = "Ireland.",
+                                                                 "\\, North Ireland\\."        = ", Ireland.",
+                                                                 "\\,NORTH IRELAND\\."         = ", Ireland.",
+                                                                 "\\, Ireland\\."              = ", Ireland.",
+                                                                 "North Irel"                  = "Ireland",
                                                                  "\\(British\\)"               = "United Kingdom",
                                                                  "Great Britain"               = "United Kingdom",
-                                                                 "\\, Scotl"                   = ", United Kingdom",
+                                                                 "\\, Scotl$"                  = ", United Kingdom",
                                                                  "\\,USA\\."                   = "United States",
                                                                  "\\, USA\\,"                  = "United States",
                                                                  "\\ USA\\."                   = ", United States",
@@ -394,15 +400,15 @@ color_bivariate_map <- function(nquantiles, upperleft, upperright, bottomleft, b
   
   ### Create a matrix of colors
   col.matrix <- matrix(nrow = 101, ncol = 101, NA)
+
+    ## For loop to assign a color to each element of the matrix
+    for(i in 1:101){
+      my.col <- c(paste(my.pal.1[i]), paste(my.pal.2[i]))
+      col.matrix[102-i,] <- classInt::findColours(my.class, my.col) # Assign a different color betwwen color extract in my.col for each element of the row
+    }
   
-  ## For loop to assign a color to each element of the matrix
-  for(i in 1:101){
-    my.col <- c(paste(my.pal.1[i]), paste(my.pal.2[i])) 
-    col.matrix[102-i,] <- classInt::findColours(my.class, my.col) # Assign a different color betwwen color extract in my.col for each element of the row 
-  }
-  
-  
-  plot(c(1,1), pch = 19, col = my.pal.1, cex = 0.5, xlim = c(0,1), ylim = c(0,1), frame.plot = F, xlab = xlab, ylab = ylab, cex.lab = 1.3) # pch = shape of the point
+
+    plot(c(1,1), pch = 19, col = my.pal.1, cex = 0.5, xlim = c(0,1), ylim = c(0,1), frame.plot = F, xlab = xlab, ylab = ylab, cex.lab = 1.3) # pch = shape of the point
   
   ### For loop to plot squares
   for(i in 1:101){
@@ -410,19 +416,45 @@ color_bivariate_map <- function(nquantiles, upperleft, upperright, bottomleft, b
     points(my.data, rep((i-1)/100, 101), pch = 15, col = col.temp, cex = 1) # Drawing a sequence of point at the specified coordinates.
   }
   
+    
+  ### Get the quantiles values
   seqs <- seq(0, 100, (100/nquantiles)) 
   seqs[1] <- 1
   col.matrix <- col.matrix[c(seqs), c(seqs)] # Matrix of color with with 10 rows and 10 columns
   
   
   ### Turn it into a table that would match with data
-  tbl_color <- dplyr::as_tibble(col.matrix[2:11, 2:11])  |> 
-    tidyr::gather(group, fill, V1, V2, V3, V4, V5, V6, V7, V8, V9 ,V10) |> 
-    dplyr::mutate(group = as.character(c(seq(1.10, 10.1, 1), seq(1.2, 10.2, 1), seq(1.3, 10.3, 1), seq(1.4, 10.4, 1), seq(1.5, 10.5, 1), seq(1.6, 10.6, 1),
-                                         seq(1.70, 10.7, 1), seq(1.8, 10.8, 1), seq(1.9, 10.9, 1), 
-                                         "1.10", "2.10", "3.10", "4.10", "5.10", "6.10", "7.10", "8.10", "9.10", "10.10"))) |> 
-    as.data.frame(.) |> 
-    dplyr::rename()
+  ### To obtain this for all quantiles values:
+  # as.character(c(seq(1.10, 10.1, 1), seq(1.2, 10.2, 1), seq(1.3, 10.3, 1), seq(1.4, 10.4, 1), seq(1.5, 10.5, 1), seq(1.6, 10.6, 1),
+  #                seq(1.70, 10.7, 1), seq(1.8, 10.8, 1), seq(1.9, 10.9, 1),
+  #                "1.10", "2.10", "3.10", "4.10", "5.10", "6.10", "7.10", "8.10", "9.10", "10.10"))
+  q1 <- 1
+  qmax <- nquantiles
+  
+  start <- paste0(q1:qmax, ".", q1) 
+  middle <- unlist(lapply(2:(nquantiles-1), function(i) {
+    qstart <- 1
+    qend <- i
+    qmax <- nquantiles
+    vals <- paste0("seq(", qstart, ".", qend, ",", qmax, ".", qend, ",", 1, ")")
+    return(as.character(eval(parse(text = vals))))
+  }))
+  end <- paste0(q1:qmax, ".", qmax)
+  all_vals <- c(start, middle, end)
+  
+
+  tbl_color <- dplyr::as_tibble(col.matrix[2:(nquantiles+1), 2:(nquantiles+1)])  |>
+    tidyr::pivot_longer(cols = 1:nquantiles, names_to = "group", values_to = "fill", cols_vary = "slowest") |>
+    dplyr::mutate(group = all_vals) |>
+    as.data.frame() 
+    
+  # tbl_color <- dplyr::as_tibble(col.matrix[2:(nquantiles+1), 2:(nquantiles+1)])  |>
+  #   tidyr::gather(group, fill, V1, V2, V3, V4, V5, V6, V7, V8, V9 ,V10) |>
+  #   dplyr::mutate(group = as.character(c(seq(1.10, 10.1, 1), seq(1.2, 10.2, 1), seq(1.3, 10.3, 1), seq(1.4, 10.4, 1), seq(1.5, 10.5, 1), seq(1.6, 10.6, 1),
+  #                                        seq(1.70, 10.7, 1), seq(1.8, 10.8, 1), seq(1.9, 10.9, 1),
+  #                                        "1.10", "2.10", "3.10", "4.10", "5.10", "6.10", "7.10", "8.10", "9.10", "10.10"))) |>
+  #   as.data.frame(.) |>
+  #   dplyr::rename()
   
   return(tbl_color)
   
@@ -440,7 +472,7 @@ color_bivariate_map <- function(nquantiles, upperleft, upperright, bottomleft, b
 #' @export
 #'
 #' @examples
-format_data_bivariate_map <- function(data, data.x, data.y, color_table, probs.quant.y = seq(0,1,0.1), probs.quant.x = seq(0,1,0.1)){
+format_data_bivariate_map <- function(data, data.x, data.y, color_table, nquantiles, probs.quant.y = seq(0,1,0.1), probs.quant.x = seq(0,1,0.1)){
   
   ### Calculate quantiles
   
@@ -451,25 +483,18 @@ format_data_bivariate_map <- function(data, data.x, data.y, color_table, probs.q
     ## For data y
     # y_quantile <- quantile(data[, data.y], probs = probs.quant.y, na.rm = TRUE)
   
-    # data_xy <- data |> 
-    #   mutate(group = 1:214)
-    #          group_y = y_tile,
-    #          group   = paste0(group_x, ".", group_y)) |>
-    #   left_join(color_table, by = "group")
-  
+
   ## Cut data into groups
   data_xy <- data |>
-    mutate(group_x = ntile(get(data.x), 10),
-           group_y = ntile(get(data.y), 10),
+    mutate(group_x = ntile(get(data.x), nquantiles),
+           group_y = ntile(get(data.y), nquantiles),
            group   = paste0(group_x, ".", group_y)) |>
     left_join(color_table, by = "group")
     
-  # sup = 10 - (length(unique(x_quantile))-1)
-  
   # data_xy <- data |>
   #   dplyr::mutate(x_quantile = cut(data |> pull(get(data.x)), breaks = unique(x_quantile), include.lowest = TRUE),
   #                 y_quantile = cut(data |> pull(get(data.y)), breaks = unique(y_quantile), include.lowest = TRUE),
-  #                 group      = ifelse(!is.na(y_quantile) & !is.na(x_quantile), paste0(as.numeric(x_quantile) + sup, ".", as.numeric(y_quantile)), NA)) |>
+  #                 group      = ifelse(!is.na(y_quantile) & !is.na(x_quantile), paste0(as.numeric(x_quantile), ".", as.numeric(y_quantile)), NA)) |>
   #   dplyr::left_join(color_table, by = "group")
   
   return(data_xy)

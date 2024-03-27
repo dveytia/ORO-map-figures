@@ -268,9 +268,25 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       select(country, Coefficient, Value, Std.Error, `t-value`, `p-value`) |> 
       mutate(iso_code = countrycode(sourcevar   = country,
                                     origin      = "country.name",
-                                    destination = "iso3c")) |> 
+                                    destination = "iso3c"))
+             # layer    = cut()) 
+      # filter(`p-value` <= 0.05) |> 
+      # rename(layer = Value) 
+    
+    # summaryTable$Value[summaryTable$`p-value` > 0.05] <- "NS"
+    
+    data_Signif <- summaryTable |> 
       filter(`p-value` <= 0.05) |> 
-      rename(layer = Value)
+      mutate(cut   = cut(Value, breaks = 10, dig.lab = 2),
+             layer = factor(paste0(">", str_extract(cut, "0\\.\\d+(?=,)"))),
+             layer = forcats::fct_relevel(layer, rev(levels(layer)))) |> 
+      select(-cut)
+    
+    data_NSignif <- summaryTable |> 
+      filter(`p-value` > 0.05) |> 
+      mutate(layer = factor("NS"))
+      
+    data_trends <- bind_rows(data_Signif, data_NSignif) 
     
     # quick plot of only the significant exponential trends
     ggplot(summaryTable %>% filter(`p-value` <= 0.05), aes(layer))+ geom_density()+ theme_bw()
@@ -279,7 +295,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
     # --- Format the shapefile of the world countries polygon and bind data
     world_shp_boundaries <- format_shp_of_the_world(world_shp    = world_shp,
-                                                    data_to_bind = summaryTable,
+                                                    data_to_bind = data_trends,
                                                     PROJ         = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs") |> 
       left_join(country_grp |>  select(-Country), by = "iso_code") |> 
       select(-country.y) |> 
@@ -290,7 +306,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                                     is.na(group_land)  & NA2_DESCRI == country ~ "Coastal"))
     
     # --- Format the shapefile of the eez countries polygon and bind data
-    eez_shp_islands <- full_join(eez_shp, summaryTable, by = "iso_code") |> 
+    eez_shp_islands <- full_join(eez_shp, data_trends, by = "iso_code") |> 
       # left_join(country_grp |>  select(-Country), by = "iso_code") |> 
       mutate(country = str_replace_all(country, c("Côte d’Ivoire" = "Ivory Coast",
                                                   "Congo - Brazzaville" = "Republic of the Congo",
@@ -312,14 +328,14 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   ## ---- PLOT PANEL B 
   panelB <- univariate_map(data_map          = data_2_map_panelB,
                            eez               = eez_shp_islands,
-                           color_scale       = viridis::mako(10, direction = -1),
+                           color_scale       = "trends",
                            midpoint          = NULL,
                            second.var        = NULL,
                            # vals_colors_scale = NULL,
                            title_color       = "Slope",
                            title_size        = NULL,
                            show.legend       = TRUE,
-                           name              = "main/map_temporal_trends")
+                           name              = "main/map_temporal_trends_test")
   
 ### -----
     
@@ -510,6 +526,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
     
 ### -----
+    
   
 ### ----- Panel D -----
     
@@ -675,4 +692,41 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
     # ggsave(here::here("figures", "main", "Figure6_test2.jpeg"), width = 15, height = 7, device = "jpeg")
     ggsave(here::here("figures", "main", "stacked_barplot_OROtype_per_country.pdf"), width = 20, height = 10, device = "pdf")
+    
+
+### ----- Arrange the figure A to D -----
+
+figure2 <- cowplot::ggdraw() +
+  cowplot::draw_plot(panelA,          x = 0.0, y = 0.66, width = 0.5, height = 0.43) +
+  cowplot::draw_plot(panelB,          x = 0.5, y = 0.66, width = 0.5, height = 0.43) +
+  cowplot::draw_plot(plot_final,      x = .05, y = 0.46, width = 0.9, height = 0.30) +
+  cowplot::draw_plot(plot_final_sids, x = 0.0, y = 0.11, width = 1.0, height = 0.33) +
+  cowplot::draw_plot_label(label = c("(a)", "(b)", "(c)", "(d)"),
+                           size = 15,
+                           x = c(0, 0.5, 0, 0),
+                           y = c(0.96, 0.96, 0.76, 0.44)) 
+
+ggplot2::ggsave(plot = figure2, here::here("figures", "main", "Figure2_with_PanelD.pdf"), width = 20, height = 25, device = "pdf")
+
+
+### -----
+
+
+### ----- Arrange the figure A to C -----
+
+figure2 <- cowplot::ggdraw() +
+  cowplot::draw_plot(panelA,          x = 0.0, y = 0.45, width = 0.5, height = 0.5) +
+  cowplot::draw_plot(panelB,          x = 0.5, y = 0.45, width = 0.5, height = 0.5) +
+  cowplot::draw_plot(plot_final,      x = .05, y = 0.05, width = 0.9, height = 0.45) +
+  cowplot::draw_plot_label(label = c("(a)", "(b)", "(c)"),
+                           size = 15,
+                           x = c(0, 0.5, 0),
+                           y = c(0.83, 0.83, 0.51)) 
+
+ggplot2::ggsave(plot = figure2, here::here("figures", "main", "Figure2.pdf"), width = 15, height = 15, device = "pdf")
+
+
+### -----
+
+
     
