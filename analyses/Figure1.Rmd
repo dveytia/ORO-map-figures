@@ -549,6 +549,7 @@ inflect_A_ggp <- ggplot(data = panelADf %>% filter(is.finite(log_articles)),
   facet_grid(.~ORO_branch)+
   geom_line(linewidth=1, alpha=0.5)+
   labs(y="log(N articles)", x="Year")+
+  ylim(c(0, max(panelADf$log_articles, na.rm=T)))+
   scale_colour_manual(values = c("raw data"="black","spline function"="red"))+
   theme_bw()+
   theme(
@@ -564,17 +565,20 @@ panelBDf <- data.frame(year = rep(xl, 3), derivative_est = unlist(splineDerivati
 # Select the outliers
 panelBText <- panelBDf %>%
   group_by(ORO_branch) %>%
-  mutate(isOutlier = rstatix::is_outlier(derivative_est, coef = 2)) %>%
-  filter(isOutlier, 0 < derivative_est, 1981 < year) %>%
+  mutate(isOutlier = rstatix::is_outlier(derivative_est, coef = 1.5)) %>%
+  filter(isOutlier & 0 < derivative_est) %>%
   mutate(year = as.integer(year))%>%
   group_by(year, ORO_branch) %>%
-  slice(which.max(derivative_est))
+  slice(which.max(derivative_est)) %>%
+  filter(1981 < year)
+
 
 inflect_B_ggp <- ggplot(data=panelBDf, aes(year, derivative_est))+
   facet_grid(.~ORO_branch)+
   geom_line(col="blue")+
   geom_text(data= panelBText, aes(year, derivative_est, label = formatC(year)), 
             vjust = -0.2, hjust = -0.2)+
+  xlim(c(1981,2022))+
   labs(y="1st derivative", x="Year")+
   theme_bw()
 
