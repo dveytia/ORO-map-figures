@@ -402,7 +402,7 @@ figure5 <- cowplot::ggdraw() +
                            x = c(0, 0),
                            y = c(0.97, 0.60)) 
 
-ggplot2::ggsave(plot = figure5, here::here("figures", "main", "Figure5.pdf"), width = 15, height = 15, device = "pdf")
+ggplot2::ggsave(plot = figure5, here::here("figures", "main", "maps_bivar_MitiEmi_AdaExpo.pdf"), width = 15, height = 15, device = "pdf")
 
 
 ### -----

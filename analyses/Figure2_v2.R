@@ -39,7 +39,7 @@ latestVersion <- sqliteFiles[which.max(sqliteVersions)]
 dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
 
 
-### ----- PANEL A -----
+### ----- PANEL A (#ORO papers) -----
 
   ## ---- LOAD DATA
   uniquerefs <- tbl(dbcon, "uniquerefs") # metadata on the unique references
@@ -189,7 +189,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   
 ### -----
     
-### ----- Panel B -----
+### ----- Panel B (Trends)-----
   
   ## ---- LOAD DATA
   uniquerefs <- tbl(dbcon, "uniquerefs") # metadata on the unique references
