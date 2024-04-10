@@ -167,6 +167,23 @@ marSysTypeThreatSums <- marSysTypeThreatSums %>%
 
 ```
 
+
+```{r quantify the number of articles by marine system}
+library(nlme)
+marSysFit <- glm(n_articles ~ oro_type*climate_threat*marine_system, data = marSysTypeThreatSums, 
+                 family=poisson())
+
+summary(marSysFit)
+drop1(marSysFit, test = "Chisq")
+# Single term deletions
+# 
+# Model:
+# n_articles ~ oro_type * climate_threat * marine_system
+#                                       Df Deviance    AIC    LRT  Pr(>Chi)    
+# <none>                                       0.00 476.00                     
+# oro_type:climate_threat:marine_system 17   357.82 799.82 357.82 < 2.2e-16 ***
+```
+
 ```{r old stacked bar plot version}
 fig4_B_barplot_ggp <- ggplot(marSysTypeThreatSums, aes(y = oro_type, x=n_articles, fill = climate_threat))+
   facet_wrap(vars(marine_system), ncol=1, scales = "free")+
@@ -1035,6 +1052,34 @@ natureDfText <- getTileCentre(df = adaptationSums, filterVar = "adapt_to_threat"
 ```{r export sums to csv for reference}
 write.csv(mitigationSums, here::here("outputs/coastalEcosystemsMitigationSums.csv"))
 write.csv(adaptationSums, here::here("outputs/coastalEcosystemsAdaptationSums.csv"))
+```
+
+
+```{r quantify the number of articles by ecosystem type}
+library(nlme)
+mitigationFit <- glm(n_articles ~ oro_type*ecosystem_type, data = mitigationSums, 
+                 family=poisson())
+
+drop1(mitigationFit, test = "Chisq") # delta AIC = 323.82
+
+# Model:
+# n_articles ~ oro_type * ecosystem_type
+#                         Df Deviance    AIC    LRT  Pr(>Chi)    
+# <none>                          0.0  142.8                     
+# oro_type:ecosystem_type 18   2570.8 2677.6 2570.8 < 2.2e-16 ***
+
+
+adaptationFit <- glm(n_articles ~ oro_type*ecosystem_type, data = adaptationSums %>%
+                       group_by(oro_type, ecosystem_type) %>%
+                       summarise(n_articles = sum(n_articles,na.rm=T)), 
+                 family=poisson())
+drop1(adaptationFit, test = "Chisq")
+
+# Model:
+# n_articles ~ oro_type * ecosystem_type
+#                         Df Deviance    AIC    LRT  Pr(>Chi)    
+# <none>                          0.0  191.4                     
+# oro_type:ecosystem_type 14   3081.2 3244.6 3081.2 < 2.2e-16 ***
 ```
 
 
