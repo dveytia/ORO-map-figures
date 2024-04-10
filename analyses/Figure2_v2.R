@@ -39,6 +39,15 @@ latestVersion <- sqliteFiles[which.max(sqliteVersions)]
 dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
 
 
+## ------- Other objects to load first --------
+countries_ls <- read.csv(file = here::here("data", "external", "list_of_countries", "sql-pays.csv"), sep = ";") |>  # Countries names
+  dplyr::mutate(country = countrycode(sourcevar   = name_en,
+                                      origin      = "country.name",
+                                      destination = "country.name"),
+                iso_code = countrycode(sourcevar   = country,
+                                       origin      = "country.name",
+                                       destination = "iso3c"))
+
 ### ----- PANEL A (#ORO papers) -----
 
   ## ---- LOAD DATA
@@ -272,6 +281,9 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
              # layer    = cut()) 
       # filter(`p-value` <= 0.05) |> 
       # rename(layer = Value) 
+    
+    ## Save to outputs
+    write.csv(summaryTable, here::here("outputs/glsCountryPublicationTrendsSummaryTable.csv"))
     
     # summaryTable$Value[summaryTable$`p-value` > 0.05] <- "NS"
     
