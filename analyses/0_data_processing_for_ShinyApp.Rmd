@@ -210,7 +210,9 @@ source(here::here("R", "functions_to_format.R")) # all functions needed to forma
                                             destination = "country.name"),
                   iso_code = countrycode(sourcevar   = country_aff,
                                          origin      = "country.name",
-                                         destination = "iso3c"))
+                                         destination = "iso3c")) |> 
+    dplyr::filter(year < 2023)
+    
   
   # data_anaID_1stAcountry <- data_1stA |> dplyr::select(analysis_id, country_aff)
   
@@ -234,13 +236,13 @@ source(here::here("R", "functions_to_format.R")) # all functions needed to forma
   
   
   # --- Format the shapefile of the world countries polygon and bind data
-  sf::sf_use_s2(FALSE)
-  world_shp <- format_shp_of_the_world(world_shp    = world_shp,
-                                       data_to_bind = data_1stA_country_tot,
-                                       PROJ         = sf::st_crs(world_shp)) |> 
-    sf::st_transform(crs = 4326) |> 
-    dplyr::group_by(country, iso_code) |> 
-    dplyr::summarise(geometry = sf::st_union(geometry))
+  # sf::sf_use_s2(FALSE)
+  # world_shp <- format_shp_of_the_world(world_shp    = world_shp,
+  #                                      data_to_bind = data_1stA_country_tot,
+  #                                      PROJ         = sf::st_crs(world_shp)) |> 
+  #   sf::st_transform(crs = 4326) |> 
+  #   dplyr::group_by(country, iso_code) |> 
+  #   dplyr::summarise(geometry = sf::st_union(geometry))
     # left_join(country_grp |>  select(-Country), by = "iso_code") |> 
     # select(-country_aff) |> 
     # rename(country_aff = country) |> 
@@ -289,7 +291,29 @@ world_shp <- sf::read_sf(here::here("data", "external", "world_shp")) |>  # shap
 
 # Geoparsing data
 ```{r}
-data_geoparsing <- get(load(here::here("data", "geoparsing", "tmp_clean.RData")))
+
+### ----- Load relevant data
+uniquerefs <- tbl(dbcon, "uniquerefs")
+grid_df <- tbl(dbcon, "grid_df_res2.5") |>  collect() 
+
+
+data_geoparsing <- get(load(here::here("data", "geoparsing", "tmp_clean.RData"))) |> 
+  dplyr::left_join(uniquerefs, by = "analysis_id", copy = TRUE) |> 
+  dplyr::select(analysis_id, grid_df_id, year, country_id) |> 
+  dplyr::mutate(iso_code = countrycode(sourcevar   = country_id,
+                                       origin      = "country.name",
+                                       destination = "iso3c"),
+                year = as.numeric(year)) |> 
+  dplyr::rename(country_aff = country_id) |> 
+  dplyr::left_join(grid_df |> dplyr::select(-is_land, -area_km), by = "grid_df_id", copy = TRUE)
+
+
+grid25_polygon <- grid_df |> 
+  dplyr::select(LON, LAT, grid_df_id) |> 
+  raster::rasterFromXYZ() |> 
+  raster::rasterToPolygons() |> 
+  sf::st_as_sf(crs = 4326)
+  
 ```
 
 
@@ -320,7 +344,7 @@ save(data_1stA_country, world_shp, data_geoparsing, datasource_options, year_val
 save(# Data origin
      data_1stA, data_1stA_country, data_geoparsing,
      # Spatialized data
-     world_shp,
+     world_shp, grid25_polygon,
      # Description data
      ORO_branch, ORO_type_mitigation, ORO_type_adap_nature, ORO_type_adap_societal,
      Method_type, Marine_system, Ecosystem_type, datasource_options, year_values, 
@@ -328,6 +352,6 @@ save(# Data origin
      # Labels
      labels,
      # File
-     file = here::here("../ShinyApp/ORO.app/data/data_for_ShinyApp.RData"))
+     file = here::here("../ShinyApp/Test/www/data_for_ShinyApp.RData")) # here::here("../ShinyApp/ORO.app/data/data_for_ShinyApp.RData")
 ```
 

@@ -109,7 +109,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     oroAffiliations <- pred_relevance %>%
       filter(0.5 <= relevance_mean) %>%
       left_join(uniquerefs, by = "analysis_id") %>%
-      select(analysis_id, affiliation, year) %>%
+      dplyr::select(analysis_id, affiliation, year) %>%
       collect()
     
     # --- Extract the country of the first author for each relevant publications
@@ -134,7 +134,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
     # --- Compute the ratio #ORO pub per country/#O&C pub per country
     ratio_ORO_totPub <- oceanClimate_byCountry |> 
-      full_join(ORO_per_country |> ungroup() |> select(-country_aff), by = "iso_code") |> 
+      full_join(ORO_per_country |> ungroup() |> dplyr::select(-country_aff), by = "iso_code") |> 
       replace_na(list(Count_ORO = 0))|> 
       mutate(Count_ORO = ifelse(is.na(Count_ORO), 0 , Count_ORO),
              layer     = (Count_ORO/Record.Count)*100) 
@@ -146,8 +146,8 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     world_shp_boundaries <- format_shp_of_the_world(world_shp    = world_shp,
                                                     data_to_bind = ratio_ORO_totPub,
                                                     PROJ         = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs") |> 
-      left_join(country_grp |>  select(-Country), by = "iso_code") |> 
-      select(-country.y) |> 
+      left_join(country_grp |>  dplyr::select(-Country), by = "iso_code") |> 
+      dplyr::select(-country.y) |> 
       rename(country = country.x) |> 
       mutate(group_land = case_when(group_land %in% c("Land-locked", "SIDS", "Coastal") ~ group_land,
                                     !is.na(group_land) & NA2_DESCRI != country ~ "Island",
@@ -255,7 +255,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       mutate(Coefficient = "Year") |> 
       # country_aff = names(modFits)) |>
       tibble::rownames_to_column(var = "country") |>
-      select(country, Coefficient, Value, Std.Error, `t-value`, `p-value`) |> 
+      dplyr::select(country, Coefficient, Value, Std.Error, `t-value`, `p-value`) |> 
       mutate(iso_code = countrycode(sourcevar   = country,
                                     origin      = "country.name",
                                     destination = "iso3c"))
@@ -265,7 +265,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       mutate(cut   = cut(Value, breaks = 10, dig.lab = 2),
              layer = factor(paste0(">", str_extract(cut, "0\\.\\d+(?=,)"))),
              layer = forcats::fct_relevel(layer, rev(levels(layer)))) |> 
-      select(-cut)
+      dplyr::select(-cut)
     
     data_NSignif <- summaryTable |> 
       filter(`p-value` > 0.05) |> 
@@ -282,8 +282,8 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     world_shp_boundaries <- format_shp_of_the_world(world_shp    = world_shp,
                                                     data_to_bind = data_trends,
                                                     PROJ         = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs") |> 
-      left_join(country_grp |>  select(-Country), by = "iso_code") |> 
-      select(-country.y) |> 
+      left_join(country_grp |>  dplyr::select(-Country), by = "iso_code") |> 
+      dplyr::select(-country.y) |> 
       rename(country = country.x) |> 
       mutate(group_land = case_when(group_land %in% c("Land-locked", "SIDS", "Coastal") ~ group_land,
                                     !is.na(group_land) & NA2_DESCRI != country ~ "Island",
@@ -341,8 +341,8 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                                    0.5 <= `oro_branch.Societal - mean_prediction`,
                                  1, 0),
              mitigation = ifelse(0.5 <= `oro_branch.Mitigation - mean_prediction`, 1 ,0)) %>% 
-      select(analysis_id, adaptation, mitigation) %>%
-      left_join(uniquerefs %>% select(analysis_id, affiliation), by = "analysis_id") %>%
+      dplyr::select(analysis_id, adaptation, mitigation) %>%
+      left_join(uniquerefs %>% dplyr::select(analysis_id, affiliation), by = "analysis_id") %>%
       collect()
   
     # --- Extract the country of the first author for each relevant publications
@@ -373,14 +373,14 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                                                        data_to_bind = ratio_mitig_adapt,
                                                        PROJ         = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs") |> 
       # replace_na(list(adaptation = 0, mitigation = 0, mit_ada = 0, ratio = 0)) |> 
-      left_join(country_grp |>  select(-Country), by = "iso_code") |> 
+      left_join(country_grp |>  dplyr::select(-Country), by = "iso_code") |> 
       mutate(group_land = case_when(group_land %in% c("Land-locked", "SIDS", "Coastal") ~ group_land,
                                     !is.na(group_land) & NA2_DESCRI != country ~ "Island",
                                     is.na(group_land)  & NA2_DESCRI != country ~ "Island",
                                     is.na(group_land)  & NA2_DESCRI == country ~ "Coastal"))
     
     # --- Format the shapefile of the eez countries polygon and bind data
-    eez_shp_islands_MA <- full_join(eez_shp |>  select(-Country), ratio_mitig_adapt, by = "iso_code") |> 
+    eez_shp_islands_MA <- full_join(eez_shp |>  dplyr::select(-Country), ratio_mitig_adapt, by = "iso_code") |> 
       # left_join(country_grp |>  select(-Country), by = "iso_code") |> 
       mutate(country = str_replace_all(Country, c("Côte d’Ivoire" = "Ivory Coast",
                                                   "Congo - Brazzaville" = "Republic of the Congo",
@@ -554,7 +554,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                            title_color       = "% of 1st author",
                            title_size        = NULL,
                            show.legend       = TRUE,
-                           name              = "main/map_geoP_vs_affiliation4")
+                           name              = "main/map_geoP_vs_affiliation")
   
 ### -----
   
@@ -571,7 +571,7 @@ figure2 <- cowplot::ggdraw() +
                            x = c(0, 0.5, 0, 0.5),
                            y = c(0.99, 0.99, 0.68, 0.68)) 
 
-ggplot2::ggsave(plot = figure2, here::here("figures", "main", "maps_1stA_data.pdf"), width = 18, height = 15, device = "pdf")
+ggplot2::ggsave(plot = figure2, here::here("figures", "main", "maps_1stA_data2.pdf"), width = 18, height = 15, device = "pdf")
 
 
 ### -----

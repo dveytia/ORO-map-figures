@@ -278,11 +278,16 @@ length(unique(geoP_data$analysis_id))
 ### Note N°0: Select only empirical studies
 
   ## Extract the papers predicted as empirical ones
+  # predMethod <- tbl(dbcon, "pred_method_type") |> 
+  #   select(analysis_id, 
+  #          `method_type.Empirical - mean_prediction`) |> 
+  #   filter(`method_type.Empirical - mean_prediction` >= 0.5) |> 
+  #   collect()
   predMethod <- tbl(dbcon, "pred_method_type") |> 
-    select(analysis_id, 
-           `method_type.Empirical - mean_prediction`) |> 
-    filter(`method_type.Empirical - mean_prediction` >= 0.5) |> 
-    collect()
+      select(analysis_id, 
+             `method_type.Empirical - mean_prediction`, `method_type.Social_primary - mean_prediction`) |> 
+      filter(`method_type.Empirical - mean_prediction` >= 0.5 | `method_type.Social_primary - mean_prediction` >= 0.5) |> 
+      collect()
   
   ## Selection of empiral papers among all papers
   geoP_data_empirical <- filter(geoP_data, analysis_id %in% unique(predMethod$analysis_id))
@@ -290,23 +295,23 @@ length(unique(geoP_data$analysis_id))
   nrow(geoP_data_empirical)
   length(unique(geoP_data_empirical$analysis_id))
   
-### Note N°1: Select only data where !is.na()
+### Note N°1 (filter 0): Select only data where !is.na()
   
-  ## Join with the geoparsed matching location (grid cell level)
-  geoP_data_empirical_cell <- geoP_data_empirical |> 
+  # Join with the geoparsed matching location (grid cell level)
+  geoP_data_empirical_cell <- geoP_data_empirical |>
     left_join(shp_df_matches, by = "analysis_id", copy = TRUE) |>
     collect()
-  
+
   nrow(geoP_data_empirical_cell)
   length(unique(geoP_data_empirical_cell$analysis_id))
+   
+  # ## Filter only rows where there the shp_id column != NA
+  # geoP_data_empirical_cell_noNA <- filter(geoP_data_empirical_cell, !is.na(shp_id))
+  # nrow(geoP_data_empirical_cell_noNA)
+  # length(unique(geoP_data_empirical_cell_noNA$analysis_id))
   
-  ## Filter only rows where there the shp_id column != NA
-  geoP_data_empirical_cell_noNA <- filter(geoP_data_empirical_cell, !is.na(shp_id))
-  nrow(geoP_data_empirical_cell_noNA)
-  length(unique(geoP_data_empirical_cell_noNA$analysis_id))
   
-  
-### Note N°2: Capital letter filtering
+### Note N°2 (filter 1): Capital letter filtering
   
   # (Filter row that are not in capital letter) OR
   # (Filter row in capital letters & with a number of character > 3) OR ~ to avoid acronyme but keep city name in capital letters
@@ -320,7 +325,7 @@ length(unique(geoP_data$analysis_id))
   length(unique(geoP_data_empirical_cell_acronym$analysis_id))
 
   
-### Note N°3: Remove word matching with copyright informations
+### Note N°3 (filter 2): Remove word matching with copyright informations
   
   ## Extract analysis_id that have (c) symbole in the abstract
   geoparsedText_with_C <- uniquerefs |>
@@ -352,7 +357,7 @@ length(unique(geoP_data$analysis_id))
   length(unique(geoP_data_empirical_cell_acronym_CR$analysis_id))
   
   
-### Note N°4: Remove land matches x distance from the coast when the spatial scale of the match is sub-national
+### Note N°4 (filter 3): Remove land matches x distance from the coast when the spatial scale of the match is sub-national
   
   ## Set new grid dataframe with new info
   grid_df2 <- grid_df
@@ -483,7 +488,7 @@ length(unique(geoP_data$analysis_id))
   length(unique(geoP_data_empirical_cell_acronym_CR_200km_Q95$analysis_id))
 
   
-### Note 6: Remove word matches that are a complete word in the English language
+### Note 6 (filter 5): Remove word matches that are a complete word in the English language
 library(qdapDictionaries)
 library(maps)
 library(datasets)
@@ -630,7 +635,7 @@ load(here::here("data", "geoparsing", "land_eez_grid_country.RData"))
       
     }
     
-    # Keep only TRUE data if country nale identified in the title, else, keep all data
+    # Keep only TRUE data if country name is identified in the title, else, keep all data
     analysis_id_i <- analysis_id_i |>  
       mutate(country_in_title = stringr::str_detect(title, TERRITORY1) | stringr::str_detect(title, c("UK|USA|US")))
     
@@ -696,10 +701,12 @@ load(here::here("data", "geoparsing", "land_eez_grid_country.RData"))
     #   tidyr::replace_na(list(country_in_kw = FALSE, country_in_kwo = FALSE, US_state_in_kw = FALSE))
     analysis_id_i <- suppressWarnings(analysis_id_i |> 
       mutate(country_in_kw  = case_when(stringr::str_detect(keywords, stringr::str_to_lower(TERRITORY1)) ~ TRUE,
-                                        (!stringr::str_detect(keywords, stringr::str_to_lower(TERRITORY1)) & sum(stringr::str_detect(keywords, stringr::str_to_lower(sea_with_country_name)) == TRUE, na.rm=T) > 0) ~ TRUE,
+                                        (!stringr::str_detect(keywords, stringr::str_to_lower(TERRITORY1)) & 
+                                           sum(stringr::str_detect(keywords, paste0(stringr::str_to_lower(sea_with_country_name), collapse = "|")) == TRUE, na.rm=T) > 0) ~ TRUE,
                                         TRUE ~ FALSE),         
              country_in_kwo = case_when(stringr::str_detect(keywords_other, stringr::str_to_lower(TERRITORY1)) ~ TRUE,
-                                        (!stringr::str_detect(keywords_other, stringr::str_to_lower(TERRITORY1)) & sum(stringr::str_detect(keywords_other, stringr::str_to_lower(sea_with_country_name)) == TRUE, na.rm=T) > 0) ~ TRUE,
+                                        (!stringr::str_detect(keywords_other, stringr::str_to_lower(TERRITORY1)) & 
+                                           sum(stringr::str_detect(keywords_other, paste0(stringr::str_to_lower(sea_with_country_name), collapse = "|")) == TRUE, na.rm=T) > 0) ~ TRUE,
                                         TRUE ~ FALSE),
              US_state_in_kw = case_when(stringr::str_detect(keywords, paste(stringr::str_to_lower(state.name), collapse = "|")) == TRUE & TERRITORY1 == "United States" ~ TRUE, 
                                         TRUE ~ FALSE)) |>
