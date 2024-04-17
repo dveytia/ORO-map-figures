@@ -143,34 +143,34 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   ## ---- FORMAT DATA: Produce a shapefile of grid cells with the country & administration they belong to.
     
     # - Load the grid and format it into a shapefile
-    grid_sf <- tbl(dbcon, "grid_df_res2.5") |> collect() |> 
-      sf::st_as_sf(coords = c("LON", "LAT"), crs = 4326)
-    
-    # - Join with land data
-    sf::sf_use_s2(FALSE)
-    grid_sf_land <- sf::st_join(grid_sf, world_shp) |> 
-      dplyr::select(grid_df_id, is_land, NA2_DESCRI, iso_NA2)
-    
-    # - Join with eez data
-    grid_sf_eez <- sf::st_join(grid_sf, eez_shp) |> 
-      dplyr::select(grid_df_id, is_land, MRGID, TERRITORY1, iso_NA2, Country, iso_code) |> 
-      distinct(grid_df_id, .keep_all = TRUE)
-    
-    # - Land + eez data
-    grid_sf_eez_land <- sf::st_join(grid_sf_land, grid_sf_eez |> dplyr::select(-grid_df_id))
-    grid_df_eez_land <- sf::st_drop_geometry(grid_sf_eez_land) |> 
-      mutate(country_id = case_when(is.na(Country) & !is.na(NA2_DESCRI) ~ NA2_DESCRI,
-                                    is.na(NA2_DESCRI) & !is.na(Country) ~ Country,
-                                    is.na(NA2_DESCRI) & is.na(Country)  ~ "High-seas",
-                                    !is.na(NA2_DESCRI) & !is.na(Country) & Country != NA2_DESCRI ~ "Verif",
-                                    !is.na(NA2_DESCRI) & !is.na(Country) & Country == NA2_DESCRI ~ Country),
-             TERRITORY1 = case_when(!is.na(TERRITORY1) ~ TERRITORY1,
-                                    is.na(TERRITORY1) ~ country_id)) |> 
-      dplyr::select(grid_df_id, TERRITORY1, country_id) |> 
-      left_join(grid_df |>  dplyr::select(-area_km, -is_land), by = "grid_df_id", copy = TRUE)
-    
-    save(grid_df_eez_land, file = here::here("data", "geoparsing", "land_eez_grid_country.RData"))
-    load(here::here("data", "geoparsing", "land_eez_grid_country.RData"))
+    # grid_sf <- tbl(dbcon, "grid_df_res2.5") |> collect() |> 
+    #   sf::st_as_sf(coords = c("LON", "LAT"), crs = 4326)
+    # 
+    # # - Join with land data
+    # sf::sf_use_s2(FALSE)
+    # grid_sf_land <- sf::st_join(grid_sf, world_shp) |> 
+    #   dplyr::select(grid_df_id, is_land, NA2_DESCRI, iso_NA2)
+    # 
+    # # - Join with eez data
+    # grid_sf_eez <- sf::st_join(grid_sf, eez_shp) |> 
+    #   dplyr::select(grid_df_id, is_land, MRGID, TERRITORY1, iso_NA2, Country, iso_code) |> 
+    #   distinct(grid_df_id, .keep_all = TRUE)
+    # 
+    # # - Land + eez data
+    # grid_sf_eez_land <- sf::st_join(grid_sf_land, grid_sf_eez |> dplyr::select(-grid_df_id))
+    # grid_df_eez_land <- sf::st_drop_geometry(grid_sf_eez_land) |> 
+    #   mutate(country_id = case_when(is.na(Country) & !is.na(NA2_DESCRI) ~ NA2_DESCRI,
+    #                                 is.na(NA2_DESCRI) & !is.na(Country) ~ Country,
+    #                                 is.na(NA2_DESCRI) & is.na(Country)  ~ "High-seas",
+    #                                 !is.na(NA2_DESCRI) & !is.na(Country) & Country != NA2_DESCRI ~ "Verif",
+    #                                 !is.na(NA2_DESCRI) & !is.na(Country) & Country == NA2_DESCRI ~ Country),
+    #          TERRITORY1 = case_when(!is.na(TERRITORY1) ~ TERRITORY1,
+    #                                 is.na(TERRITORY1) ~ country_id)) |> 
+    #   dplyr::select(grid_df_id, TERRITORY1, country_id) |> 
+    #   left_join(grid_df |>  dplyr::select(-area_km, -is_land), by = "grid_df_id", copy = TRUE)
+    # 
+    # save(grid_df_eez_land, file = here::here("data", "geoparsing", "land_eez_grid_country.RData"))
+    # load(here::here("data", "geoparsing", "land_eez_grid_country.RData"))
     
   ## ---- FORMAT DATA: Mitigation data
     
@@ -266,7 +266,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                           color      = bivariate_color_scale,
                           ylab       = "CO2eq. emissions",
                           xlab       = "# mit. paper",
-                          name       = "main/bivar_map_GHGemi_mitPubs_test5Q_dplyr")
+                          name       = "main/bivar_map_GHGemi_mitPubs")
 
     
       
@@ -385,7 +385,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                           color      = bivariate_color_scale,
                           ylab       = "Exposure",
                           xlab       = "# ada. paper",
-                          name       = "main/bivar_map_exposure_adaPubs_test10Q_dplyr")
+                          name       = "main/bivar_map_exposure_adaPubs")
   
   
     
@@ -402,7 +402,7 @@ figure5 <- cowplot::ggdraw() +
                            x = c(0, 0),
                            y = c(0.97, 0.60)) 
 
-ggplot2::ggsave(plot = figure5, here::here("figures", "main", "maps_bivar_MitiEmi_AdaExpo.pdf"), width = 15, height = 15, device = "pdf")
+ggplot2::ggsave(plot = figure5, here::here("figures", "main", "maps_bivar_MitiEmi_AdaExpo_2.pdf"), width = 15, height = 15, device = "pdf")
 
 
 ### -----
