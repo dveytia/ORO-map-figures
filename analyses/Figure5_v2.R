@@ -267,8 +267,23 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                           ylab       = "CO2eq. emissions",
                           xlab       = "# mit. paper",
                           name       = "main/bivar_map_GHGemi_mitPubs")
-
+  
+  ## ---- Test for correlation between co2 emissions and mitigation publications (by geoparsing)
+  
+    # --- Scale values by dividing by their sd and mean center
+    x <- scale(data_bivar_n_article_CO2em$Count_ORO, center = TRUE, scale = TRUE)
+    y <- scale(data_bivar_n_article_CO2em$cumulative_co2_including_luc, center = TRUE, scale = TRUE)
     
+    # --- Test for normality
+    shapiro.test(x) # what is the p value? if >0.05, normal
+    shapiro.test(y) # same -- report p value
+    
+    # --- Test for linear relationship
+    plot(y, x)
+    
+    # --- calculate Spearman's correlation coefficienct (not Pearson's coefficient due to the non-normality of the data
+    mit_cor <- cor.test(x, y, method = "spearman")
+    mit_cor
       
 ### -----
     
@@ -386,6 +401,23 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                           ylab       = "Exposure",
                           xlab       = "# ada. paper",
                           name       = "main/bivar_map_exposure_adaPubs")
+  
+  ## ---- Test for correlation between CC exposure and adaptation publications (by geoparsing)
+  
+    # --- Scale values by dividing by their sd and mean center
+    x2 <- scale(data_bivar_n_article_vulne$Count_ORO, center = TRUE, scale = TRUE)
+    y2 <- scale(data_bivar_n_article_vulne$vulnerability, center = TRUE, scale = TRUE)
+    
+    # --- Test for normality
+    shapiro.test(x2) # what is the p value? if >0.05, normal
+    shapiro.test(y2) # same -- report p value
+    
+    # --- Test for linear relationship
+    plot(y2, x2)
+    
+    # --- calculate Spearman's correlation coefficienct (not Pearson's coefficient due to the non-normality of the data
+    ada_cor <- cor.test(x2, y2, method = "spearman")
+    ada_cor
   
   
     
