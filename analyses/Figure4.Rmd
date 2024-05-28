@@ -1529,10 +1529,11 @@ coastEcoTypeDfYearSums <- coastEcoTypeDf %>%
   group_by(ecosystem_type, oro_type, year) %>%
   summarise(n = n())
 
-# normalize by ecosystem type? Or maybe just cut by percentiles?
+# Bin counts to smooth out really high values
 coastEcoTypeDfYearSums <- coastEcoTypeDfYearSums %>%
   mutate(n_bin = cut(n, unique(quantile(coastEcoTypeDfYearSums$n, probs = seq(0, 1, by=0.1))),
                      include.lowest = TRUE))
+
 
 ```
 
@@ -1545,6 +1546,7 @@ ecosystemTypeYear_ggp <- ggplot(coastEcoTypeDfYearSums, aes(x=year, y=ecosystem_
   facet_grid(oro_type ~., labeller = label_wrap_gen(width = 15))+
   scale_fill_brewer()+
   geom_tile()+
+  scale_x_date(limits = as.Date(c("1980-01-01","2022-12-31")))+
   labs(y = "Ecosystem type", x="Year", fill = "N\nArticles")+
   theme_bw()
 
