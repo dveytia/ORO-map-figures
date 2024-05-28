@@ -767,7 +767,7 @@ predMarSys <- tbl(dbcon, "pred_marine_system") %>%
   filter(0.5 <= mean) %>%
   select(-c(mean))
 
-# NB here I change the filtering so salt marsh is included if 0.4 <= upper pred 
+# NB here I change the filtering so salt marsh is included using upper pred 
 predEcoType <- tbl(dbcon, "pred_ecosystem_type") %>%
   select(analysis_id,
          `ecosystem_type.Salt_marsh - upper_pred`, ## ** `ecosystem_type.Salt_marsh - mean_prediction`
@@ -1430,6 +1430,130 @@ Marine renewable energy:
 - small proportion of articles associated with coastal ecosystems, but of these most are associated with salt marshes. This could just be an artefact of similar terms bewteen mitigation objectives?
 
 
+# Supplemental Hovmoller plot of ecosystem type over time
+
+
+```{r read in data for the plot}
+
+## Access relevant tables
+predRel <- tbl(dbcon, "pred_relevance") %>%
+  filter(0.5 <= relevance_mean) %>%
+  select(analysis_id)
+
+uniquerefs <- tbl(dbcon, "uniquerefs") %>%
+  select(analysis_id, year) %>%
+  collect() %>%
+  mutate(year = as.Date(paste0(year,"-01-01"))) %>% 
+  filter(as.Date("1980-01-01") <= year)
+
+predType <- tbl(dbcon, "pred_oro_type_long") %>%
+  filter(0.5 <= mean) %>%
+  select(analysis_id, oro_branch, oro_type) 
+
+
+predMarSys <- tbl(dbcon, "pred_marine_system") %>%
+  select(analysis_id, 
+         `marine_system.land - mean_prediction`,
+         `marine_system.coastal ocean - mean_prediction`,
+         `marine_system.open-ocean - mean_prediction`) %>% 
+  rename(land = `marine_system.land - mean_prediction`,
+         coastal_ocean = `marine_system.coastal ocean - mean_prediction`,
+         open_ocean = `marine_system.open-ocean - mean_prediction`) %>%
+  collect()%>%
+  reshape2::melt(id.vars = c("analysis_id"), variable.name = "marine_system", value.name = 'mean') %>%
+  filter(0.5 <= mean) %>%
+  select(-c(mean))
+
+# NB here I change the filtering so salt marsh is included using upper pred 
+predEcoType <- tbl(dbcon, "pred_ecosystem_type") %>%
+  select(analysis_id,
+         `ecosystem_type.Salt_marsh - upper_pred`, ## ** `ecosystem_type.Salt_marsh - mean_prediction`
+         `ecosystem_type.Mangrove - mean_prediction`,
+         `ecosystem_type.Coral_reef - mean_prediction`,
+         `ecosystem_type.Seagrass - mean_prediction`) %>%
+  rename(Salt_marsh = `ecosystem_type.Salt_marsh - upper_pred`,
+         Mangrove = `ecosystem_type.Mangrove - mean_prediction`,
+         Coral_reef = `ecosystem_type.Coral_reef - mean_prediction`,
+         Seagrass = `ecosystem_type.Seagrass - mean_prediction`) %>%
+  collect() %>%
+  reshape2::melt(id.vars = c("analysis_id"), variable.name = "ecosystem_type", value.name = 'prediction') %>%
+  #filter(0.5 <= mean) %>%
+  mutate(relevant = ifelse((ecosystem_type == "Salt_marsh" & 0.5 <= prediction) |
+                             (ecosystem_type != "Salt_marsh" & 0.5 <= prediction), 1,0)) %>%
+  filter(relevant == 1) %>%
+  select(-c(prediction, relevant))
+
+
+
+## Retrieve aesthetics for relevant factoring variables
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+ecoTypeAES <- factor_aes[which(factor_aes$variable == "ecosystem_type"),]
+ecoTypeAES <- ecoTypeAES[order(ecoTypeAES$order),]
+adaptAES <- factor_aes[which(factor_aes$variable == "adapt_to_threat"),]
+adaptAES <- adaptAES[order(adaptAES$order),]
+```
+
+
+
+```{r Format dataframes and calculate sums by ecosystem type and year}
+## Data joining
+
+# Format into data frame where each row is a publication (unique analysis_id)
+
+# Include only articles that have a prediction for ORO type AND coastal marine system and ecosystem type AND year greater or equal to 1980
+coastEcoTypeDf <- predRel %>%
+  inner_join(uniquerefs, by = "analysis_id", copy=T) %>%
+  inner_join(predType, by = "analysis_id", copy = T) %>%
+  inner_join(predMarSys, by="analysis_id", copy=T) %>%
+  filter(marine_system == "coastal_ocean") %>%
+  inner_join(predEcoType, by="analysis_id", copy=T) %>%
+  collect()
+
+
+## Factoring variables for plotting
+
+# use aesthetics to factor variables
+coastEcoTypeDf <- coastEcoTypeDf %>%
+  mutate(
+    oro_type = factor(oro_type, levels = typeAES$level, labels = typeAES$label),
+    ecosystem_type = factor(ecosystem_type, levels = ecoTypeAES$level, labels = ecoTypeAES$label)
+  )
+coastEcoTypeDf$year <- as.Date(coastEcoTypeDf$year,origin = as.Date("1970-01-01"))
+
+
+# Tabulate counts 
+library(tidyr)
+
+coastEcoTypeDfYearSums <- coastEcoTypeDf %>%
+  group_by(ecosystem_type, oro_type, year) %>%
+  summarise(n = n())
+
+# normalize by ecosystem type? Or maybe just cut by percentiles?
+coastEcoTypeDfYearSums <- coastEcoTypeDfYearSums %>%
+  mutate(n_bin = cut(n, unique(quantile(coastEcoTypeDfYearSums$n, probs = seq(0, 1, by=0.1))),
+                     include.lowest = TRUE))
+
+```
+
+```{r plot number of articles for ecosystem type over time}
+require(forcats)
+coastEcoTypeDfYearSums <- coastEcoTypeDfYearSums %>%
+  mutate(oro_type = fct_recode(oro_type, "Socio-\ninstitutional" = "Socio-institutional"))
+
+ecosystemTypeYear_ggp <- ggplot(coastEcoTypeDfYearSums, aes(x=year, y=ecosystem_type, fill=n_bin))+
+  facet_grid(oro_type ~., labeller = label_wrap_gen(width = 15))+
+  scale_fill_brewer()+
+  geom_tile()+
+  labs(y = "Ecosystem type", x="Year", fill = "N\nArticles")+
+  theme_bw()
+
+ecosystemTypeYear_ggp
+
+ggsave(here::here("figures/supplemental/ecosystemTypeHovmollerPlot.pdf"),
+       plot= ecosystemTypeYear_ggp,
+       width = 6, height = 8, units = 'in')
+```
 
 
 
