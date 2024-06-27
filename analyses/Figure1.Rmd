@@ -756,8 +756,10 @@ NEXT STEP: identify matches between ipcc refs and our database.
 
 See file 'Figure1_ipccTitleMatching_rossi.R' as this was run on the server. Results file is located at the following relative path: 'data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs_matches.RData'
 ```{r clean dataframe on ipcc matches}
-## Filter to only records where there is a match for an analysis_id
+# Load in de-deuplicated ipcc matches
 load(here::here('data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs_matches.RData'))
+ipccRefsTotal <- nrow(ipccMatches)
+# Filter to only records where there is a match for an analysis_id
 ipccMatches <- ipccMatches[!is.na(ipccMatches$ipccRef_id),]
 
 
@@ -817,7 +819,7 @@ oroMatchesSums$order <- factor(oroMatchesSums$order,
                             levels = oroMatchesSums$order[order(oroMatchesSums$order)])
 
 
-## Lastly calculate sums as a proportion of total
+## Lastly calculate sums as a proportion of total corpus of each oro type
 oroMatchesProp <- merge(oroMatchesSums, oroTypeSums, 
                         by = c("oro_type","order","colour","oro_branch"),
                         suffixes = c(".matches",".total"))
@@ -827,7 +829,29 @@ oroMatchesProp <- oroMatchesProp %>%
     prop_lower = n_lower.matches/n_lower.total,
     prop_upper = n_upper.matches/n_upper.total
   )
+
+## What is the percentage of IPCC literature dedicated to a particular ORO?
+
+oroMatchesProp_IPCC <- oroMatchesSums %>%
+  mutate(prop_IPCC = n_mean/ipccRefsTotal,
+         prop_IPCC_ORO = n_mean/sum(oroMatchesSums$n_mean, na.rm=T)) %>%
+  select(oro_type, prop_IPCC,prop_IPCC_ORO, order, colour, oro_branch)
+
+oroMatchesProp_IPCC <- rbind( # add in a row for other topics
+  oroMatchesProp_IPCC %>%
+    mutate(order = as.numeric(order)),
+  data.frame(
+    oro_type = "Non-ORO",
+    prop_IPCC = 1-sum(oroMatchesProp_IPCC$prop_IPCC),
+    prop_IPCC_ORO = 1-sum(oroMatchesProp_IPCC$prop_IPCC_ORO),
+    order = nlevels(oroMatchesProp_IPCC$order)+1,
+    colour = "grey",
+    oro_branch = "Non-ORO"
+  )
+)
+
 ```
+
 
 
 ```{r plot panel B}
@@ -893,6 +917,60 @@ fig1_B_ggp <- ggplot()+
   )
 
 fig1_B_ggp
+
+
+## Doughnut plot of the proportion of IPCC literature devoted to each oro type
+
+prop_IPCC <- oroMatchesProp_IPCC %>%
+  arrange(oro_type) %>%
+  mutate(ymax = cumsum(prop_IPCC)) %>% 
+  mutate(ymax = ifelse(oro_type == "Non-ORO", 1, ymax),
+         ymin = lag(ymax, default = 0))
+
+prop_IPCC_ORO <- oroMatchesProp_IPCC %>%
+  arrange(oro_type) %>%
+  mutate(ymax = cumsum(prop_IPCC_ORO)) %>% 
+  mutate(ymax = ifelse(oro_type == "Non-ORO", 1, ymax),
+         ymin = lag(ymax, default = 0))
+
+
+fig1_B_doughnut_ggp <- 
+  ggplot()+
+  geom_rect(data = prop_IPCC, aes(ymax = ymax, ymin = ymin, xmax = 3, xmin = 2, fill = oro_type))+
+  geom_rect(data = prop_IPCC_ORO, aes(ymax = ymax, ymin = ymin, xmax = 4, xmin = 3, fill = oro_type))+
+  xlim(c(1,4))+
+  coord_polar(theta = "y")+
+  scale_fill_manual(name = "",values = as.vector(oroMatchesProp_IPCC$colour[order(oroMatchesProp_IPCC$order)]),
+                    breaks = as.vector(oroMatchesProp_IPCC$oro_type[oroMatchesProp_IPCC$order]))+
+  # scale_x_discrete(limits = levels(typeMethodDf$order), 
+  #                   labels = levels(typeMethodDf$oro_type))+
+  # ylim(c(0,105))+
+  # guides(fill=guide_legend(ncol=2))+
+  
+  # labs(y="Percent contribution")+
+  theme(
+    panel.background = element_rect(fill = "transparent",colour = NA), # or theme_blank()
+    panel.grid.minor = element_blank(), 
+    panel.grid.major = element_blank(),
+    plot.background = element_rect(fill = "transparent",colour = NA),
+    axis.ticks.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.title.y = element_blank(),
+    strip.background = element_blank(),
+    strip.text = element_blank(),
+    legend.position = "none"
+  )
+
+
+require(cowplot)
+
+fig1_B_ggp_inset <- ggdraw()+
+  draw_plot(fig1_B_ggp)+
+  draw_plot(fig1_B_doughnut_ggp,x=0.63,y=0.65, height=0.35, width = 0.35)
+fig1_B_ggp_inset
 ```
 
 # Assemble Panels and write figure
@@ -904,14 +982,14 @@ fig1_B_ggp
 #           nrow=1, ncol=2, newpage = FALSE, labels = c("a.","b."))
 # dev.off()
 
-fig1_ggp <- plot_grid(fig1_A_ggp+theme(legend.position = "bottom"), 
-                      fig1_B_ggp+theme(legend.position = "bottom", 
+fig1_ggp <- plot_grid(fig1_B_ggp_inset+theme(legend.position = "bottom", 
                                        plot.margin = margin(0.1,0.8,0.1,0.1, unit="cm")),
-          nrow=1, ncol=2, labels = c("a.","b."), align = "v", axis="b")
+                      fig1_A_ggp+theme(legend.position = "bottom"),
+          nrow=1, ncol=2, labels = c("a.","b."), align = "v", axis="b", rel_widths = c(1.3,1))
 
 fig1_ggp
 
-## Save as supplementary file
+## Save file
 ggsave(filename = "oroBranchTimeAndIpccMatches.pdf",
        path = here::here("figures/main"), device = 'pdf',
        plot = fig1_ggp, width = 8, height = 4.5, units = 'in')
