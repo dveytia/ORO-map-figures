@@ -668,7 +668,7 @@ saltMarshDf <- tbl(dbcon, "pred_ecosystem_type") %>%
 
 saltMarshDf <- saltMarshDf %>%
   mutate(text = clean_string(paste(title, abstract, keywords))) %>%
-  select(-c(title, abstract, keywords)) %>%
+  #select(-c(title, abstract, keywords)) %>%
   mutate(match = bool_detect(text, "salt AND marsh*")) 
 
 
@@ -737,6 +737,33 @@ egg::ggarrange(saltMarshPredictions_ggp, saltMarshMarSys_ggp,
 dev.off()
 
 
+# Sample articles with a predicted relevance > 0.8, and words with and without salt marsh
+
+saltmarshScope <- saltMarshDf %>%
+  filter(Prediction_boundary == "mean") %>%
+  #filter(0.5 <= Prediction) %>%
+  #arrange(desc(Prediction)) %>%
+  group_by(match) %>%
+  #slice_head(n = 50) %>%
+  slice_sample(n=50) %>%
+  select(-c(text))
+
+writexl::write_xlsx(saltmarshScope, path = here::here("outputs/saltMarshArticleScoping.xlsx"))
+
+
+saltmarshScope_coded <- readxl::read_xlsx(here::here("outputs/saltMarshArticleScoping_coded.xlsx"))
+
+saltmarshScope_coded <- saltmarshScope_coded %>%
+  mutate(`Manual check` = tolower(`Manual check`))
+
+saltmarsh_scope <- ggplot(data = saltmarshScope_coded, aes(`Manual check`, Prediction))+
+  geom_boxplot()+
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+saltmarsh_scope
 ```
 
 

@@ -66,6 +66,12 @@ modelScores <- readr::read_csv(here::here("data", paste(modelScoresFileName)))
 
 ```
 
+```{r set the threshold level}
+
+thresholdLevel <- 0.7
+
+```
+
 # Panel A: Line plot of # articles for each ORO branch and Ocean & climate research by year
 
 For each year, and for each branch, count the number of lower, mean and upper articles relevant for each branch
@@ -76,19 +82,19 @@ uniquerefs <- tbl(dbcon, "allrefs")
 
 oro_branch_by_year <- pred_oro_branch %>%
   inner_join(predRel %>% select(analysis_id, relevance_mean), by = "analysis_id")%>%
-  filter(0.5 <= relevance_mean) %>%
+  filter(thresholdLevel <= relevance_mean) %>%
   inner_join(uniquerefs %>% select(analysis_id, year), by = "analysis_id") %>%
   group_by(year) %>%
   summarise(
-    Mitigation_mean = sum(0.5 <= `oro_branch.Mitigation - mean_prediction`),
-    Mitigation_lower = sum(0.5 <= `oro_branch.Mitigation - lower_pred`),
-    Mitigation_upper = sum(0.5 <= `oro_branch.Mitigation - upper_pred`),
-    Nature_mean = sum(0.5 <= `oro_branch.Nature - mean_prediction`),
-    Nature_lower = sum(0.5 <= `oro_branch.Nature - lower_pred`),
-    Nature_upper = sum(0.5 <= `oro_branch.Nature - upper_pred`),
-    Societal_mean = sum(0.5 <= `oro_branch.Societal - mean_prediction`),
-    Societal_lower = sum(0.5 <= `oro_branch.Societal - lower_pred`),
-    Societal_upper = sum(0.5 <= `oro_branch.Societal - upper_pred`)
+    Mitigation_mean = sum(thresholdLevel <= `oro_branch.Mitigation - mean_prediction`),
+    Mitigation_lower = sum(thresholdLevel <= `oro_branch.Mitigation - lower_pred`),
+    Mitigation_upper = sum(thresholdLevel <= `oro_branch.Mitigation - upper_pred`),
+    Nature_mean = sum(thresholdLevel <= `oro_branch.Nature - mean_prediction`),
+    Nature_lower = sum(thresholdLevel <= `oro_branch.Nature - lower_pred`),
+    Nature_upper = sum(thresholdLevel <= `oro_branch.Nature - upper_pred`),
+    Societal_mean = sum(thresholdLevel <= `oro_branch.Societal - mean_prediction`),
+    Societal_lower = sum(thresholdLevel <= `oro_branch.Societal - lower_pred`),
+    Societal_upper = sum(thresholdLevel <= `oro_branch.Societal - upper_pred`)
   ) %>% 
   collect()
 
@@ -668,7 +674,7 @@ uniquerefs <- tbl(dbcon, "uniquerefs")
 
 ## Format and collect needed data
 predTypeDf <- predRel %>%
-  filter(0.5 <= relevance_mean) %>%
+  filter(thresholdLevel <= relevance_mean) %>%
   select(analysis_id) %>%
   inner_join(predType, by ="analysis_id") %>%
   collect()
@@ -687,9 +693,9 @@ uniquerefs <- uniquerefs %>% collect()
 oroTypeSums <- predTypeDf %>%
   group_by(oro_type) %>%
   summarise(
-    n_mean = sum(0.5 <= mean),
-    n_lower = sum(0.5 <= lower),
-    n_upper = sum(0.5 <= upper)
+    n_mean = sum(thresholdLevel <= mean),
+    n_lower = sum(thresholdLevel <= lower),
+    n_upper = sum(thresholdLevel <= upper)
   ) 
 
 
@@ -780,9 +786,9 @@ oroMatchesSums <- predTypeDf %>%
   inner_join(ipccMatches, by="analysis_id") %>%
   group_by(oro_type) %>%
   summarise(
-    n_mean = sum(0.5 <= mean),
-    n_lower = sum(0.5 <= lower),
-    n_upper = sum(0.5 <= upper), 
+    n_mean = sum(thresholdLevel <= mean),
+    n_lower = sum(thresholdLevel <= lower),
+    n_upper = sum(thresholdLevel <= upper), 
     .drop = FALSE
   ) 
 
@@ -990,7 +996,7 @@ fig1_ggp <- plot_grid(fig1_B_ggp_inset+theme(legend.position = "bottom",
 fig1_ggp
 
 ## Save file
-ggsave(filename = "oroBranchTimeAndIpccMatches.pdf",
+ggsave(filename = "oroBranchTimeAndIpccMatches_thresholdLevel.pdf",
        path = here::here("figures/main"), device = 'pdf',
        plot = fig1_ggp, width = 8, height = 4.5, units = 'in')
 ```
@@ -1006,7 +1012,7 @@ uniquerefs <- tbl(dbcon, "uniquerefs")
 
 ## Format and collect needed data
 predMitigationDf <- predRel %>%
-  filter(0.5 <= relevance_mean) %>%
+  filter(thresholdLevel <= relevance_mean) %>%
   select(analysis_id) %>%
   inner_join(predType, by ="analysis_id") %>%
   filter(oro_branch == "Mitigation") %>%
@@ -1019,9 +1025,9 @@ mitigation_oro_by_year_sums <- predMitigationDf %>%
   filter(1980 <= year) %>%
   group_by(oro_type, year) %>%
   summarise(
-    mean = sum(0.5 <= mean),
-    lower = sum(0.5 <= lower),
-    upper = sum(0.5 <= upper)
+    mean = sum(thresholdLevel <= mean),
+    lower = sum(thresholdLevel <= lower),
+    upper = sum(thresholdLevel <= upper)
   ) 
 
 
@@ -1098,7 +1104,7 @@ uniquerefs <- tbl(dbcon, "uniquerefs")
 
 ## Format and collect needed data
 predTypeDf <- predRel %>%
-  filter(0.5 <= relevance_mean) %>%
+  filter(thresholdLevel <= relevance_mean) %>%
   select(analysis_id) %>%
   inner_join(predType, by ="analysis_id") %>%
   left_join(uniquerefs %>% select(analysis_id, year), by = "analysis_id") %>%
@@ -1110,9 +1116,9 @@ type_oro_by_year_sums <- predTypeDf %>%
   filter(1980 <= year) %>%
   group_by(oro_type, year) %>%
   summarise(
-    mean = sum(0.5 <= mean),
-    lower = sum(0.5 <= lower),
-    upper = sum(0.5 <= upper)
+    mean = sum(thresholdLevel <= mean),
+    lower = sum(thresholdLevel <= lower),
+    upper = sum(thresholdLevel <= upper)
   ) 
 
 # Add branch columb for facetting
@@ -1190,14 +1196,14 @@ ggsave(here::here("figures/supplemental/allOROsTimeline.pdf"), width=5, height=6
 # Supplementary figure: Timeline of blue carbon tag
 ```{r Sum n articles per mitigation ORO per year}
 predRel <- tbl(dbcon, "pred_relevance") %>%
-  filter(0.5 <= relevance_mean) %>%
+  filter(thresholdLevel <= relevance_mean) %>%
   select(analysis_id)
 predBC <- tbl(dbcon, "pred_blue_carbon")%>%
   rename(mean = `0 - relevance - mean_prediction`, 
          lower = `0 - relevance - lower_pred`,
          upper = `0 - relevance - upper_pred`) %>%
   select(analysis_id, mean, upper, lower) %>%
-  filter(0.5 <= mean) 
+  filter(thresholdLevel <= mean) 
 uniquerefs <- tbl(dbcon, "uniquerefs")
 
 ## Format and collect needed data
@@ -1212,9 +1218,9 @@ BC_by_year_sums <- predBCDf %>%
   filter(1980 <= year) %>%
   group_by(year)%>%
   summarise(
-    mean = sum(0.5 <= mean),
-    lower = sum(0.5 <= lower),
-    upper = sum(0.5 <= upper)
+    mean = sum(thresholdLevel <= mean),
+    lower = sum(thresholdLevel <= lower),
+    upper = sum(thresholdLevel <= upper)
   ) 
 
 
