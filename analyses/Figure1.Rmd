@@ -68,7 +68,7 @@ modelScores <- readr::read_csv(here::here("data", paste(modelScoresFileName)))
 
 ```{r set the threshold level}
 
-thresholdLevel <- 0.7
+thresholdLevel <- 0.5
 
 ```
 
@@ -78,7 +78,7 @@ For each year, and for each branch, count the number of lower, mean and upper ar
 ```{r Sum n articles per oro branch per year}
 predRel <- tbl(dbcon, "pred_relevance") 
 pred_oro_branch <- tbl(dbcon, "pred_oro_branch")
-uniquerefs <- tbl(dbcon, "allrefs")
+uniquerefs <- tbl(dbcon, "uniquerefs")
 
 oro_branch_by_year <- pred_oro_branch %>%
   inner_join(predRel %>% select(analysis_id, relevance_mean), by = "analysis_id")%>%
