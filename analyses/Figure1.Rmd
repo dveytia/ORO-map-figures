@@ -1190,7 +1190,7 @@ oroTypeDf_mat <- crossprod(table(oroTypeDf[,c("analysis_id","oro_type")]))
 ```
 
 
-```{r}
+```{r plot the venn diagram of overlap between branches}
 predRel <- tbl(dbcon, "pred_relevance") %>%
   filter(0.5 <= relevance_mean) %>%
   select(analysis_id)
@@ -1464,6 +1464,379 @@ Sfig_oro_ggp
 
 ggsave(here::here("figures/supplemental/allOROsTimeline.pdf"), width=5, height=6, units="in")
 ```
+
+
+
+
+# Supplementary figure: Sensitivity analysis of relative distribution across ORO types over changing screening relevance threshold
+
+Question: As the relevance threshold changes, does the relative distribution stay the same between the ORO types?
+
+```{r load and format data}
+## Load data to get ORO type and relevance for each article
+predRel <- tbl(dbcon, "pred_relevance") 
+predType <- tbl(dbcon, "pred_oro_type_long") 
+
+thresholdSensitivityDf <- predRel %>%
+  select(analysis_id, relevance_mean) %>%
+  inner_join(predType, by ="analysis_id") %>%
+  collect()
+
+
+
+
+```
+
+```{r To see if the distribution changes over different relevance values Across different threshold windows, calculate the proportion of articles for each ORO}
+
+thresholdBreaks <- seq(0,1, by=0.1)
+
+for(b in 1:(length(thresholdBreaks)-1)){
+  
+  if(b == 1){
+    tempDat <- thresholdSensitivityDf %>%
+      group_by(oro_type) %>%
+      summarise(
+        n = sum(thresholdBreaks[b] <= relevance_mean & relevance_mean <= thresholdBreaks[b+1])
+        ) %>%
+      mutate(threshold = paste0(thresholdBreaks[b], "-", thresholdBreaks[b+1]),
+             threshold_order = b)
+  }else{
+    tempDat <- thresholdSensitivityDf %>%
+      group_by(oro_type) %>%
+      summarise(
+        n = sum(thresholdBreaks[b] < relevance_mean & relevance_mean <= thresholdBreaks[b+1])
+        ) %>%
+      mutate(threshold = paste0(thresholdBreaks[b], "-", thresholdBreaks[b+1]),
+             threshold_order = b)
+  }
+  
+  if(b==1){
+    thresholdSumsDf <- tempDat
+  }else{
+    thresholdSumsDf <- rbind(thresholdSumsDf, tempDat)
+  }
+  if(b==length(thresholdBreaks)-1){
+    rm(tempDat)
+  }
+}
+
+thresholdSumsDf$threshold_f <- factor(thresholdSumsDf$threshold)
+
+# Calculate proportional value
+thresholdTotals <- thresholdSumsDf %>%
+  group_by(threshold_f) %>%
+  summarise(thresholdTotal = sum(n))
+
+thresholdSumsDf <- merge(thresholdSumsDf, thresholdTotals)
+
+thresholdSumsDf <- thresholdSumsDf %>%
+  mutate(proportion = n/thresholdTotal)
+
+
+
+## Format aesthetics for plotting
+# Read in the aethetics for oro_type 
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+# Use to factor oro_type column
+thresholdSumsDf$oro_type <- factor(
+  thresholdSumsDf$oro_type, 
+  levels = typeAES$level, labels = typeAES$label
+)
+
+# Merge sums with plotting order, colour 
+typeAES$oro_type <- typeAES$label
+thresholdSumsDf <- merge(thresholdSumsDf,typeAES[,c("oro_type","order","colour")])
+# thresholdSumsDf$order <- factor(thresholdSumsDf$order,
+#                             levels = thresholdSumsDf$order[order(thresholdSumsDf$order)])
+
+
+
+# Plot
+oroDistOverThresholdWindow_ggp <- ggplot(data=thresholdSumsDf, aes(x=threshold_f, y=proportion))+
+  geom_col(aes(fill=oro_type), position ="stack")+
+  geom_text(aes(x=threshold_f, label = thresholdTotal), y=1.01, vjust = 0.5, hjust=0, check_overlap = TRUE, inherit.aes = FALSE, size=3, angle = 90)+
+  geom_vline(xintercept = 5.5, col="red", linewidth = 1)+
+  scale_fill_manual(values = typeAES$colour, name = "ORO type")+
+  labs(x = "Threshold", y= "Proportion of articles")+
+  ylim(0, 1.1)+
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+oroDistOverThresholdWindow_ggp
+
+
+```
+
+```{r This could also be shown by a violin plot of the different relevance values for the different ORO types but it is more difficult to visualize the differences}
+
+oroRelevanceViolinDf <- thresholdSensitivityDf 
+
+## Format aesthetics for plotting
+# Read in the aethetics for oro_type 
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+# Use to factor oro_type column
+oroRelevanceViolinDf$oro_type <- factor(
+  oroRelevanceViolinDf$oro_type, 
+  levels = typeAES$level, labels = typeAES$label
+)
+
+# Merge sums with plotting order, colour 
+typeAES$oro_type <- typeAES$label
+oroRelevanceViolinDf <- merge(oroRelevanceViolinDf,typeAES[,c("oro_type","order","colour")])
+# oroRelevanceViolinDf$order <- factor(oroRelevanceViolinDf$order,
+#                             levels = oroRelevanceViolinDf$order[order(oroRelevanceViolinDf$order)])
+
+
+
+# Plot
+oroRelevanceViolin_ggp <- ggplot(data=oroRelevanceViolinDf, aes(x=oro_type, y=relevance_mean))+
+  geom_violin(aes(fill=oro_type))+
+  geom_hline(yintercept = 0.5, col="red", linewidth = 1)+
+  scale_fill_manual(values = typeAES$colour, name = "ORO type")+
+  labs(x = "ORO type", y= "Relevance for inclusion (mean)")+
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+oroRelevanceViolin_ggp
+
+```
+
+
+```{r chi-sq test to see if changing the relevance threshold results in difference from 0.5}
+# See: https://iastate.pressbooks.pub/quantitativeplantbreeding/chapter/categorical-data-multivariate/
+
+nullProp <- thresholdSensitivityDf %>%
+      group_by(oro_type) %>%
+      summarise(
+        n = sum(0.5 <= relevance_mean)
+        )
+nullProp$prop <- nullProp$n/sum(nullProp$n)
+
+# Set breaks to loop through
+thresholdBreaks <- seq(0,1, by=0.1)
+
+for(b in 1:(length(thresholdBreaks)-1)){
+  # calculate proportions above the new threshold
+  tempDat <- thresholdSensitivityDf %>%
+    group_by(oro_type) %>%
+    summarise(
+        n = sum(thresholdBreaks[b] <= relevance_mean)
+        ) %>%
+    mutate(threshold = thresholdBreaks[b], breakOrder = b)
+  tempDat$prop <- tempDat$n/sum(tempDat$n)
+  # Test if the population probabilities are different from those found in the null (using relevance of 0.5)
+  test <- chisq.test(x = tempDat$n, p = nullProp$prop)
+  tempDat$chisq_pvalue <- test$p.value
+  # Bind into a data frame
+  if(b==1){
+    thresholdChiSqDf <- tempDat
+  }else{
+    thresholdChiSqDf <- rbind(thresholdChiSqDf, tempDat)
+  }
+  if(b==length(thresholdChiSqDf)-1){
+    rm(tempDat)
+  }
+}
+
+
+
+
+## Format aesthetics for plotting
+# Read in the aethetics for oro_type 
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+# Use to factor oro_type column
+thresholdChiSqDf$oro_type <- factor(
+  thresholdChiSqDf$oro_type, 
+  levels = typeAES$level, labels = typeAES$label
+)
+
+# Merge sums with plotting order, colour 
+typeAES$oro_type <- typeAES$label
+thresholdChiSqDf <- merge(thresholdChiSqDf,typeAES[,c("oro_type","order","colour")])
+
+
+
+# Plot
+oroDistOverThresholdWindow_ggp <- ggplot(data=thresholdSumsDf, aes(x=threshold_f, y=proportion))+
+  geom_col(aes(fill=oro_type), position ="stack")+
+  geom_text(aes(x=threshold_f, label = thresholdTotal), y=1.01, vjust = 0.5, hjust=0, check_overlap = TRUE, inherit.aes = FALSE, size=2, angle = 90)+
+  
+  geom_vline(xintercept = 5.5, col="red", linewidth = 1)+
+  scale_fill_manual(values = typeAES$colour, name = "ORO type")+
+  labs(x = "Threshold", y= "Proportion of articles")+
+  ylim(0, 1.1)+
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+oroDistOverThresholdWindow_ggp +
+  geom_text(data = thresholdChiSqDf %>% filter(chisq_pvalue < 0.05), aes(x=breakOrder-0.5),
+            y=1.1, hjust=0, label = "*", inherit.aes = FALSE)
+
+```
+
+```{r plot figure}
+ggsave(
+  here::here("figures/supplemental/changingRelevanceThresholdSensitivityTest.pdf"),
+  plot = oroDistOverThresholdWindow_ggp +
+  geom_text(data = thresholdChiSqDf %>% filter(chisq_pvalue < 0.05), aes(x=breakOrder-0.5),
+            y=1.1, hjust=0, label = "*", inherit.aes = FALSE),
+  width = 7, height = 5, units = "in"
+)
+
+```
+
+## other less suitable approaches I tried
+
+I looked into anova or permanova but you need multiple samples per threshold, and I only have one
+
+```{r ANOVA test to see if changing the relevance threshold results in difference from 0.5, eval = FALSE}
+
+require(vegan)
+
+nullProp <- thresholdSensitivityDf %>%
+      group_by(oro_type) %>%
+      summarise(
+        n = sum(0.5 <= relevance_mean)
+        )
+nullProp$prop <- nullProp$n/sum(nullProp$n)
+
+# Set breaks to loop through
+thresholdBreaks <- seq(0,1, by=0.1)
+
+for(b in 1:(length(thresholdBreaks)-1)){
+  # calculate proportions above the new threshold
+  tempDat <- thresholdSensitivityDf %>%
+    group_by(oro_type) %>%
+    summarise(
+        n = sum(thresholdBreaks[b] <= relevance_mean)
+        ) %>%
+    mutate(threshold = thresholdBreaks[b], breakOrder = b)
+  tempDat$prop <- tempDat$n/sum(tempDat$n)
+  
+  # Test if the population probabilities are different from those found in the null (using relevance of 0.5)
+  # ANOVA 
+  # make new data frame
+  newDat <- nullProp %>%
+    mutate(threshold = 0.5)%>%
+    rbind(tempDat %>% select(oro_type, n, prop, threshold))
+  
+  test <- aov(prop ~ as.factor(threshold), data = newDat)
+  summary(test)
+  test <- summary(test)
+  tempDat$pvalue <- test[[1]]$`Pr(>F)`[1]
+  
+  # Bind into a data frame
+  if(b==1){
+    thresholdTestDf <- tempDat
+  }else{
+    thresholdTestDf <- rbind(thresholdTestDf, tempDat)
+  }
+  if(b==length(thresholdTestDf)-1){
+    rm(tempDat)
+  }
+}
+
+summary(thresholdTestDf)
+
+
+## Format aesthetics for plotting
+# Read in the aethetics for oro_type 
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+# Use to factor oro_type column
+thresholdTestDf$oro_type <- factor(
+  thresholdTestDf$oro_type, 
+  levels = typeAES$level, labels = typeAES$label
+)
+
+# Merge sums with plotting order, colour 
+typeAES$oro_type <- typeAES$label
+thresholdTestDf <- merge(thresholdTestDf,typeAES[,c("oro_type","order","colour")])
+
+
+
+```
+
+
+```{r PERMANOVA test to see if changing the relevance threshold results in difference from 0.5, eval = FALSE}
+
+require(vegan)
+
+# Set breaks to loop through
+thresholdBreaks <- seq(0,1, by=0.1)
+
+for(b in 1:(length(thresholdBreaks)-1)){
+  # calculate proportions above the new threshold
+  tempDat <- thresholdSensitivityDf %>%
+    group_by(oro_type) %>%
+    summarise(
+        n = sum(thresholdBreaks[b] <= relevance_mean)
+        ) 
+  tempDat$prop <- tempDat$n/sum(tempDat$n)
+  
+  
+  # Bind into a data frame
+  if(b==1){
+    thresholdTestDf <- tempDat$n
+  }else{
+    thresholdTestDf <- rbind(thresholdTestDf, tempDat$n)
+  }
+}
+
+thresholdTestMat <- as.matrix(thresholdTestDf)
+colnames(thresholdTestMat) <- tempDat$oro_type
+threshDist <- vegdist(thresholdTestMat, method='bray')
+
+
+thresholdTestDf <- as.data.frame(thresholdTestDf)
+colnames(thresholdTestDf) <- tempDat$oro_type
+thresholdTestDf$threshold <- thresholdBreaks[1:(length(thresholdBreaks)-1)]
+
+## Calculate distances using bray-curtis (abundance-weighted)
+
+set.seed(123) #reproducible results
+thresh.div<-adonis2(threshDist~as.factor(threshold), data = thresholdTestDf, permutations=9999)
+thresh.div
+
+
+
+
+## Format aesthetics for plotting
+# Read in the aethetics for oro_type 
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+# Use to factor oro_type column
+thresholdTestDf$oro_type <- factor(
+  thresholdTestDf$oro_type, 
+  levels = typeAES$level, labels = typeAES$label
+)
+
+# Merge sums with plotting order, colour 
+typeAES$oro_type <- typeAES$label
+thresholdTestDf <- merge(thresholdTestDf,typeAES[,c("oro_type","order","colour")])
+
+
+```
+
+
+
+
+
+
+
+
+
+
 
 
 
