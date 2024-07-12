@@ -1611,6 +1611,7 @@ oroRelevanceViolin_ggp
 
 ```{r chi-sq test to see if changing the relevance threshold results in difference from 0.5}
 # See: https://iastate.pressbooks.pub/quantitativeplantbreeding/chapter/categorical-data-multivariate/
+# https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8038644/
 
 nullProp <- thresholdSensitivityDf %>%
       group_by(oro_type) %>%
@@ -1678,13 +1679,13 @@ oroDistOverThresholdWindow_ggp <- ggplot(data=thresholdSumsDf, aes(x=threshold_f
     axis.text.x = element_text(angle = 45, hjust = 1)
   )
 
-oroDistOverThresholdWindow_ggp +
-  geom_text(data = thresholdChiSqDf %>% filter(chisq_pvalue < 0.05), aes(x=breakOrder-0.5),
-            y=1.1, hjust=0, label = "*", inherit.aes = FALSE)
+
+## Write results to csv
+write.csv(thresholdChiSqDf, here::here("outputs/changingRelevanceThresholdSensitivityTest.csv"))
 
 ```
 
-```{r plot figure}
+```{r plot figure of senstivity test results}
 ggsave(
   here::here("figures/supplemental/changingRelevanceThresholdSensitivityTest.pdf"),
   plot = oroDistOverThresholdWindow_ggp +
@@ -1693,6 +1694,23 @@ ggsave(
   width = 7, height = 5, units = "in"
 )
 
+```
+
+```{r alternate version of figure but not as informative}
+oroDistOverThreshold_ggp <- ggplot(data=thresholdChiSqDf, aes(x=as.factor(threshold), y=prop))+
+  geom_col(aes(fill=oro_type), position ="stack")+
+  # geom_text(aes(label = ), y=1.01, vjust = 0.5, hjust=0, check_overlap = TRUE, inherit.aes = FALSE, size=3, angle = 90)+
+  geom_vline(xintercept = 5.5, col="red", linewidth = 1)+
+  scale_fill_manual(values = typeAES$colour, name = "ORO type")+
+  labs(x = "Threshold", y= "Proportion of articles")+
+  ylim(0, 1.1)+
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+oroDistOverThreshold_ggp
+oroDistOverThresholdWindow_ggp
 ```
 
 ## other less suitable approaches I tried
