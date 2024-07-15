@@ -35,6 +35,8 @@ library(broom)
 library(R.utils)
 library(RSQLite)
 library(ggplot2)
+
+#addTaskCallback(function(...) {set.seed(123);TRUE})
 ```
 
 
@@ -1482,30 +1484,29 @@ thresholdSensitivityDf <- predRel %>%
   inner_join(predType, by ="analysis_id") %>%
   collect()
 
-
-
-
 ```
 
 ```{r To see if the distribution changes over different relevance values Across different threshold windows, calculate the proportion of articles for each ORO}
 
-thresholdBreaks <- seq(0,1, by=0.1)
+thresholdBreaks <- seq(0.5,1, by=0.1)
 
 for(b in 1:(length(thresholdBreaks)-1)){
   
   if(b == 1){
     tempDat <- thresholdSensitivityDf %>%
+      filter(thresholdBreaks[b] <= relevance_mean & relevance_mean <= thresholdBreaks[b+1]) %>%
       group_by(oro_type) %>%
       summarise(
-        n = sum(thresholdBreaks[b] <= relevance_mean & relevance_mean <= thresholdBreaks[b+1])
+        n = sum(0.5 <= mean)
         ) %>%
       mutate(threshold = paste0(thresholdBreaks[b], "-", thresholdBreaks[b+1]),
              threshold_order = b)
   }else{
     tempDat <- thresholdSensitivityDf %>%
+      filter(thresholdBreaks[b] < relevance_mean & relevance_mean <= thresholdBreaks[b+1]) %>%
       group_by(oro_type) %>%
       summarise(
-        n = sum(thresholdBreaks[b] < relevance_mean & relevance_mean <= thresholdBreaks[b+1])
+        n = sum(0.5 <= mean)
         ) %>%
       mutate(threshold = paste0(thresholdBreaks[b], "-", thresholdBreaks[b+1]),
              threshold_order = b)
@@ -1557,7 +1558,6 @@ thresholdSumsDf <- merge(thresholdSumsDf,typeAES[,c("oro_type","order","colour")
 oroDistOverThresholdWindow_ggp <- ggplot(data=thresholdSumsDf, aes(x=threshold_f, y=proportion))+
   geom_col(aes(fill=oro_type), position ="stack")+
   geom_text(aes(x=threshold_f, label = thresholdTotal), y=1.01, vjust = 0.5, hjust=0, check_overlap = TRUE, inherit.aes = FALSE, size=3, angle = 90)+
-  geom_vline(xintercept = 5.5, col="red", linewidth = 1)+
   scale_fill_manual(values = typeAES$colour, name = "ORO type")+
   labs(x = "Threshold", y= "Proportion of articles")+
   ylim(0, 1.1)+
@@ -1569,71 +1569,49 @@ oroDistOverThresholdWindow_ggp <- ggplot(data=thresholdSumsDf, aes(x=threshold_f
 oroDistOverThresholdWindow_ggp
 
 
-```
 
-```{r This could also be shown by a violin plot of the different relevance values for the different ORO types but it is more difficult to visualize the differences}
-
-oroRelevanceViolinDf <- thresholdSensitivityDf 
-
-## Format aesthetics for plotting
-# Read in the aethetics for oro_type 
-typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
-typeAES <- typeAES[order(typeAES$order),]
-# Use to factor oro_type column
-oroRelevanceViolinDf$oro_type <- factor(
-  oroRelevanceViolinDf$oro_type, 
-  levels = typeAES$level, labels = typeAES$label
+ggsave(
+  here::here("figures/supplemental/distributionOROTypesBinnedRelevanceThresholds.pdf"),
+  plot = oroDistOverThresholdWindow_ggp,
+  width = 7, height = 5, units = "in"
 )
 
-# Merge sums with plotting order, colour 
-typeAES$oro_type <- typeAES$label
-oroRelevanceViolinDf <- merge(oroRelevanceViolinDf,typeAES[,c("oro_type","order","colour")])
-# oroRelevanceViolinDf$order <- factor(oroRelevanceViolinDf$order,
-#                             levels = oroRelevanceViolinDf$order[order(oroRelevanceViolinDf$order)])
-
-
-
-# Plot
-oroRelevanceViolin_ggp <- ggplot(data=oroRelevanceViolinDf, aes(x=oro_type, y=relevance_mean))+
-  geom_violin(aes(fill=oro_type))+
-  geom_hline(yintercept = 0.5, col="red", linewidth = 1)+
-  scale_fill_manual(values = typeAES$colour, name = "ORO type")+
-  labs(x = "ORO type", y= "Relevance for inclusion (mean)")+
-  theme_bw()+
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1)
-  )
-
-oroRelevanceViolin_ggp
-
 ```
+
+
 
 
 ```{r chi-sq test to see if changing the relevance threshold results in difference from 0.5}
 # See: https://iastate.pressbooks.pub/quantitativeplantbreeding/chapter/categorical-data-multivariate/
 # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8038644/
 
+# Calculate the expected proportions to test agains (when threshold is 0.5)
 nullProp <- thresholdSensitivityDf %>%
+  filter(0.5 <= relevance_mean) %>%
       group_by(oro_type) %>%
       summarise(
-        n = sum(0.5 <= relevance_mean)
+        null_n = sum(0.5 <= mean)
         )
-nullProp$prop <- nullProp$n/sum(nullProp$n)
+nullProp$null_prop <- nullProp$null_n/sum(nullProp$null_n)
 
+
+## Loop through the different thresholds
 # Set breaks to loop through
-thresholdBreaks <- seq(0,1, by=0.1)
+thresholdBreaks <- seq(0.5,1, by=0.1)
 
 for(b in 1:(length(thresholdBreaks)-1)){
   # calculate proportions above the new threshold
   tempDat <- thresholdSensitivityDf %>%
+    filter(thresholdBreaks[b] <= relevance_mean) %>%
     group_by(oro_type) %>%
     summarise(
-        n = sum(thresholdBreaks[b] <= relevance_mean)
+        n = sum(0.5 <= mean)
         ) %>%
     mutate(threshold = thresholdBreaks[b], breakOrder = b)
-  tempDat$prop <- tempDat$n/sum(tempDat$n)
+  tempDat$observed_prop <- tempDat$n/sum(tempDat$n)
+  tempDat$total_articles <- sum(tempDat$n)
   # Test if the population probabilities are different from those found in the null (using relevance of 0.5)
-  test <- chisq.test(x = tempDat$n, p = nullProp$prop)
+  test <- chisq.test(x = tempDat$n, p = nullProp$null_prop)
   tempDat$chisq_pvalue <- test$p.value
   # Bind into a data frame
   if(b==1){
@@ -1646,7 +1624,7 @@ for(b in 1:(length(thresholdBreaks)-1)){
   }
 }
 
-
+summary(thresholdChiSqDf)
 
 
 ## Format aesthetics for plotting
@@ -1665,55 +1643,207 @@ thresholdChiSqDf <- merge(thresholdChiSqDf,typeAES[,c("oro_type","order","colour
 
 
 
-# Plot
-oroDistOverThresholdWindow_ggp <- ggplot(data=thresholdSumsDf, aes(x=threshold_f, y=proportion))+
+## Write results to csv
+write.csv(thresholdChiSqDf, here::here("outputs/changingRelevanceThresholdSensitivityTest_chisq.csv"))
+
+```
+
+```{r bar plot changing proportions of oros as a function of changing threshold values}
+oroDistOverThreshold_ggp <- ggplot(data=thresholdChiSqDf, aes(x=as.factor(threshold), y=observed_prop))+
   geom_col(aes(fill=oro_type), position ="stack")+
-  geom_text(aes(x=threshold_f, label = thresholdTotal), y=1.01, vjust = 0.5, hjust=0, check_overlap = TRUE, inherit.aes = FALSE, size=2, angle = 90)+
-  
-  geom_vline(xintercept = 5.5, col="red", linewidth = 1)+
+  geom_text(aes(x=as.factor(threshold), label = total_articles), y=1.01, vjust = 0, check_overlap = TRUE, inherit.aes = FALSE, size=4)+
+  #geom_vline(xintercept = 6, col="red", linewidth = 1)+
+  # if there is a significant difference add an asterisk
+  geom_text(data = thresholdChiSqDf %>% filter(chisq_pvalue <= 0.05 & 0 < chisq_pvalue), aes(x=breakOrder),
+            y=1.05, hjust=0, label = "*", inherit.aes = FALSE, col="red")+
   scale_fill_manual(values = typeAES$colour, name = "ORO type")+
   labs(x = "Threshold", y= "Proportion of articles")+
-  ylim(0, 1.1)+
+  ylim(0, 1.02)+
   theme_bw()+
   theme(
     axis.text.x = element_text(angle = 45, hjust = 1)
   )
+oroDistOverThreshold_ggp
 
-
-## Write results to csv
-write.csv(thresholdChiSqDf, here::here("outputs/changingRelevanceThresholdSensitivityTest.csv"))
-
-```
-
-```{r plot figure of senstivity test results}
 ggsave(
   here::here("figures/supplemental/changingRelevanceThresholdSensitivityTest.pdf"),
-  plot = oroDistOverThresholdWindow_ggp +
-  geom_text(data = thresholdChiSqDf %>% filter(chisq_pvalue < 0.05), aes(x=breakOrder-0.5),
-            y=1.1, hjust=0, label = "*", inherit.aes = FALSE),
+  plot = oroDistOverThreshold_ggp,
   width = 7, height = 5, units = "in"
 )
-
-```
-
-```{r alternate version of figure but not as informative}
-oroDistOverThreshold_ggp <- ggplot(data=thresholdChiSqDf, aes(x=as.factor(threshold), y=prop))+
-  geom_col(aes(fill=oro_type), position ="stack")+
-  # geom_text(aes(label = ), y=1.01, vjust = 0.5, hjust=0, check_overlap = TRUE, inherit.aes = FALSE, size=3, angle = 90)+
-  geom_vline(xintercept = 5.5, col="red", linewidth = 1)+
-  scale_fill_manual(values = typeAES$colour, name = "ORO type")+
-  labs(x = "Threshold", y= "Proportion of articles")+
-  ylim(0, 1.1)+
-  theme_bw()+
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1)
-  )
-
-oroDistOverThreshold_ggp
-oroDistOverThresholdWindow_ggp
 ```
 
 ## other less suitable approaches I tried
+
+Permuation test I dont think I coded correctly -- shuffling would work if I was testing agains completely random null, but not with expected proportions.
+```{r PERMUTATION of chi-sq test to see if changing the relevance threshold results in difference from 0.5}
+# See: https://iastate.pressbooks.pub/quantitativeplantbreeding/chapter/categorical-data-multivariate/
+# https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8038644/
+
+
+## Define functions and parameters for permutations
+
+nperms <- 5000 # number of permutations to run
+
+# # Function to generate a permutation sample and compute its chi-squared statistic
+# perm_stat <- function(observed_prop, expected_prop, size) {
+#   perm_sample <- rep(0, length(observed_prop))
+#   for(o in 1:length(observed_prop)){
+#     perm_sample[o] <- rbinom(1, size, observed_prop[o])
+#   }
+#   
+#   observed <- observed_prop*size
+#   #expected <- expected_prop*sum(perm_sample)
+#   expected <- expected_prop*size
+#   perm_sample <- sample(observed, size = length(observed), replace = FALSE)
+#   chi_sq_perm <- sum((perm_sample - expected)^2 / expected)
+#   return(chi_sq_perm)
+# }
+#   
+# 
+# # Function to perform permutation test for a given number of permutations
+# perm_test_chisq <- function(observed_prop, expected_prop, size, nperms = 500) {
+#   # Calculate the expected frequencies
+#   observed <- observed_prop*size
+#   expected <- expected_prop*size
+#   # Perform the chi-squared test on the observed data
+#   chi_sq_obs <- sum((observed - expected)^2 / expected)
+#   # Generate permutation samples and calculate chi-squared statistics
+#   perm_stats <- replicate(nperms, perm_stat(observed_prop, expected_prop, size))
+#   # Calculate the p-value as the proportion of permuted chi-squared stats
+#   # that are less than or equal to the observed chi-squared stat
+#   p_value_right <- sum(perm_stats <= chi_sq_obs)/nperms
+#   p_value_left <- sum(chi_sq_obs <= perm_stats)/nperms
+#   
+#   # Return two-sided permuted p value using the criteria in
+#   # https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.permutation_test.html
+#   return(min(c(p_value_right, p_value_left))*2)
+# }
+
+
+# Calculate the expected proportions to test against (when threshold is 0.5)
+nullProp <- thresholdSensitivityDf %>%
+  filter(0.5 <= relevance_mean) %>%
+      group_by(oro_type) %>%
+      summarise(
+        null_n = sum(0.5 <= mean)
+        )
+nullProp$null_prop <- nullProp$null_n/sum(nullProp$null_n)
+
+
+# Use this to simulate a null distribution of the chisq of expected proportions
+perm_stat <- function(expected_prop, size) {
+  perm_sample <- rep(0, length(expected_prop))
+  for(o in 1:length(expected_prop)){
+    perm_sample[o] <- rbinom(1, size, expected_prop[o])
+  }
+  expected <- expected_prop*sum(perm_sample)
+  chi_sq_perm <- sum((perm_sample - expected)^2 / expected)
+  return(chi_sq_perm)
+}
+perm_stats <- replicate(nperms, perm_stat(nullProp$null_prop, sum(nullProp$null_n)))
+hist(perm_stats)
+
+
+
+## Loop through the different thresholds
+# Set breaks to loop through
+thresholdBreaks <- seq(0.5,1, by=0.1)
+#thresholdBreaks <- thresholdBreaks[thresholdBreaks != 0.5]
+
+for(b in 1:(length(thresholdBreaks)-1)){
+  # calculate counts above the new threshold
+  tempDat <- thresholdSensitivityDf %>%
+    filter(thresholdBreaks[b] <= relevance_mean) %>%
+    group_by(oro_type) %>%
+    summarise(
+        n = sum(0.5 <= mean)
+        ) %>%
+    mutate(threshold = thresholdBreaks[b], breakOrder = b) %>%
+    left_join(nullProp, by = "oro_type")
+  tempDat$observed_prop <- tempDat$n/sum(tempDat$n)
+  tempDat$total_articles <- sum(tempDat$n)
+  
+  # Test if the counts are different from those found in the null (using relevance of 0.5)
+  # observed_prop = tempDat$observed_prop
+  # expected_prop = tempDat$null_prop
+  # size = sum(tempDat$n)
+  # tempDat$chisq_pvalue <- perm_test_chisq(observed_prop, expected_prop, size, nperms)
+  observed <- tempDat$n
+  expected <- nullProp$null_prop*sum(tempDat$n)
+  chi_sq_obs <- sum((observed - expected)^2 / expected)
+  tempDat$chi_sq_obs <- chi_sq_obs
+  
+  # Calculate the p-value as the proportion of permuted chi-squared stats
+  # that are less than or equal to the observed chi-squared stat
+  p_value_right <- sum(perm_stats <= chi_sq_obs)/nperms
+  p_value_left <- sum(chi_sq_obs <= perm_stats)/nperms
+  #tempDat$chisq_pvalue <- min(c(p_value_right, p_value_left))*2
+  tempDat$chisq_pvalue <- p_value_left
+
+  
+  # Bind into a data frame
+  if(b==1){
+    thresholdChiSqDf <- tempDat
+  }else{
+    thresholdChiSqDf <- rbind(thresholdChiSqDf, tempDat)
+  }
+  if(b==length(thresholdChiSqDf)-1){
+    rm(tempDat)
+  }
+}
+
+summary(thresholdChiSqDf)
+
+
+## Format aesthetics for plotting
+# Read in the aethetics for oro_type 
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+# Use to factor oro_type column
+thresholdChiSqDf$oro_type <- factor(
+  thresholdChiSqDf$oro_type, 
+  levels = typeAES$level, labels = typeAES$label
+)
+
+# Merge sums with plotting order, colour 
+typeAES$oro_type <- typeAES$label
+thresholdChiSqDf <- merge(thresholdChiSqDf,typeAES[,c("oro_type","order","colour")])
+
+
+
+
+
+## Write results to csv
+write.csv(thresholdChiSqDf, here::here("outputs/changingRelevanceThresholdSensitivityTest_permutation.csv"))
+
+```
+
+
+
+```{r bar plot changing proportions of oros as a function of changing threshold values}
+oroDistOverThresholdPerm_ggp <- ggplot(data=thresholdChiSqDf, aes(x=as.factor(threshold), y=observed_prop))+
+  geom_col(aes(fill=oro_type), position ="stack")+
+  geom_text(aes(x=as.factor(threshold), label = total_articles), y=1.01, vjust = 0, check_overlap = TRUE, inherit.aes = FALSE, size=4)+
+  #geom_vline(xintercept = 6, col="red", linewidth = 1)+
+  # if there is a significant difference add an asterisk
+  geom_text(data = thresholdChiSqDf %>% filter(chisq_pvalue <= 0.05), aes(x=breakOrder),
+            y=1.04, hjust=0.5, label = "*", inherit.aes = FALSE, col="red")+
+  scale_fill_manual(values = typeAES$colour, name = "ORO type")+
+  labs(x = "Threshold", y= "Proportion of articles")+
+  ylim(0, 1.02)+
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+oroDistOverThresholdPerm_ggp
+
+ggsave(
+  here::here("figures/supplemental/changingRelevanceThresholdSensitivityTest_permutation.pdf"),
+  plot = oroDistOverThresholdPerm_ggp,
+  width = 7, height = 5, units = "in"
+)
+```
+
 
 I looked into anova or permanova but you need multiple samples per threshold, and I only have one
 
