@@ -35,6 +35,8 @@ library(broom)
 library(R.utils)
 library(RSQLite)
 library(ggplot2)
+
+#addTaskCallback(function(...) {set.seed(123);TRUE})
 ```
 
 
@@ -66,7 +68,7 @@ modelScores <- readr::read_csv(here::here("data", paste(modelScoresFileName)))
 
 ```
 
-```{r set the threshold level}
+```{r set the threshold level where an article is deemed relevant}
 
 thresholdLevel <- 0.5
 
@@ -173,6 +175,69 @@ scopus_by_year <- scopus_by_year %>%
 # policyTimeline$year <- as.Date(paste0(policyTimeline$year,"-01-01"))
 # policyTimeline <- merge(policyTimeline, wos_by_year, bu="year") 
 ```
+
+
+```{r PLOT PANEL A}
+
+# Join branch labels with model scores to add F1 statistic to label
+branchLabels <- merge(factor_aes[which(factor_aes$variable == "ORO_branch"),],
+                      modelScores%>% filter(model == "oro_branch") %>% select(`label name`, `F1 - label`),
+                      by.x = "level", by.y = "label name")%>%
+  mutate(branchLabelF1 = paste0(label,", F1 = ", signif(`F1 - label`, 2)))
+
+
+# Plot
+fig1_A_ggp <- ggplot()+
+  
+  # Plot complete years
+  geom_ribbon(data = oro_branch_by_year_sums, 
+              aes(x=year, ymin = log(lower), ymax=log(upper), fill = ORO_branch), alpha = 0.5)+
+  geom_line(data = oro_branch_by_year_sums, aes(x=year, y=log(mean), col=ORO_branch), linewidth = 1,
+            na.rm=T)+
+  geom_line(data = wos_by_year, 
+            aes(x=year, y=log(n_articles), linetype = "WOS"), col="black", linewidth = 1,
+            na.rm=T)+
+  geom_line(data = scopus_by_year, 
+            aes(x=year, y=log(n_articles), linetype = "Scopus"), col="black", linewidth = 1,
+            na.rm=T)+
+  
+  # # Add policy moments
+  # geom_vline(data=policyTimeline, aes(xintercept = year), col="red", linewidth=0.5)+
+  # geom_text(data=policyTimeline, aes(x = year, y=log(n_articles), label = stringr::str_wrap(event_name,14)), 
+  #           col="red", angle = 90,size=2, vjust=1, hjust=1, nudge_x = 100, nudge_y = -0.5)+
+  
+  
+  # Format scales
+  scale_color_manual(values = varAES$colour, 
+                     breaks = factor_aes$label[which(factor_aes$variable == "ORO_branch")],
+                     labels = branchLabels$branchLabelF1,## this line adds F1 statistic to label
+                     name = "ORO branch", guide=guide_legend(order=1, nrow=3), position = "top")+
+  scale_fill_manual(values = factor_aes$colour[which(factor_aes$variable == "ORO_branch")],
+                    breaks = factor_aes$label[which(factor_aes$variable == "ORO_branch")], 
+                    labels = branchLabels$branchLabelF1, # this line adds F1 statistic to label
+                    guide = "none")+
+  scale_linetype_manual(values = c("solid","dotted"), name = "Oceans & climate literature\ndatabase:",
+                        guide=guide_legend(order=2, nrow=2), position = "bottom")+
+  labs(x="Year", y="log(N articles)")+
+  scale_x_date(limits = c(as.Date("1980-01-01"),as.Date("2022-12-31")))+
+  scale_y_continuous(sec.axis = sec_axis(trans = exp, name = "N articles", 
+                                         breaks = c(0,100,1000,10000,30000,80000),
+                                         labels = function(x) formatC(x, big.mark=",", format="d")),
+                     breaks = seq(0,10, by= 2))+ #, limits = c(0,13)
+  
+  theme_classic()+
+  theme(
+    legend.position = "bottom",
+    legend.box = "vertical",
+    legend.text = element_text(size=8),
+    legend.title = element_text(size=10),
+    axis.text = element_text(size=7)
+    )
+
+fig1_A_ggp
+```
+
+## Panel A supplementary analyses and figures
 
 ```{r supplement - model temporal trends}
 library(nlme)
@@ -430,7 +495,7 @@ ggsave(filename = "oroBranchTimeSeriesModelFits.pdf",
 
 ```
 
-```{r Supplement - For mitigation quantify the breaking point in the trend?}
+```{r Supplement - For mitigation quantify the breaking point in the trend}
 
 # Get data frame
 mitigationDf <- by_dataset3 %>%
@@ -603,66 +668,117 @@ ggsave(filename = "allBranchInflectionYear.pdf",
 ```
 
 
+```{r Supplement - temporal evolution of mitigation vs adaptation ratio}
 
-```{r PLOT PANEL A}
+## Create a dataset for the mitigation vs adaptation ratio for each year
+mit_vs_adapt_yr <- by_dataset3 %>%
+  filter(Dataset %in% c("Mitigation","Natural resilience","Societal adaptation")) 
+mit_vs_adapt_yr <- reshape2::dcast(mit_vs_adapt_yr, formula = year ~ Dataset, fill = 0, value.var = "n_articles")
+mit_vs_adapt_yr <- mit_vs_adapt_yr %>%
+  mutate(Adaptation = `Natural resilience` + `Societal adaptation`) %>%
+  dplyr::select(year, Mitigation, Adaptation) 
+mit_vs_adapt_yr <- mit_vs_adapt_yr %>%
+  mutate(total_n = Mitigation + Adaptation) %>%
+  mutate(prop_mit = Mitigation/total_n,
+         prop_adapt = Adaptation/total_n) %>%
+  filter(is.finite(prop_mit) & is.finite(prop_adapt)) %>%
+  #filter(quantile(total_n, probs = 0.1) < total_n) %>%
+  na.omit()
 
-# Join branch labels with model scores to add F1 statistic to label
-branchLabels <- merge(factor_aes[which(factor_aes$variable == "ORO_branch"),],
-                      modelScores%>% filter(model == "oro_branch") %>% select(`label name`, `F1 - label`),
-                      by.x = "level", by.y = "label name")%>%
-  mutate(branchLabelF1 = paste0(label,", F1 = ", signif(`F1 - label`, 2)))
+summary(mit_vs_adapt_yr)
+
+ggplot()+
+  geom_point(data =mit_vs_adapt_yr, aes(year, prop_mit), col = "blue")+
+  geom_point(data =mit_vs_adapt_yr, aes(year, prop_adapt), col = "purple")
+
+# Fit a logistic regression and plot predictions
+fit <- glm(cbind(Adaptation, Mitigation) ~ year, family = binomial, data = mit_vs_adapt_yr)
+summary(fit)
+
+d_new <- data.frame(year = seq(min(mit_vs_adapt_yr$year), max(mit_vs_adapt_yr$year), length.out = 100))
+pred_dat <- predict(fit, d_new, type = 'response', se.fit = TRUE)
+d_new$mean <- pred_dat$fit
+d_new$se <- pred_dat$se.fit
+
+ggplot()+
+  geom_line(data = d_new, aes(year, mean)) + 
+  geom_ribbon(data = d_new, aes(year, ymin = mean-se, ymax = mean+se), alpha = 0.5, fill = "pink")+
+  geom_point(data =mit_vs_adapt_yr, aes(year, prop_adapt), col = "purple")+
+  ylim(c(0,0.25))
 
 
-# Plot
-fig1_A_ggp <- ggplot()+
+# Durbin Watson test to check if we need AR1 correlation -- yes, so model a gamm smooth and test if s(year) is still significant -- it is
+require(glmmTMB)
+require(DHARMa)
+require(multcomp)
+require(Rfast)
+
+testar <- function(mod, dat) { # function to test ar
+  simres <- simulateResiduals(mod,plot=T)
+  res <-  recalculateResiduals(simres, group = dat$year)
+  print(testTemporalAutocorrelation(res, time=unique(dat$year)))
+
+}
+mod.TMB <- glmmTMB(cbind(Adaptation, Mitigation) ~  year, family = "betabinomial", data=mit_vs_adapt_yr)
+testar(mod.TMB, mit_vs_adapt_yr) # So we reject the null hypothesis (p = 0.007) -- autocorrelation is present
+
+fit_corAR1 <- gamm(cbind(Adaptation, Mitigation) ~ s(year),correlation=corAR1(),data=mit_vs_adapt_yr, family = binomial('logit'))
+summary(fit_corAR1$gam) 
+# Approximate significance of smooth terms:
+#          edf Ref.df     F p-value    
+# s(year) 5.22   5.22 125.5  <2e-16 ***
+
+
+
+# Add predictions of gamm to plot
+predGam <- predict(fit_corAR1$gam, data.frame(year = d_new$year), type = "response", se.fit = TRUE)
+d_new$mean_gam <- predGam$fit
+d_new$se_gam <- predGam$se.fit
+
+# Text summaries of model results
+# Odds ratio = number of adaptation/number of mitigation
+interpretationText <- paste("The logistic glm indicates the odds of publishing on an adaptation ORO (vs mitigation) changes by", signif(exp(coefficients(fit)[2]), 2), "per year (p < 2e-16), which amounts to a", (signif(exp(coefficients(fit)[2]), 2)-1)*100,"% annual increase")
+#print(interpretationText)
+
+
+
+mit_vs_adapt_annual_ggp <- ggplot()+
+  # plot glm fit
+  geom_line(data = d_new, aes(year, mean), col = "red") + 
+  geom_ribbon(data = d_new, aes(year, ymin = mean-se, ymax = mean+se), alpha = 0.5, fill = "pink")+
   
-  # Plot complete years
-  geom_ribbon(data = oro_branch_by_year_sums, 
-              aes(x=year, ymin = log(lower), ymax=log(upper), fill = ORO_branch), alpha = 0.5)+
-  geom_line(data = oro_branch_by_year_sums, aes(x=year, y=log(mean), col=ORO_branch), linewidth = 1,
-            na.rm=T)+
-  geom_line(data = wos_by_year, 
-            aes(x=year, y=log(n_articles), linetype = "WOS"), col="black", linewidth = 1,
-            na.rm=T)+
-  geom_line(data = scopus_by_year, 
-            aes(x=year, y=log(n_articles), linetype = "Scopus"), col="black", linewidth = 1,
-            na.rm=T)+
+  # plot gamm fit
+  geom_line(data = d_new, aes(year, mean_gam), col = "blue") + 
+  geom_ribbon(data = d_new, aes(year, ymin = mean_gam-se_gam, ymax = mean_gam+se_gam), alpha = 0.5, fill = "blue")+
+  geom_point(data =mit_vs_adapt_yr, aes(year, prop_adapt), col = "purple")+
   
-  # # Add policy moments
-  # geom_vline(data=policyTimeline, aes(xintercept = year), col="red", linewidth=0.5)+
-  # geom_text(data=policyTimeline, aes(x = year, y=log(n_articles), label = stringr::str_wrap(event_name,14)), 
-  #           col="red", angle = 90,size=2, vjust=1, hjust=1, nudge_x = 100, nudge_y = -0.5)+
+  # Plot glm summary text
+  labs(#caption = paste0(strwrap(interpretationText, width = 0.7 * getOption("width")), collapse="\n"),
+       y = "Proportion of adaptation publications", x = "Year")+
   
+  # label lines
+  geom_text(data = data.frame(x=c(1975, 2000), y=c(0.05, 0.05),labels = c("GLM","GAM")),
+            aes(x,y, label = labels, col = labels))+
+  scale_color_manual(values = c("GLM" = "red", "GAM" = "blue"), guide = "none")+
   
+  # format legend
   # Format scales
-  scale_color_manual(values = varAES$colour, 
-                     breaks = factor_aes$label[which(factor_aes$variable == "ORO_branch")],
-                     labels = branchLabels$branchLabelF1,## this line adds F1 statistic to label
-                     name = "ORO branch", guide=guide_legend(order=1, nrow=3), position = "top")+
-  scale_fill_manual(values = factor_aes$colour[which(factor_aes$variable == "ORO_branch")],
-                    breaks = factor_aes$label[which(factor_aes$variable == "ORO_branch")], 
-                    labels = branchLabels$branchLabelF1, # this line adds F1 statistic to label
-                    guide = "none")+
-  scale_linetype_manual(values = c("solid","dotted"), name = "Oceans & climate literature\ndatabase:",
-                        guide=guide_legend(order=2, nrow=2), position = "bottom")+
-  labs(x="Year", y="log(N articles)")+
-  scale_x_date(limits = c(as.Date("1980-01-01"),as.Date("2022-12-31")))+
-  scale_y_continuous(sec.axis = sec_axis(trans = exp, name = "N articles", 
-                                         breaks = c(0,100,1000,10000,30000,80000),
-                                         labels = function(x) formatC(x, big.mark=",", format="d")),
-                     breaks = seq(0,10, by= 2))+ #, limits = c(0,13)
+  scale_fill_manual()+
   
-  theme_classic()+
+  ylim(c(0,0.25))+
+  theme_bw()+
   theme(
-    legend.position = "bottom",
-    legend.box = "vertical",
-    legend.text = element_text(size=8),
-    legend.title = element_text(size=10),
-    axis.text = element_text(size=7)
-    )
+    legend.position = "bottom"
+  )
 
-fig1_A_ggp
+
+## Save as supplementary file
+ggsave(filename = "mitigation_vs_adaptation_ratio_annual.pdf",
+       path = here::here("figures/supplemental"), device = 'pdf',
+       plot = mit_vs_adapt_annual_ggp, width = 5, height = 4, units = 'in')
+
 ```
+
 
 
 # Panel B: Barplot of N articles for each ORO type, filled by % articles in IPCC report. Perhaps also label at the top of the bar the year of the inflexion point of the exponential relationship
@@ -680,24 +796,44 @@ predTypeDf <- predRel %>%
   collect()
 
 predTypeRefs <- predType %>%
-  left_join(uniquerefs %>% select(analysis_id, year, title, doi), by="analysis_id")%>%
+  left_join(uniquerefs %>% select(analysis_id, year, title, doi, source_title), by="analysis_id")%>%
   collect()
 
 uniquerefs <- uniquerefs %>% collect()
+```
+
+```{r check method to flag if a source is a conference proceeding, eval = FALSE}
+# First check that just a search for the word conference in the source title returns sensible results
+sources <- unique(predTypeRefs$source_title)
+conf_match <- sources[grep("conference", sources, ignore.case=TRUE)]
+conf_match[1:50] # check that this makes sense -- yes
+
 ```
 
 
 ```{r Sum number of relevant articles for each oro type and boundary}
 #factor_aes <- readxl::read_excel(here::here("R/factor_aesthetics.xlsx"))
 
-oroTypeSums <- predTypeDf %>%
+
+oroTypeSums <- predTypeDf %>% 
+  left_join(uniquerefs %>% select(analysis_id, year, title, doi, source_title), by="analysis_id")%>% 
+  mutate(conference_proceeding = grepl("conference", source_title, ignore.case=TRUE)) %>%
+  group_by(oro_type, conference_proceeding) %>%
+  summarise(
+    n_mean = sum(thresholdLevel <= mean)
+    # n_lower = sum(thresholdLevel <= lower),
+    # n_upper = sum(thresholdLevel <= upper)
+  ) 
+oroTypeSums
+
+oroTypeSums_confidence <- predTypeDf %>% 
   group_by(oro_type) %>%
   summarise(
     n_mean = sum(thresholdLevel <= mean),
     n_lower = sum(thresholdLevel <= lower),
     n_upper = sum(thresholdLevel <= upper)
   ) 
-
+oroTypeSums_confidence
 
 ## Format data for plotting by factoring using common aesthetics
 
@@ -707,6 +843,10 @@ typeAES <- typeAES[order(typeAES$order),]
 # Use to factor oro_type column
 oroTypeSums$oro_type <- factor(
   oroTypeSums$oro_type, 
+  levels = typeAES$level, labels = typeAES$label
+)
+oroTypeSums_confidence$oro_type <- factor(
+  oroTypeSums_confidence$oro_type, 
   levels = typeAES$level, labels = typeAES$label
 )
 
@@ -727,6 +867,12 @@ oroTypeSums$oro_branch <- factor(oroTypeSums$oro_branch,
                                  levels = branchAES$label[branchAES$order])
 oroTypeSums$order <- factor(oroTypeSums$order,
                             levels = oroTypeSums$order[order(oroTypeSums$order)])
+
+oroTypeSums_confidence <- merge(oroTypeSums_confidence,typeAES[,c("oro_type","order","colour","oro_branch")])
+oroTypeSums_confidence$oro_branch <- factor(oroTypeSums_confidence$oro_branch,
+                                 levels = branchAES$label[branchAES$order])
+oroTypeSums_confidence$order <- factor(oroTypeSums_confidence$order,
+                            levels = oroTypeSums_confidence$order[order(oroTypeSums_confidence$order)])
 
 ```
 
@@ -885,26 +1031,30 @@ typeLabels <- typeLabels[order(typeLabels$order),]
 
 fig1_B_ggp <- ggplot()+
   # plot bars number of model predictions
-  geom_col(data=oroTypeSums, aes(x=order, y=n_mean, fill = oro_type))+
-  geom_errorbar(data=oroTypeSums, aes(x=order, ymin = n_lower, ymax = n_upper), width=.2)+
-  geom_text(data=oroTypeSums, aes(x=order, y=n_upper,label = n_mean), nudge_y = 1000, size=3, col="red")+ #nudge_x=0.2,
+  geom_col(data=oroTypeSums, aes(x=order, y=n_mean, fill = oro_type, alpha = conference_proceeding), position="stack")+
+  geom_errorbar(data=oroTypeSums_confidence, aes(x=order, ymin = n_lower, ymax = n_upper), width=.2)+
+  geom_text(data=oroTypeSums_confidence, aes(x=order, y=n_upper,label = n_mean), nudge_y = 1500, size=3, col="black")+ #nudge_x=0.2,
   
-  # Overlay number of ipcc matches
-  # geom_col(data = oroMatchesSums, aes(x=order, y=n_mean),
-  #          fill = "darkgrey", alpha = 0.2)+
-  #geom_errorbar(data = oroMatchesSums, aes(x=order, ymin = n_lower, ymax = n_upper), width=.2)+
-  geom_text(data = oroMatchesProp,
-            aes(x=order, y=n_upper.total, label = paste(signif(prop_mean*100, 2),"%")), 
-            size=3, col="black", nudge_y = 3500)+ 
+  # # Add text for percent found in ipcc citations
+  # geom_text(data = oroMatchesProp,
+  #           aes(x=order, y=n_upper.total, label = paste(signif(prop_mean*100, 2),"%")), 
+  #           size=3, col="black", nudge_y = 3500)+ 
   
+  # Add text to indicate conference proceeding
+  geom_text(data = data.frame(x=1,
+                              y=oroTypeSums$n_mean[
+                                which(oroTypeSums$oro_type == "Marine renewable energy" & 
+                                        oroTypeSums$conference_proceeding == TRUE)]/2,
+                              label = "conference\nproceeding"),
+            aes(x=x,y=y,label=label), size = 2, col="black", inherit.aes = FALSE)+
+  
+ 
   # Format scales
-  # scale_fill_manual(name = "ORO\nbranch", 
-  #                   values = as.vector(branchAES$colour), 
-  #                   guide = guide_legend(nrow=3))+
   scale_fill_manual(name = "ORO\ntype", 
                     values = as.vector(typeAES$colour[order(typeAES$order)]),
                     labels = typeLabels$branchLabelF1, ## this adds F1 to label
                     guide = guide_legend(ncol=2))+
+  scale_alpha_manual(values = c("TRUE" = 0.6, "FALSE"=1), guide = "none")+
   scale_x_discrete(limits = levels(oroTypeSums$order), 
                     labels = levels(oroTypeSums$oro_type))+
   
@@ -932,6 +1082,8 @@ prop_IPCC <- oroMatchesProp_IPCC %>%
   mutate(ymax = cumsum(prop_IPCC)) %>% 
   mutate(ymax = ifelse(oro_type == "Non-ORO", 1, ymax),
          ymin = lag(ymax, default = 0))
+all_ORO_in_IPCC <- 1-prop_IPCC$prop_IPCC[which(prop_IPCC$oro_type == "Non-ORO")]
+all_ORO_in_IPCC <- paste0(signif(all_ORO_in_IPCC, digits = 2)*100,"%", collapse=" ")
 
 prop_IPCC_ORO <- oroMatchesProp_IPCC %>%
   arrange(oro_type) %>%
@@ -939,15 +1091,17 @@ prop_IPCC_ORO <- oroMatchesProp_IPCC %>%
   mutate(ymax = ifelse(oro_type == "Non-ORO", 1, ymax),
          ymin = lag(ymax, default = 0))
 
-
 fig1_B_doughnut_ggp <- 
   ggplot()+
-  geom_rect(data = prop_IPCC, aes(ymax = ymax, ymin = ymin, xmax = 3, xmin = 2, fill = oro_type))+
-  geom_rect(data = prop_IPCC_ORO, aes(ymax = ymax, ymin = ymin, xmax = 4, xmin = 3, fill = oro_type))+
-  xlim(c(1,4))+
+  #geom_rect(data = prop_IPCC, aes(ymax = ymax, ymin = ymin, xmax = 3, xmin = 2, fill = oro_type))+
+  geom_rect(data = prop_IPCC_ORO, aes(ymax = ymax, ymin = ymin, xmax = 4, xmin = 2.5, fill = oro_type))+
+  geom_text(data = data.frame(x=0,y=0,label = all_ORO_in_IPCC),
+            aes(x,y,label=label), size = 4.5)+
+  xlim(c(0,4))+
   coord_polar(theta = "y")+
   scale_fill_manual(name = "",values = as.vector(oroMatchesProp_IPCC$colour[order(oroMatchesProp_IPCC$order)]),
                     breaks = as.vector(oroMatchesProp_IPCC$oro_type[oroMatchesProp_IPCC$order]))+
+  ggtitle("IPCC")+
   # scale_x_discrete(limits = levels(typeMethodDf$order), 
   #                   labels = levels(typeMethodDf$oro_type))+
   # ylim(c(0,105))+
@@ -967,9 +1121,10 @@ fig1_B_doughnut_ggp <-
     axis.title.y = element_blank(),
     strip.background = element_blank(),
     strip.text = element_blank(),
-    legend.position = "none"
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5, vjust = 0)
   )
-
+fig1_B_doughnut_ggp
 
 require(cowplot)
 
@@ -978,6 +1133,105 @@ fig1_B_ggp_inset <- ggdraw()+
   draw_plot(fig1_B_doughnut_ggp,x=0.63,y=0.65, height=0.35, width = 0.35)
 fig1_B_ggp_inset
 ```
+
+
+# Add venn diagram of interactions between ORO branches
+
+```{r calculate interactions between branches}
+
+predBranch <- tbl(dbcon, "pred_oro_branch") 
+
+## Join together to get relevance preditions for all included
+oroBranchInteractions <- predBranch %>% 
+  select(analysis_id, `oro_branch.Mitigation - mean_prediction`, `oro_branch.Nature - mean_prediction`,
+         `oro_branch.Societal - mean_prediction`) %>%
+  rename(Mitigation = `oro_branch.Mitigation - mean_prediction`, 
+         `Natural resilience` = `oro_branch.Nature - mean_prediction`,
+         `Societal adaptation` = `oro_branch.Societal - mean_prediction`) %>%
+  mutate(Mitigation = ifelse(thresholdLevel <= Mitigation, 1,0),
+         `Natural resilience` = ifelse(thresholdLevel <= `Natural resilience`, 1,0),
+         `Societal adaptation` = ifelse(thresholdLevel <= `Societal adaptation`, 1,0)) %>%
+  collect()
+
+oroBranchInteractions %>%
+  filter(Mitigation == 1 ) %>%
+  nrow
+
+
+devtools::install_github("gaospecial/ggVennDiagram")
+require(ggVennDiagram)
+oroBranchInteractions_venn <- list(
+  oroBranchInteractions$analysis_id[oroBranchInteractions$Mitigation == 1],
+  oroBranchInteractions$analysis_id[oroBranchInteractions$`Natural resilience` == 1],
+  oroBranchInteractions$analysis_id[oroBranchInteractions$`Societal adaptation` == 1]
+)
+names(oroBranchInteractions_venn) <- c(colnames(oroBranchInteractions)[2:4])
+ggVennDiagram(oroBranchInteractions_venn)
+
+# # Format aesthetics for plotting
+branchAES <- factor_aes[which(factor_aes$variable == "ORO_branch"),]
+branchAES <- branchAES[order(branchAES$order),]
+# 
+# oroBranchInteractions <- oroBranchInteractions %>%
+#   mutate(oro_type = factor(oro_type, levels = typeAES$level, labels = typeAES$label))
+# 
+# # format as tabular data
+# oroTypeDf_wide <- oroTypeDf %>%
+#   select(analysis_id, oro_type) %>%
+#   mutate(count = 1) %>%
+#   reshape2::dcast(analysis_id ~ oro_type, drop=FALSE, value.var = "count")
+
+upsetCols <- typeAES %>%
+  rename(set = label, fill = colour) %>%
+  select(set, fill)
+
+
+# Also calculate interaction matrix
+oroTypeDf_mat <- crossprod(table(oroTypeDf[,c("analysis_id","oro_type")]))
+
+```
+
+
+```{r plot the venn diagram of overlap between branches}
+predRel <- tbl(dbcon, "pred_relevance") %>%
+  filter(0.5 <= relevance_mean) %>%
+  select(analysis_id)
+predBranch <- tbl(dbcon, "pred_oro_type_long") %>%
+  filter(0.5 <= mean) %>%
+  select(analysis_id, oro_branch)
+
+## Join together to get relevance preditions for all included
+oroBranchDf <- predRel %>%
+  inner_join(predBranch, by ="analysis_id") %>% 
+  select(analysis_id, oro_branch) %>%
+  collect()
+# remove branch duplicates
+oroBranchDf <- oroBranchDf[!duplicated(oroBranchDf),]
+
+oroBranchInteractions_venn <- list(
+  oroBranchDf$analysis_id[oroBranchDf$oro_branch == "Mitigation"],
+  oroBranchDf$analysis_id[oroBranchDf$oro_branch == "Natural resilience"],
+  oroBranchDf$analysis_id[oroBranchDf$oro_branch == "Societal adaptation"]
+)
+names(oroBranchInteractions_venn) <- c("Mitigation","Natural resilience","Societal adaptation")
+
+# Get aesthetics
+
+branchAES <- factor_aes[which(factor_aes$variable == "ORO_branch"),]
+branchAES <- branchAES[order(branchAES$order),]
+
+# Plot
+require(ggvenn)
+interactions_venn_ggp <- ggvenn(oroBranchInteractions_venn,
+       show_percentage = FALSE,
+       fill_color = branchAES$colour, fill_alpha = 1,
+       text_color = "white",
+       stroke_size = 0.5, set_name_size = 4)
+
+
+
+```
+
 
 # Assemble Panels and write figure
 
@@ -993,12 +1247,34 @@ fig1_ggp <- plot_grid(fig1_B_ggp_inset+theme(legend.position = "bottom",
                       fig1_A_ggp+theme(legend.position = "bottom"),
           nrow=1, ncol=2, labels = c("a.","b."), align = "v", axis="b", rel_widths = c(1.3,1))
 
-fig1_ggp
-
-## Save file
-ggsave(filename = "oroBranchTimeAndIpccMatches_thresholdLevel.pdf",
+ggsave(filename = "oroBranchTimeAndIpccMatches.pdf",
        path = here::here("figures/main"), device = 'pdf',
        plot = fig1_ggp, width = 8, height = 4.5, units = 'in')
+
+```
+
+
+```{r version with venn diagram}
+
+require(ggpubr)
+panelclegend <- get_legend(fig1_A_ggp+theme(legend.position = "bottom"))
+panelclegend <- as_ggplot(panelclegend)
+
+
+fig1_ggp <- plot_grid(fig1_B_ggp_inset+theme(legend.position = "bottom", 
+                                       plot.margin = margin(0.1,0.8,0.1,0.1, unit="cm")),
+                      interactions_venn_ggp+theme(plot.margin = margin(0,0,0,0, unit="cm")),
+                      fig1_A_ggp+theme(legend.position = "none"),
+                      panelclegend,
+                      scale = c(1,1.2,1,1),
+          nrow=2, ncol=2, labels = c("a.","b.","c",""), align = "hv", axis="b", rel_widths = c(1.3,1),
+          rel_heights = c(2,1))
+
+
+## Save file
+ggsave(filename = "oroBranchTimeAndIpccMatches_Venn.pdf",
+       path = here::here("figures/main"), device = 'pdf',
+       plot = fig1_ggp, width = 9.5, height = 8.5, units = 'in')
 ```
 
 
@@ -1190,6 +1466,525 @@ Sfig_oro_ggp
 
 ggsave(here::here("figures/supplemental/allOROsTimeline.pdf"), width=5, height=6, units="in")
 ```
+
+
+
+
+# Supplementary figure: Sensitivity analysis of relative distribution across ORO types over changing screening relevance threshold
+
+Question: As the relevance threshold changes, does the relative distribution stay the same between the ORO types?
+
+```{r load and format data}
+## Load data to get ORO type and relevance for each article
+predRel <- tbl(dbcon, "pred_relevance") 
+predType <- tbl(dbcon, "pred_oro_type_long") 
+
+thresholdSensitivityDf <- predRel %>%
+  select(analysis_id, relevance_mean) %>%
+  inner_join(predType, by ="analysis_id") %>%
+  collect()
+
+```
+
+```{r To see if the distribution changes over different relevance values Across different threshold windows, calculate the proportion of articles for each ORO}
+
+thresholdBreaks <- seq(0.5,1, by=0.1)
+
+for(b in 1:(length(thresholdBreaks)-1)){
+  
+  if(b == 1){
+    tempDat <- thresholdSensitivityDf %>%
+      filter(thresholdBreaks[b] <= relevance_mean & relevance_mean <= thresholdBreaks[b+1]) %>%
+      group_by(oro_type) %>%
+      summarise(
+        n = sum(0.5 <= mean)
+        ) %>%
+      mutate(threshold = paste0(thresholdBreaks[b], "-", thresholdBreaks[b+1]),
+             threshold_order = b)
+  }else{
+    tempDat <- thresholdSensitivityDf %>%
+      filter(thresholdBreaks[b] < relevance_mean & relevance_mean <= thresholdBreaks[b+1]) %>%
+      group_by(oro_type) %>%
+      summarise(
+        n = sum(0.5 <= mean)
+        ) %>%
+      mutate(threshold = paste0(thresholdBreaks[b], "-", thresholdBreaks[b+1]),
+             threshold_order = b)
+  }
+  
+  if(b==1){
+    thresholdSumsDf <- tempDat
+  }else{
+    thresholdSumsDf <- rbind(thresholdSumsDf, tempDat)
+  }
+  if(b==length(thresholdBreaks)-1){
+    rm(tempDat)
+  }
+}
+
+thresholdSumsDf$threshold_f <- factor(thresholdSumsDf$threshold)
+
+# Calculate proportional value
+thresholdTotals <- thresholdSumsDf %>%
+  group_by(threshold_f) %>%
+  summarise(thresholdTotal = sum(n))
+
+thresholdSumsDf <- merge(thresholdSumsDf, thresholdTotals)
+
+thresholdSumsDf <- thresholdSumsDf %>%
+  mutate(proportion = n/thresholdTotal)
+
+
+
+## Format aesthetics for plotting
+# Read in the aethetics for oro_type 
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+# Use to factor oro_type column
+thresholdSumsDf$oro_type <- factor(
+  thresholdSumsDf$oro_type, 
+  levels = typeAES$level, labels = typeAES$label
+)
+
+# Merge sums with plotting order, colour 
+typeAES$oro_type <- typeAES$label
+thresholdSumsDf <- merge(thresholdSumsDf,typeAES[,c("oro_type","order","colour")])
+# thresholdSumsDf$order <- factor(thresholdSumsDf$order,
+#                             levels = thresholdSumsDf$order[order(thresholdSumsDf$order)])
+
+
+
+# Plot
+oroDistOverThresholdWindow_ggp <- ggplot(data=thresholdSumsDf, aes(x=threshold_f, y=proportion))+
+  geom_col(aes(fill=oro_type), position ="stack")+
+  geom_text(aes(x=threshold_f, label = thresholdTotal), y=1.01, vjust = 0.5, hjust=0, check_overlap = TRUE, inherit.aes = FALSE, size=3, angle = 90)+
+  scale_fill_manual(values = typeAES$colour, name = "ORO type")+
+  labs(x = "Threshold", y= "Proportion of articles")+
+  ylim(0, 1.1)+
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+oroDistOverThresholdWindow_ggp
+
+
+
+ggsave(
+  here::here("figures/supplemental/distributionOROTypesBinnedRelevanceThresholds.pdf"),
+  plot = oroDistOverThresholdWindow_ggp,
+  width = 7, height = 5, units = "in"
+)
+
+```
+
+
+
+
+```{r chi-sq test to see if changing the relevance threshold results in difference from 0.5}
+# See: https://iastate.pressbooks.pub/quantitativeplantbreeding/chapter/categorical-data-multivariate/
+# https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8038644/
+
+# Calculate the expected proportions to test agains (when threshold is 0.5)
+nullProp <- thresholdSensitivityDf %>%
+  filter(0.5 <= relevance_mean) %>%
+      group_by(oro_type) %>%
+      summarise(
+        null_n = sum(0.5 <= mean)
+        )
+nullProp$null_prop <- nullProp$null_n/sum(nullProp$null_n)
+
+
+## Loop through the different thresholds
+# Set breaks to loop through
+thresholdBreaks <- seq(0.5,1, by=0.1)
+
+for(b in 1:(length(thresholdBreaks)-1)){
+  # calculate proportions above the new threshold
+  tempDat <- thresholdSensitivityDf %>%
+    filter(thresholdBreaks[b] <= relevance_mean) %>%
+    group_by(oro_type) %>%
+    summarise(
+        n = sum(0.5 <= mean)
+        ) %>%
+    mutate(threshold = thresholdBreaks[b], breakOrder = b)
+  tempDat$observed_prop <- tempDat$n/sum(tempDat$n)
+  tempDat$total_articles <- sum(tempDat$n)
+  # Test if the population probabilities are different from those found in the null (using relevance of 0.5)
+  test <- chisq.test(x = tempDat$n, p = nullProp$null_prop)
+  tempDat$chisq_pvalue <- test$p.value
+  # Bind into a data frame
+  if(b==1){
+    thresholdChiSqDf <- tempDat
+  }else{
+    thresholdChiSqDf <- rbind(thresholdChiSqDf, tempDat)
+  }
+  if(b==length(thresholdChiSqDf)-1){
+    rm(tempDat)
+  }
+}
+
+summary(thresholdChiSqDf)
+
+
+## Format aesthetics for plotting
+# Read in the aethetics for oro_type 
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+# Use to factor oro_type column
+thresholdChiSqDf$oro_type <- factor(
+  thresholdChiSqDf$oro_type, 
+  levels = typeAES$level, labels = typeAES$label
+)
+
+# Merge sums with plotting order, colour 
+typeAES$oro_type <- typeAES$label
+thresholdChiSqDf <- merge(thresholdChiSqDf,typeAES[,c("oro_type","order","colour")])
+
+
+
+## Write results to csv
+write.csv(thresholdChiSqDf, here::here("outputs/changingRelevanceThresholdSensitivityTest_chisq.csv"))
+
+```
+
+```{r bar plot changing proportions of oros as a function of changing threshold values}
+oroDistOverThreshold_ggp <- ggplot(data=thresholdChiSqDf, aes(x=as.factor(threshold), y=observed_prop))+
+  geom_col(aes(fill=oro_type), position ="stack")+
+  geom_text(aes(x=as.factor(threshold), label = total_articles), y=1.01, vjust = 0, check_overlap = TRUE, inherit.aes = FALSE, size=4)+
+  #geom_vline(xintercept = 6, col="red", linewidth = 1)+
+  # if there is a significant difference add an asterisk
+  geom_text(data = thresholdChiSqDf %>% filter(chisq_pvalue <= 0.05 & 0 < chisq_pvalue), aes(x=breakOrder),
+            y=1.05, hjust=0, label = "*", inherit.aes = FALSE, col="red")+
+  scale_fill_manual(values = typeAES$colour, name = "ORO type")+
+  labs(x = "Threshold", y= "Proportion of articles")+
+  ylim(0, 1.02)+
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+oroDistOverThreshold_ggp
+
+ggsave(
+  here::here("figures/supplemental/changingRelevanceThresholdSensitivityTest.pdf"),
+  plot = oroDistOverThreshold_ggp,
+  width = 7, height = 5, units = "in"
+)
+```
+
+## other less suitable approaches I tried
+
+Permuation test I dont think I coded correctly -- shuffling would work if I was testing agains completely random null, but not with expected proportions.
+```{r PERMUTATION of chi-sq test to see if changing the relevance threshold results in difference from 0.5}
+# See: https://iastate.pressbooks.pub/quantitativeplantbreeding/chapter/categorical-data-multivariate/
+# https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8038644/
+
+
+## Define functions and parameters for permutations
+
+nperms <- 5000 # number of permutations to run
+
+# # Function to generate a permutation sample and compute its chi-squared statistic
+# perm_stat <- function(observed_prop, expected_prop, size) {
+#   perm_sample <- rep(0, length(observed_prop))
+#   for(o in 1:length(observed_prop)){
+#     perm_sample[o] <- rbinom(1, size, observed_prop[o])
+#   }
+#   
+#   observed <- observed_prop*size
+#   #expected <- expected_prop*sum(perm_sample)
+#   expected <- expected_prop*size
+#   perm_sample <- sample(observed, size = length(observed), replace = FALSE)
+#   chi_sq_perm <- sum((perm_sample - expected)^2 / expected)
+#   return(chi_sq_perm)
+# }
+#   
+# 
+# # Function to perform permutation test for a given number of permutations
+# perm_test_chisq <- function(observed_prop, expected_prop, size, nperms = 500) {
+#   # Calculate the expected frequencies
+#   observed <- observed_prop*size
+#   expected <- expected_prop*size
+#   # Perform the chi-squared test on the observed data
+#   chi_sq_obs <- sum((observed - expected)^2 / expected)
+#   # Generate permutation samples and calculate chi-squared statistics
+#   perm_stats <- replicate(nperms, perm_stat(observed_prop, expected_prop, size))
+#   # Calculate the p-value as the proportion of permuted chi-squared stats
+#   # that are less than or equal to the observed chi-squared stat
+#   p_value_right <- sum(perm_stats <= chi_sq_obs)/nperms
+#   p_value_left <- sum(chi_sq_obs <= perm_stats)/nperms
+#   
+#   # Return two-sided permuted p value using the criteria in
+#   # https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.permutation_test.html
+#   return(min(c(p_value_right, p_value_left))*2)
+# }
+
+
+# Calculate the expected proportions to test against (when threshold is 0.5)
+nullProp <- thresholdSensitivityDf %>%
+  filter(0.5 <= relevance_mean) %>%
+      group_by(oro_type) %>%
+      summarise(
+        null_n = sum(0.5 <= mean)
+        )
+nullProp$null_prop <- nullProp$null_n/sum(nullProp$null_n)
+
+
+# Use this to simulate a null distribution of the chisq of expected proportions
+perm_stat <- function(expected_prop, size) {
+  perm_sample <- rep(0, length(expected_prop))
+  for(o in 1:length(expected_prop)){
+    perm_sample[o] <- rbinom(1, size, expected_prop[o])
+  }
+  expected <- expected_prop*sum(perm_sample)
+  chi_sq_perm <- sum((perm_sample - expected)^2 / expected)
+  return(chi_sq_perm)
+}
+perm_stats <- replicate(nperms, perm_stat(nullProp$null_prop, sum(nullProp$null_n)))
+hist(perm_stats)
+
+
+
+## Loop through the different thresholds
+# Set breaks to loop through
+thresholdBreaks <- seq(0.5,1, by=0.1)
+#thresholdBreaks <- thresholdBreaks[thresholdBreaks != 0.5]
+
+for(b in 1:(length(thresholdBreaks)-1)){
+  # calculate counts above the new threshold
+  tempDat <- thresholdSensitivityDf %>%
+    filter(thresholdBreaks[b] <= relevance_mean) %>%
+    group_by(oro_type) %>%
+    summarise(
+        n = sum(0.5 <= mean)
+        ) %>%
+    mutate(threshold = thresholdBreaks[b], breakOrder = b) %>%
+    left_join(nullProp, by = "oro_type")
+  tempDat$observed_prop <- tempDat$n/sum(tempDat$n)
+  tempDat$total_articles <- sum(tempDat$n)
+  
+  # Test if the counts are different from those found in the null (using relevance of 0.5)
+  # observed_prop = tempDat$observed_prop
+  # expected_prop = tempDat$null_prop
+  # size = sum(tempDat$n)
+  # tempDat$chisq_pvalue <- perm_test_chisq(observed_prop, expected_prop, size, nperms)
+  observed <- tempDat$n
+  expected <- nullProp$null_prop*sum(tempDat$n)
+  chi_sq_obs <- sum((observed - expected)^2 / expected)
+  tempDat$chi_sq_obs <- chi_sq_obs
+  
+  # Calculate the p-value as the proportion of permuted chi-squared stats
+  # that are less than or equal to the observed chi-squared stat
+  p_value_right <- sum(perm_stats <= chi_sq_obs)/nperms
+  p_value_left <- sum(chi_sq_obs <= perm_stats)/nperms
+  #tempDat$chisq_pvalue <- min(c(p_value_right, p_value_left))*2
+  tempDat$chisq_pvalue <- p_value_left
+
+  
+  # Bind into a data frame
+  if(b==1){
+    thresholdChiSqDf <- tempDat
+  }else{
+    thresholdChiSqDf <- rbind(thresholdChiSqDf, tempDat)
+  }
+  if(b==length(thresholdChiSqDf)-1){
+    rm(tempDat)
+  }
+}
+
+summary(thresholdChiSqDf)
+
+
+## Format aesthetics for plotting
+# Read in the aethetics for oro_type 
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+# Use to factor oro_type column
+thresholdChiSqDf$oro_type <- factor(
+  thresholdChiSqDf$oro_type, 
+  levels = typeAES$level, labels = typeAES$label
+)
+
+# Merge sums with plotting order, colour 
+typeAES$oro_type <- typeAES$label
+thresholdChiSqDf <- merge(thresholdChiSqDf,typeAES[,c("oro_type","order","colour")])
+
+
+
+
+
+## Write results to csv
+write.csv(thresholdChiSqDf, here::here("outputs/changingRelevanceThresholdSensitivityTest_permutation.csv"))
+
+```
+
+
+
+```{r bar plot changing proportions of oros as a function of changing threshold values}
+oroDistOverThresholdPerm_ggp <- ggplot(data=thresholdChiSqDf, aes(x=as.factor(threshold), y=observed_prop))+
+  geom_col(aes(fill=oro_type), position ="stack")+
+  geom_text(aes(x=as.factor(threshold), label = total_articles), y=1.01, vjust = 0, check_overlap = TRUE, inherit.aes = FALSE, size=4)+
+  #geom_vline(xintercept = 6, col="red", linewidth = 1)+
+  # if there is a significant difference add an asterisk
+  geom_text(data = thresholdChiSqDf %>% filter(chisq_pvalue <= 0.05), aes(x=breakOrder),
+            y=1.04, hjust=0.5, label = "*", inherit.aes = FALSE, col="red")+
+  scale_fill_manual(values = typeAES$colour, name = "ORO type")+
+  labs(x = "Threshold", y= "Proportion of articles")+
+  ylim(0, 1.02)+
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+oroDistOverThresholdPerm_ggp
+
+ggsave(
+  here::here("figures/supplemental/changingRelevanceThresholdSensitivityTest_permutation.pdf"),
+  plot = oroDistOverThresholdPerm_ggp,
+  width = 7, height = 5, units = "in"
+)
+```
+
+
+I looked into anova or permanova but you need multiple samples per threshold, and I only have one
+
+```{r ANOVA test to see if changing the relevance threshold results in difference from 0.5, eval = FALSE}
+
+require(vegan)
+
+nullProp <- thresholdSensitivityDf %>%
+      group_by(oro_type) %>%
+      summarise(
+        n = sum(0.5 <= relevance_mean)
+        )
+nullProp$prop <- nullProp$n/sum(nullProp$n)
+
+# Set breaks to loop through
+thresholdBreaks <- seq(0,1, by=0.1)
+
+for(b in 1:(length(thresholdBreaks)-1)){
+  # calculate proportions above the new threshold
+  tempDat <- thresholdSensitivityDf %>%
+    group_by(oro_type) %>%
+    summarise(
+        n = sum(thresholdBreaks[b] <= relevance_mean)
+        ) %>%
+    mutate(threshold = thresholdBreaks[b], breakOrder = b)
+  tempDat$prop <- tempDat$n/sum(tempDat$n)
+  
+  # Test if the population probabilities are different from those found in the null (using relevance of 0.5)
+  # ANOVA 
+  # make new data frame
+  newDat <- nullProp %>%
+    mutate(threshold = 0.5)%>%
+    rbind(tempDat %>% select(oro_type, n, prop, threshold))
+  
+  test <- aov(prop ~ as.factor(threshold), data = newDat)
+  summary(test)
+  test <- summary(test)
+  tempDat$pvalue <- test[[1]]$`Pr(>F)`[1]
+  
+  # Bind into a data frame
+  if(b==1){
+    thresholdTestDf <- tempDat
+  }else{
+    thresholdTestDf <- rbind(thresholdTestDf, tempDat)
+  }
+  if(b==length(thresholdTestDf)-1){
+    rm(tempDat)
+  }
+}
+
+summary(thresholdTestDf)
+
+
+## Format aesthetics for plotting
+# Read in the aethetics for oro_type 
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+# Use to factor oro_type column
+thresholdTestDf$oro_type <- factor(
+  thresholdTestDf$oro_type, 
+  levels = typeAES$level, labels = typeAES$label
+)
+
+# Merge sums with plotting order, colour 
+typeAES$oro_type <- typeAES$label
+thresholdTestDf <- merge(thresholdTestDf,typeAES[,c("oro_type","order","colour")])
+
+
+
+```
+
+
+```{r PERMANOVA test to see if changing the relevance threshold results in difference from 0.5, eval = FALSE}
+
+require(vegan)
+
+# Set breaks to loop through
+thresholdBreaks <- seq(0,1, by=0.1)
+
+for(b in 1:(length(thresholdBreaks)-1)){
+  # calculate proportions above the new threshold
+  tempDat <- thresholdSensitivityDf %>%
+    group_by(oro_type) %>%
+    summarise(
+        n = sum(thresholdBreaks[b] <= relevance_mean)
+        ) 
+  tempDat$prop <- tempDat$n/sum(tempDat$n)
+  
+  
+  # Bind into a data frame
+  if(b==1){
+    thresholdTestDf <- tempDat$n
+  }else{
+    thresholdTestDf <- rbind(thresholdTestDf, tempDat$n)
+  }
+}
+
+thresholdTestMat <- as.matrix(thresholdTestDf)
+colnames(thresholdTestMat) <- tempDat$oro_type
+threshDist <- vegdist(thresholdTestMat, method='bray')
+
+
+thresholdTestDf <- as.data.frame(thresholdTestDf)
+colnames(thresholdTestDf) <- tempDat$oro_type
+thresholdTestDf$threshold <- thresholdBreaks[1:(length(thresholdBreaks)-1)]
+
+## Calculate distances using bray-curtis (abundance-weighted)
+
+set.seed(123) #reproducible results
+thresh.div<-adonis2(threshDist~as.factor(threshold), data = thresholdTestDf, permutations=9999)
+thresh.div
+
+
+
+
+## Format aesthetics for plotting
+# Read in the aethetics for oro_type 
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+# Use to factor oro_type column
+thresholdTestDf$oro_type <- factor(
+  thresholdTestDf$oro_type, 
+  levels = typeAES$level, labels = typeAES$label
+)
+
+# Merge sums with plotting order, colour 
+typeAES$oro_type <- typeAES$label
+thresholdTestDf <- merge(thresholdTestDf,typeAES[,c("oro_type","order","colour")])
+
+
+```
+
+
+
+
+
+
+
+
+
+
 
 
 
