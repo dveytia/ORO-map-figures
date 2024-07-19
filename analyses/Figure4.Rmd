@@ -1642,13 +1642,15 @@ predEcoType <- tbl(dbcon, "pred_ecosystem_type") %>%
          Mangrove = `ecosystem_type.Mangrove - mean_prediction`,
          Coral_reef = `ecosystem_type.Coral_reef - mean_prediction`,
          Seagrass = `ecosystem_type.Seagrass - mean_prediction`) %>%
-  collect() %>%
-  reshape2::melt(id.vars = c("analysis_id"), variable.name = "ecosystem_type", value.name = 'prediction') %>%
+  collect() 
+predEcoType <- reshape2::melt(predEcoType, id.vars = c("analysis_id"), variable.name = "ecosystem_type", value.name = 'prediction')
   #filter(0.5 <= mean) %>%
-  mutate(relevant = ifelse((ecosystem_type == "Salt_marsh" & 0.5 <= prediction) |
-                             (ecosystem_type != "Salt_marsh" & 0.5 <= prediction), 1,0)) %>%
+  # mutate(relevant = ifelse((ecosystem_type == "Salt_marsh" & 0.5 <= prediction) |
+  #                            (ecosystem_type != "Salt_marsh" & 0.5 <= prediction), 1,0)) %>%
+predEcoType <- predEcoType %>%
+  mutate(relevant = ifelse(0.5 <= prediction, 1,0)) %>%
   filter(relevant == 1) %>%
-  select(-c(prediction, relevant))
+  select(-c(prediction, relevant)) 
 
 
 

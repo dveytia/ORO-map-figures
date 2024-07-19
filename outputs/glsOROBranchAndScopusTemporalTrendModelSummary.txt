@@ -1,0 +1,39 @@
+Generalized least squares fit by REML
+  Model: log_articles ~ year * Dataset 
+  Data: by_dataset2 %>% filter(1980 <= year) 
+       AIC      BIC    logLik
+  159.8912 190.2608 -69.94561
+
+Correlation Structure: ARMA(1,0)
+ Formula: ~year | Dataset 
+ Parameter estimate(s):
+     Phi1 
+0.7542941 
+
+Coefficients:
+                                     Value Std.Error   t-value p-value
+(Intercept)                     -147.91897  27.80106 -5.320623  0.0000
+year                               0.07853   0.01389  5.652495  0.0000
+DatasetMitigation                -21.68105  39.31664 -0.551447  0.5821
+DatasetNatural resilience       -155.62067  39.36035 -3.953742  0.0001
+DatasetSocietal adaptation      -131.53967  41.38010 -3.178815  0.0018
+year:DatasetMitigation             0.00921   0.01965  0.468666  0.6400
+year:DatasetNatural resilience     0.07470   0.01967  3.797807  0.0002
+year:DatasetSocietal adaptation    0.06258   0.02067  3.027402  0.0029
+
+ Correlation: 
+                                (Intr) year   DtstMt DtstNr DtstSa yr:DtM yr:DNr
+year                            -1.000                                          
+DatasetMitigation               -0.707  0.707                                   
+DatasetNatural resilience       -0.706  0.706  0.499                            
+DatasetSocietal adaptation      -0.672  0.672  0.475  0.475                     
+year:DatasetMitigation           0.707 -0.707 -1.000 -0.499 -0.475              
+year:DatasetNatural resilience   0.706 -0.706 -0.499 -1.000 -0.475  0.499       
+year:DatasetSocietal adaptation  0.672 -0.672 -0.475 -0.475 -1.000  0.475  0.475
+
+Standardized residuals:
+        Min          Q1         Med          Q3         Max 
+-3.07885819 -0.39427591  0.03653979  0.36720226  2.04785733 
+
+Residual standard error: 0.5161494 
+Degrees of freedom: 162 total; 154 residual

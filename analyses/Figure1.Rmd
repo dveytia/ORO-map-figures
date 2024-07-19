@@ -239,7 +239,7 @@ fig1_A_ggp
 
 ## Panel A supplementary analyses and figures
 
-```{r supplement - model temporal trends}
+```{r supplement - model temporal trends of ORO branches}
 library(nlme)
 library(mgcv)
 
@@ -265,7 +265,7 @@ ggplot(by_dataset, aes(year, log_articles, col = Dataset))+geom_line()
 
 
 
-## 2/ Fit individual models for exploration
+## 2/ Fit individual models for each ORO branch
 
 
 ## Fit a gls with AR1 correlation -- seperate model for each dataset
@@ -273,7 +273,9 @@ gls_corAR1_fit <- function(dat){
   gls(log_articles ~ year, data = dat, correlation=corAR1())
 }
 
-modFits <- lapply(split(by_dataset, by_dataset$Dataset), gls_corAR1_fit)
+
+by_dataset_short <- by_dataset %>% filter(1975 <= year & year <= 2022)
+modFits <- lapply(split(by_dataset_short, by_dataset_short$Dataset), gls_corAR1_fit)
 
 summaryTable <- do.call(rbind, lapply(modFits, function(x) summary(x)$tTable['year',]))
 summaryTable <- summaryTable %>% as.data.frame %>% arrange(desc(Value))
@@ -282,6 +284,10 @@ summaryTable
 phis <- lapply(modFits, function(x) coef(x$modelStruct$corStruct, unconstrained = FALSE))
 phis <- do.call(rbind, phis) 
 phis
+
+sink(here::here("outputs/glsOROBranchTemporalTrendModelSummary.txt"))
+print(summaryTable)
+sink()
 
 
 ## Try using auto.arima to estimate the rho and phi for each time series to compare if the autocorrelation differs
@@ -303,7 +309,7 @@ modFitsAutoArima
 
 
 
-## 3/ Test for difference in temporal trends
+## 3/ Test for difference in temporal trends compared to Ocean and Climate Science
 
 ## 3.1/ Granger test
 # Use granger test to see if the Scopus timeseries caues the trends in each of the branch-specific time series
@@ -365,7 +371,7 @@ print(trendCoeff)
 # Finding: So mitigation is not significantly different, but that's because it's the overall trend and does not account for the change in slope -- need a smoothing term
 
 # Write all model output
-sink(here::here("outputs/glsOROBranchTemporalTrendModelSummary.txt"))
+sink(here::here("outputs/glsOROBranchAndScopusTemporalTrendModelSummary.txt"))
 print(all_fit_sum)
 sink()
 
@@ -459,7 +465,7 @@ interannualTrendText <- interannualTrendText %>%
 gamm_ggp <- plot_smooths(model = gammFit$gam, series = year, comparison = Dataset)+
   geom_point(data = by_dataset3 %>% filter(Dataset != "WOS" & 1980 <= year) %>% droplevels(),
              aes(x=year, y = log(n_articles), col = Dataset), size = 0.5, alpha = 0.5)+
-  labs(y = "log(N articles)", x= "Year", caption = "All smoothing terms significant, shown on link scale\n Each line labelled with linear trend (1980 - 2022) quantified using gls model of the form:\nlog(N articles) ~ year * Dataset with correlation = corAR1(Year|Dataset)")+
+  labs(y = "log(N articles)", x= "Year", caption = "All smoothing terms significant, shown on link scale\n Each line labelled with linear trend (1975 - 2022) quantified using gls model of the form:\nlog(N articles) ~ year * Dataset with correlation = corAR1(Year|Dataset)")+
   geom_text(label = "N articles ~ s(Year, by = Dataset) + Dataset\nFamily = poisson(link = 'log')\nCorrelation = corAR1(Year | Dataset)",
             x = 1980, y=12, vjust = 'inward', hjust = 'inward', size = 3)+
   geom_text(data = interannualTrendText %>%
