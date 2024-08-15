@@ -373,6 +373,7 @@ print(trendCoeff)
 # Write all model output
 sink(here::here("outputs/glsOROBranchAndScopusTemporalTrendModelSummary.txt"))
 print(all_fit_sum)
+print(trendCoeff)
 sink()
 
 
