@@ -686,7 +686,124 @@ countries_ls <- read.csv(file = here::here("data", "external", "list_of_countrie
     data_plot_bars <- left_join(npaper_per_country_type_perc, gdp_per_capita, by = "iso_code") |> filter(!is.na(GDP_per_capita)) |> ungroup()
     data_plot_donuts <- left_join(npaper_per_country_type, gdp_per_capita, by = "iso_code") |> filter(!is.na(GDP_per_capita))
   
-  ## ---- PLOT
+  
+    ## ---------- Devi modelling ------------###
+    ## Model the odds ratio of Mitigation vs Adaptation as a function of GDP, stratified by each country type
+    panelD_fit_Df <- data_plot_bars %>%
+      filter(oro_branch != "# ORO pubs") %>%
+      mutate(oro_aim = case_when(
+        oro_branch %in% c("Marine renewable energy", "CO2 removal or storage", "Increase efficiency") ~ "Mitigation",
+        !(oro_branch %in% c("Marine renewable energy", "CO2 removal or storage", "Increase efficiency")) ~ "Adaptation"
+      )) %>% 
+      select(iso_code, oro_aim, group_land, n_mean, GDP_per_capita) %>%
+      mutate(group_land = factor(group_land, levels = c("Land-locked","Coastal","SIDS"))) %>%
+      group_by(iso_code, oro_aim, group_land, GDP_per_capita) %>%
+      summarise(percent = sum(n_mean)) 
+    
+    n_total <- data_plot_bars %>%
+      filter(oro_branch == "# ORO pubs") %>%
+      group_by(iso_code) %>%
+      summarise(total = mean(n_mean))
+    
+    panelD_fit_Df <- reshape2::dcast(panelD_fit_Df, iso_code + group_land + GDP_per_capita ~ oro_aim) 
+    panelD_fit_Df <- panelD_fit_Df %>%
+      mutate(Adaptation = ifelse(is.na(Adaptation), 0 , Adaptation),
+             Mitigation = ifelse(is.na(Mitigation), 0 , Mitigation)) 
+    panelD_fit_Df <- merge(panelD_fit_Df, n_total, all.x = "TRUE")
+    panelD_fit_Df <- panelD_fit_Df %>%
+      mutate(Adaptation_total = Adaptation*total/100,
+             Mitigation_total = Mitigation*total/100)
+    panelD_fit_Df <- na.omit(panelD_fit_Df)
+    summary(panelD_fit_Df)
+    
+    # Remove outliers with low numbers of total publications by country type
+    panelD_fit_Df_sub <- panelD_fit_Df %>%
+      group_by(group_land) %>%
+      filter(quantile(total, 0.25) <= total) 
+    
+    ggplot(panelD_fit_Df_sub, aes(x=GDP_per_capita, y = Adaptation/Mitigation))+
+      geom_point()+
+      facet_wrap(vars(group_land))
+    
+    # Model adaptation as success vs mitigation failure
+    panelD_fit <- gam(cbind(Mitigation_total, Adaptation_total) ~ GDP_per_capita:group_land, 
+                      family = binomial, 
+                      data = panelD_fit_Df_sub)
+    
+    panelD_fit_sum <- summary(panelD_fit) 
+    print(panelD_fit_sum)
+    
+    # Plot model fit
+    x <- seq(min(panelD_fit_Df_sub$GDP_per_capita), max(panelD_fit_Df_sub$GDP_per_capita), length.out = 100)
+    pred_dat <- data.frame(
+      GDP_per_capita = c(x,x,x),
+      group_land = sort(rep(unique(panelD_fit_Df_sub$group_land), 100))
+    )
+    y <- predict(panelD_fit, pred_dat, type = "response")
+    pred_dat$y <- y
+    
+    ggplot(pred_dat, aes(GDP_per_capita,y,col=group_land))+
+      geom_line()+
+      geom_hline(yintercept = 1)
+      geom_point(data = panelD_fit_Df_sub, aes(x=GDP_per_capita, y = Mitigation/Adaptation))
+    
+    # Try a gam
+    require(mgcv)
+    require(tidymv)
+      
+    panelD_fit <- gam(cbind(Adaptation_total, Mitigation_total) ~ s(GDP_per_capita, by=group_land, k=2), 
+                      family = binomial, 
+                      data = panelD_fit_Df_sub)
+    pred_dat <- predict_gam(panelD_fit, type = "link")
+    pred_dat$fitresponse <- exp(pred_dat$fit)
+    pred_dat$lower <- exp(pred_dat$fit-pred_dat$se.fit)
+    pred_dat$upper <- exp(pred_dat$fit+pred_dat$se.fit)
+    
+    # ggplot(pred_dat, aes(x=GDP_per_capita, y=fit))+
+    #   geom_smooth_ci(group_land)+
+    #   theme_bw()
+    
+    ggplot(pred_dat, aes(x=GDP_per_capita, col = group_land, fill = group_land))+
+      geom_line(aes(y=fitresponse))+
+      geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3)+
+      geom_hline(yintercept = 1)+
+      ylim(c(0, 1.5))+
+      labs(y = "Odds ratio of adaptation publication")+
+      theme_bw()
+      
+    
+    # ^These results report the odds ratio (on the link scale) relative to the land group.
+    # To interpret, put back on response scale by taking the exponent
+    exp(panelD_fit_sum$coefficients[,"Estimate"]) # odds ratio on response scale
+    formatC((exp(panelD_fit_sum$coefficients[,"Estimate"])-1)*100, digits = 2) # expressed as a percentage
+    
+    # Interpretation:
+    # For every dollar increase in GDP per capita, the likleihood of favoring mitigation measures changes by:
+    # Land-locked countries: -0.00075%  (p = 0.19, not significant)
+    # Coastal countries: 0.0015 %  (p < 2e-16***). 
+    # Or for every increase in GDP of 666.6667, likelihood of favoring mitigation increases by 1%
+    # SIDS: -0.0027 (p < 2e-16***) - negative because low number of data points, and 2 countries with 
+    # low GDP but relatively higher proportion of mitigation
+    
+    # Can the model be simplified?
+    drop1(panelD_fit) # AIC indicates to keep all terms
+    
+    # Export model results to a text file
+    sink(here::here("outputs/mitigationVsAdaptationByGDPAndCountryTypeBinomialModel.txt"))
+    print("## MODEL SUMMARY")
+    print(panelD_fit_sum)
+    print("## COEFFICIENT TRANSFORMATIONS")
+    print("Odds ratio on the response scale (i.e. exp(B))")
+    exp(panelD_fit_sum$coefficients[,"Estimate"]) # odds ratio on response scale
+    print("Expressed as a percentage (i.e. (exp(B)-1)*100)")
+    formatC((exp(panelD_fit_sum$coefficients[,"Estimate"])-1)*100, digits = 2) # as a percentage
+    print("## Can the model be simplified??")
+    drop1(panelD_fit)
+    sink()
+    
+    
+    
+    ## ---- PLOT
     
     # --- Donuts 
     donuts_sids <- donuts_plots(data = data_plot_donuts, group = "sids") ; cowplot::plot_grid(plotlist = donuts_sids, ncol = 2)
