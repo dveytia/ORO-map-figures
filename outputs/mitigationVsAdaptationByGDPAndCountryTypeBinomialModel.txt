@@ -1,49 +1,48 @@
 [1] "## MODEL SUMMARY"
 
 Call:
-glm(formula = cbind(Adaptation_total, Mitigation_total) ~ GDP_per_capita:group_land + 
-    group_land, family = binomial, data = panelD_fit_Df_sub)
+glm(formula = Adaptation/100 ~ GDP_per_capita:group_land + group_land, 
+    family = binomial, data = panelD_fit_Df_sub, weights = panelD_fit_Df_sub$total)
 
 Deviance Residuals: 
-    Min       1Q   Median       3Q      Max  
--26.303   -2.327   -0.171    2.286   41.335  
+     Min        1Q    Median        3Q       Max  
+-16.5457   -2.0480   -0.2864    2.1289   19.5364  
 
 Coefficients:
                                        Estimate Std. Error z value Pr(>|z|)    
-(Intercept)                          -8.455e-01  2.777e-01  -3.044  0.00233 ** 
-group_landCoastal                    -6.618e-01  2.786e-01  -2.376  0.01752 *  
-group_landSIDS                        1.858e+00  3.208e-01   5.793 6.92e-09 ***
-GDP_per_capita:group_landLand-locked -7.473e-06  5.754e-06  -1.299  0.19403    
-GDP_per_capita:group_landCoastal      1.487e-05  5.190e-07  28.654  < 2e-16 ***
-GDP_per_capita:group_landSIDS        -2.701e-05  3.106e-06  -8.697  < 2e-16 ***
+(Intercept)                          -8.292e-01  3.258e-01  -2.545   0.0109 *  
+group_landCoastal                     1.915e-01  3.274e-01   0.585   0.5585    
+group_landSIDS                        1.667e+00  3.651e-01   4.566 4.97e-06 ***
+GDP_per_capita:group_landLand-locked -7.679e-06  6.508e-06  -1.180   0.2381    
+GDP_per_capita:group_landCoastal     -1.160e-05  8.607e-07 -13.477  < 2e-16 ***
+GDP_per_capita:group_landSIDS        -2.433e-05  3.159e-06  -7.701 1.35e-14 ***
 ---
 Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
 
 (Dispersion parameter for binomial family taken to be 1)
 
-    Null deviance: 7497.6  on 104  degrees of freedom
-Residual deviance: 6460.3  on  99  degrees of freedom
-AIC: 6914.6
+    Null deviance: 3043.4  on 95  degrees of freedom
+Residual deviance: 2710.2  on 90  degrees of freedom
+AIC: 3125.9
 
 Number of Fisher Scoring iterations: 4
 
 [1] "## COEFFICIENT TRANSFORMATIONS"
 [1] "Odds ratio on the response scale (i.e. exp(B))"
                          (Intercept)                    group_landCoastal                       group_landSIDS 
-                           0.4293586                            0.5159476                            6.4140541 
+                           0.4364169                            1.2110724                            5.2960705 
 GDP_per_capita:group_landLand-locked     GDP_per_capita:group_landCoastal        GDP_per_capita:group_landSIDS 
-                           0.9999925                            1.0000149                            0.9999730 
+                           0.9999923                            0.9999884                            0.9999757 
 [1] "Expressed as a percentage (i.e. (exp(B)-1)*100)"
                          (Intercept)                    group_landCoastal                       group_landSIDS 
-                               "-57"                                "-48"                            "5.4e+02" 
+                               "-56"                                " 21"                            "4.3e+02" 
 GDP_per_capita:group_landLand-locked     GDP_per_capita:group_landCoastal        GDP_per_capita:group_landSIDS 
-                          "-0.00075"                             "0.0015"                            "-0.0027" 
+                          "-0.00077"                            "-0.0012"                            "-0.0024" 
 [1] "## Can the model be simplified??"
 Single term deletions
 
 Model:
-cbind(Adaptation_total, Mitigation_total) ~ GDP_per_capita:group_land + 
-    group_land
+Adaptation/100 ~ GDP_per_capita:group_land + group_land
                           Df Deviance    AIC
-<none>                         6460.3 6914.6
-GDP_per_capita:group_land  3   7402.6 7850.9
+<none>                         2710.2 3125.9
+GDP_per_capita:group_land  3   2957.8 3367.6
