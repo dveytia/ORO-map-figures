@@ -783,11 +783,10 @@ countries_ls <- read.csv(file = here::here("data", "external", "list_of_countrie
     
     # Interpretation:
     # For every dollar increase in GDP per capita, the likleihood of favoring adaptation measures changes by:
-    # Land-locked countries: -0.00075%  (p = 0.19, not significant)
-    # Coastal countries: 0.0015 %  (p < 2e-16***). 
-    # Or for every decrease in GDP of 666.6667 USD, likelihood of favoring adaptation increases by 1%
-    # SIDS: -0.0027 (p < 2e-16***) - negative because low number of data points, and 2 countries with 
-    # low GDP but relatively higher proportion of mitigation
+    # Land-locked countries: -0.00077%  (not significant)
+    # Coastal countries: -0.0012 %  (p < 2e-16***). 
+    # Or for every decrease in GDP of 833.3 USD, likelihood of favoring adaptation increases by 1%
+    # SIDS: -0.0024 % (1.35e-14***) 
     
     # Plot model fit
     x <- seq(min(panelD_fit_Df_sub$GDP_per_capita), max(panelD_fit_Df_sub$GDP_per_capita), length.out = 100)
