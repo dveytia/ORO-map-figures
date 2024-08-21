@@ -1144,57 +1144,19 @@ fig1_B_ggp_inset
 
 # Add venn diagram of interactions between ORO branches
 
-```{r calculate interactions between branches}
-
-predBranch <- tbl(dbcon, "pred_oro_branch") 
-
-## Join together to get relevance preditions for all included
-oroBranchInteractions <- predBranch %>% 
-  select(analysis_id, `oro_branch.Mitigation - mean_prediction`, `oro_branch.Nature - mean_prediction`,
-         `oro_branch.Societal - mean_prediction`) %>%
-  rename(Mitigation = `oro_branch.Mitigation - mean_prediction`, 
-         `Natural resilience` = `oro_branch.Nature - mean_prediction`,
-         `Societal adaptation` = `oro_branch.Societal - mean_prediction`) %>%
-  mutate(Mitigation = ifelse(thresholdLevel <= Mitigation, 1,0),
-         `Natural resilience` = ifelse(thresholdLevel <= `Natural resilience`, 1,0),
-         `Societal adaptation` = ifelse(thresholdLevel <= `Societal adaptation`, 1,0)) %>%
-  collect()
-
-oroBranchInteractions %>%
-  filter(Mitigation == 1 ) %>%
-  nrow
-
-
-devtools::install_github("gaospecial/ggVennDiagram")
-require(ggVennDiagram)
-oroBranchInteractions_venn <- list(
-  oroBranchInteractions$analysis_id[oroBranchInteractions$Mitigation == 1],
-  oroBranchInteractions$analysis_id[oroBranchInteractions$`Natural resilience` == 1],
-  oroBranchInteractions$analysis_id[oroBranchInteractions$`Societal adaptation` == 1]
-)
-names(oroBranchInteractions_venn) <- c(colnames(oroBranchInteractions)[2:4])
-ggVennDiagram(oroBranchInteractions_venn)
+```{r Load aesthetics for branch interaction venn diagram}
 
 # # Format aesthetics for plotting
 branchAES <- factor_aes[which(factor_aes$variable == "ORO_branch"),]
 branchAES <- branchAES[order(branchAES$order),]
-# 
-# oroBranchInteractions <- oroBranchInteractions %>%
-#   mutate(oro_type = factor(oro_type, levels = typeAES$level, labels = typeAES$label))
-# 
-# # format as tabular data
-# oroTypeDf_wide <- oroTypeDf %>%
-#   select(analysis_id, oro_type) %>%
-#   mutate(count = 1) %>%
-#   reshape2::dcast(analysis_id ~ oro_type, drop=FALSE, value.var = "count")
 
 upsetCols <- typeAES %>%
   rename(set = label, fill = colour) %>%
   select(set, fill)
 
 
-# Also calculate interaction matrix
-oroTypeDf_mat <- crossprod(table(oroTypeDf[,c("analysis_id","oro_type")]))
+# # Also calculate interaction matrix
+# oroTypeDf_mat <- crossprod(table(oroTypeDf[,c("analysis_id","oro_type")]))
 
 ```
 
@@ -1214,6 +1176,14 @@ oroBranchDf <- predRel %>%
   collect()
 # remove branch duplicates
 oroBranchDf <- oroBranchDf[!duplicated(oroBranchDf),]
+
+# Which papers are positive for all three branches?
+# all Mitigation, but for two of them, I could see how keywords such as bio-productivity or "protection scheme" could flag relevance for other ORO types.
+allBranchIds <- oroBranchDf$analysis_id[table(oroBranchDf$analysis_id) == 3]
+uniquerefs %>% 
+  filter(analysis_id %in% allBranchIds) %>%
+  collect() %>%
+  View() 
 
 oroBranchInteractions_venn <- list(
   oroBranchDf$analysis_id[oroBranchDf$oro_branch == "Mitigation"],
