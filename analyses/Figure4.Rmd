@@ -635,7 +635,7 @@ seagrass_ras <- as.raster(image_fill(image_read_svg(here::here("figures/phylopic
 
 
 
-```{r Changing salt marsh prediction threshold}
+```{r Changing salt marsh prediction boundary exploration and scoping}
 source(here::here("R/bool_detect.R"))
 source(here::here("R/clean_string.R"))
 source(here::here("R/utils.R"))
@@ -659,16 +659,16 @@ predMarSys <- tbl(dbcon, "pred_marine_system") %>%
 
 saltMarshDf <- tbl(dbcon, "pred_ecosystem_type") %>%
   select(analysis_id,`ecosystem_type.Salt_marsh - mean_prediction`, 
-         `ecosystem_type.Salt_marsh - upper_pred`) %>%
+         `ecosystem_type.Salt_marsh - mean_prediction`) %>%
   rename(mean = `ecosystem_type.Salt_marsh - mean_prediction`,
-         upper = `ecosystem_type.Salt_marsh - upper_pred`) %>%
+         upper = `ecosystem_type.Salt_marsh - mean_prediction`) %>%
   left_join(uniquerefs, by = "analysis_id") %>%
   collect() %>%
   reshape2::melt(id.vars = c("analysis_id", "title","abstract","keywords"), variable.name = "Prediction_boundary", value.name = "Prediction")
 
 saltMarshDf <- saltMarshDf %>%
   mutate(text = clean_string(paste(title, abstract, keywords))) %>%
-  select(-c(title, abstract, keywords)) %>%
+  #select(-c(title, abstract, keywords)) %>%
   mutate(match = bool_detect(text, "salt AND marsh*")) 
 
 
@@ -737,10 +737,37 @@ egg::ggarrange(saltMarshPredictions_ggp, saltMarshMarSys_ggp,
 dev.off()
 
 
+# Sample articles with a predicted relevance > 0.8, and words with and without salt marsh
+
+saltmarshScope <- saltMarshDf %>%
+  filter(Prediction_boundary == "mean") %>%
+  #filter(0.5 <= Prediction) %>%
+  #arrange(desc(Prediction)) %>%
+  group_by(match) %>%
+  #slice_head(n = 50) %>%
+  slice_sample(n=50) %>%
+  select(-c(text))
+
+writexl::write_xlsx(saltmarshScope, path = here::here("outputs/saltMarshArticleScoping.xlsx"))
+
+
+saltmarshScope_coded <- readxl::read_xlsx(here::here("outputs/saltMarshArticleScoping_coded.xlsx"))
+
+saltmarshScope_coded <- saltmarshScope_coded %>%
+  mutate(`Manual check` = tolower(`Manual check`))
+
+saltmarsh_scope <- ggplot(data = saltmarshScope_coded, aes(`Manual check`, Prediction))+
+  geom_boxplot()+
+  theme_bw()+
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+saltmarsh_scope
 ```
 
 
-Notes for changes in analysis - No predictions for salt marsh at mean prediction b/c low recall so use upper prediction limit instead. Choose value a little less than the median so that I can cut the distribution at the mode
+Notes for changes in analysis - No predictions for salt marsh at mean prediction b/c low recall. However we decided to keep using the mean value with 0.5 cutoff to avoid having results for salt marsh that were not comparable to other ecosystem type labels because of higher amounts of noise. 
 
 
 ```{r read in data for the plot}
@@ -767,14 +794,14 @@ predMarSys <- tbl(dbcon, "pred_marine_system") %>%
   filter(0.5 <= mean) %>%
   select(-c(mean))
 
-# NB here I change the filtering so salt marsh is included if 0.4 <= upper pred 
+# NB here I no longer change the filtering so salt marsh is included using mean pred not upper
 predEcoType <- tbl(dbcon, "pred_ecosystem_type") %>%
   select(analysis_id,
-         `ecosystem_type.Salt_marsh - upper_pred`, ## ** `ecosystem_type.Salt_marsh - mean_prediction`
+         `ecosystem_type.Salt_marsh - mean_prediction`, ## ** `ecosystem_type.Salt_marsh - mean_prediction`
          `ecosystem_type.Mangrove - mean_prediction`,
          `ecosystem_type.Coral_reef - mean_prediction`,
          `ecosystem_type.Seagrass - mean_prediction`) %>%
-  rename(Salt_marsh = `ecosystem_type.Salt_marsh - upper_pred`,
+  rename(Salt_marsh = `ecosystem_type.Salt_marsh - mean_prediction`,
          Mangrove = `ecosystem_type.Mangrove - mean_prediction`,
          Coral_reef = `ecosystem_type.Coral_reef - mean_prediction`,
          Seagrass = `ecosystem_type.Seagrass - mean_prediction`) %>%
@@ -1065,8 +1092,10 @@ drop1(mitigationFit, test = "Chisq") # delta AIC = 323.82
 # Model:
 # n_articles ~ oro_type * ecosystem_type
 #                         Df Deviance    AIC    LRT  Pr(>Chi)    
-# <none>                          0.0  142.8                     
-# oro_type:ecosystem_type 18   2570.8 2677.6 2570.8 < 2.2e-16 ***
+# <none>                         0.00 103.87                     
+# oro_type:ecosystem_type 15   152.94 226.81 152.94 < 2.2e-16 ***
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
 
 
 adaptationFit <- glm(n_articles ~ oro_type*ecosystem_type, data = adaptationSums %>%
@@ -1078,13 +1107,15 @@ drop1(adaptationFit, test = "Chisq")
 # Model:
 # n_articles ~ oro_type * ecosystem_type
 #                         Df Deviance    AIC    LRT  Pr(>Chi)    
-# <none>                          0.0  191.4                     
-# oro_type:ecosystem_type 14   3081.2 3244.6 3081.2 < 2.2e-16 ***
+# <none>                         0.00 127.10                     
+# oro_type:ecosystem_type  9   776.24 885.33 776.24 < 2.2e-16 ***
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
 ```
 
 
 ```{r plot panel C.i - Mitigation as a bivariate map}
-fig4_C_i <- ggplot(mitigationSums, aes(y=oro_type, x=ecosystem_type))+
+fig4_C_i <- ggplot(mitigationSums%>% filter(0<n_articles), aes(y=oro_type, x=ecosystem_type))+
   geom_tile(aes(fill = bi_class), show.legend = FALSE)+
   geom_text(data=mitigationSums %>% filter(0<n_articles),
             aes(label = formatC(n_articles, format="d", big.mark=",")), col="black", size=4)+
@@ -1209,7 +1240,7 @@ biLegend <- biLegend+theme(
 
 ```{r combine two panel C subplots together}
 fig4_C <- plot_grid(finalPlot, 
-                    finalPlot2+draw_plot(biLegend, x=-0.23, y=0, width=0.4, height=0.4),
+                    finalPlot2+draw_plot(biLegend, x=-0.23, y=0, width=0.35, height=0.35),
                     nrow=2, rel_heights = c(0.7,1))
 fig4_C
 ```
@@ -1255,10 +1286,10 @@ fig4_C_simplified <- ggplot()+
   
   # Plot mitigation tiles
   geom_tile(data = mitigationSums %>% filter(0<n_articles & oro_branch == "Mitigation"), 
-            aes(y=as.numeric(factor(oro_type)), x=as.numeric(factor(ecosystem_type)),fill = bi_class), show.legend = FALSE)+
+            aes(y=as.numeric(factor(oro_type)), x=as.numeric(factor(ecosystem_type))+1,fill = bi_class), show.legend = FALSE)+
   # Text of article numbers
   geom_text(data=mitigationSums %>% filter(0<n_articles & oro_branch == "Mitigation"),
-            aes(y=as.numeric(factor(oro_type)), x=as.numeric(factor(ecosystem_type)),
+            aes(y=as.numeric(factor(oro_type)), x=as.numeric(factor(ecosystem_type))+1,
                 label = formatC(n_articles, format="d", big.mark=",")), col="black", size=3)+
   
   # Plot triangles for adaptation outcomes
@@ -1356,6 +1387,142 @@ fig4_C_simplified2
 
 ```
 
+```{r simplify panel C further - no more bivariate colour}
+cii_text <- data.frame(
+  x=c(nrow(ecoTypeAES)+0.45, nrow(ecoTypeAES)-0.45),
+  y=c(0.55,1.45),
+  labs = c("Nature", "Human")
+)
+
+## Join y axis labels for ecosystem type with model scores
+ecoTypeScores <- modelScores[modelScores$model == "ecosystem_type_simplified2",] %>% 
+  select(`label name`, `F1 - label`)%>%
+  filter(!is.na(`F1 - label`)) %>%
+  mutate(`label name` = recode(`label name`,
+                          `ecosystem_type.Salt_marsh` = "Salt marsh",
+                          `ecosystem_type.Mangrove` = "Mangrove",
+                          `ecosystem_type.Coral_reef` = "Seagrass",
+                          `ecosystem_type.Seagrass` = "Coral reef"
+                        )) %>%
+  rename(label = `label name`, F1_ecoType = `F1 - label`) %>%
+  mutate(label2 = paste0(label,", F1 = ", signif(F1_ecoType, 2))) 
+
+ecoTypeScoresLabelKey <- ecoTypeScores$label2
+names(ecoTypeScoresLabelKey) <- ecoTypeScores$label
+  
+
+
+## 1. Plot figure
+fig4_C_simpleColor_i <- ggplot()+
+  
+  # Plot mitigation tiles
+  geom_tile(data = mitigationSums %>% filter(0<n_articles & oro_branch == "Mitigation"), 
+            aes(y=as.numeric(factor(oro_type)), x=as.numeric(factor(ecosystem_type))+1, 
+                fill = percent_articles))+
+  # Text of article numbers
+  geom_text(data=mitigationSums %>% filter(0<n_articles & oro_branch == "Mitigation"),
+            aes(y=as.numeric(factor(oro_type)), x=as.numeric(factor(ecosystem_type))+1,
+                label = formatC(n_articles, format="d", big.mark=",")), col="black", size=3)+
+  
+  # Plot triangles for adaptation outcomes
+  geom_polygon(data = humanDf %>% filter(0<n_articles & oro_branch != "Mitigation"), 
+               aes(x,y,group=id, fill = percent_articles), col="darkgrey")+
+  geom_polygon(data = natureDf%>% filter(0<n_articles & oro_branch != "Mitigation"), 
+               aes(x,y,group=id, fill = percent_articles), col="darkgrey")+
+  # text of article numbers 
+  geom_text(data=rbind(humanDfText, natureDfText)%>% filter(0<n_articles& oro_branch != "Mitigation"), 
+            aes(x,y,label = formatC(n_articles, format="d", big.mark = ",")),
+            col="black", size=3)+
+  # Colour scale
+  scale_fill_binned(name = "% Coastal\necosystem\narticles", 
+               type = "gradient", 
+               low = RColorBrewer::brewer.pal(5,"Greens")[1], 
+               high = RColorBrewer::brewer.pal(5,"Greens")[5],
+               breaks = breaksFill, nice.breaks = FALSE,
+               labels = function(x) ifelse(1000 <= x, paste(x/1000, "k"), paste(x)),
+               rescaler = scales::rescale,
+               #values = range01(breaksFill),
+               show.limits = TRUE, 
+               limits = breaksFill[c(1, length(breaksFill))], 
+               oob= scales::squish,
+               na.value = "transparent",
+               guide = guide_coloursteps(order = 1) #barwidth = unit(0.5, 'cm') 
+               )+ 
+  
+  geom_hline(yintercept = c(3.5,5.5), col="black", linewidth=1)+
+
+  
+  # # Format axes
+  scale_x_continuous(breaks = 1:nrow(ecoTypeAES),labels = ecoTypeScoresLabelKey)+
+  scale_y_continuous(breaks = 1:nrow(typeAES),labels = stringr::str_wrap(typeAES$label, width=20))+
+  # scale_y_binned(breaks = 1:nrow(typeAES),labels = typeAES$label)+ #, limits = c(1,nrow(typeAES))
+  # 
+  # coord_cartesian(ylim = c(0.5, nrow(typeAES)+0.5), clip = 'off')+
+  labs(
+    x = "Ecosystem type" 
+  )+
+  coord_flip()+ # added this -- double check
+  theme_bw()+
+  theme(
+    #plot.margin = unit(c(0,0,0,0), "cm"),
+    axis.title.x = element_blank(),
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle=45, vjust=1, hjust=1, size=9),
+    axis.text.y = element_text(size=9),
+    legend.key.height = unit(0.35, 'cm'),
+    legend.key.width = unit(1, 'cm'),
+    legend.text = element_text(size=6),
+    legend.position = "top"
+    #axis.title.x = element_text(vjust = -8)
+  )
+
+fig4_C_simpleColor_i
+
+
+# 3. Legend showing where outcomes are displayed
+outcomeLegendDf <- rbind(
+  data.frame(
+    outcome = paste("Mitigation"), x= -0.5+c(0,1,1,0),y=-0.5+c(0,0,1,1)
+  ),
+  data.frame(
+    outcome = paste("Human\nadaptation"), x = 1+-0.5+c(0,1,1), y=-0.5+c(0,0,1)
+  ),
+  data.frame(
+    outcome = paste("Natural\nadaptation"), x=1+-0.5+c(0,1,0), y=-0.5+c(0,1,1)
+  )
+)
+
+outcomeLegendTextDf <- outcomeLegendDf %>%
+  group_by(outcome) %>%
+  mutate(x = mean(x), y = mean(y))
+
+outcomeLegend <- ggplot()+
+  geom_polygon(data=outcomeLegendDf, aes(x=x, y=y, group=outcome),
+               fill="transparent", col="black")+
+  geom_text(data=outcomeLegendTextDf, aes(x=x, y=y, label = outcome), col="black", size=3)+
+  theme(
+    panel.background = element_blank(),
+    panel.grid = element_blank(),
+    axis.line = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank()
+    
+  )
+
+
+fig4_C_simpleColor <- ggdraw() +
+  draw_plot(fig4_C_simpleColor_i+theme(plot.margin = unit(c(0,0.2,6,0), "cm")), 0, 0, 1, 1) +
+  draw_plot(outcomeLegend+theme(plot.margin = unit(c(0,0,1,0), "cm")), x=0.6, y=0, width=0.45, height=0.3,
+            hjust = 0.5)
+
+
+fig4_C_simpleColor
+
+
+```
+
+
 
 ```{r old plot panel C.i - Mitigation}
 fig4_C_i <- ggplot(mitigationSums, aes(y=oro_type, x=ecosystem_type))+
@@ -1398,7 +1565,7 @@ pdf(file = here::here("figures/main/marineSystemsAndClimateImpactDrivers.pdf"),
     width = 15, height = 7)
 plot_grid(fig4_A_ggp+theme(plot.margin = unit(c(0,0,2,0), "cm")),
           fig4_B_percent_nonlinear_ggp+theme(plot.margin = unit(c(0,0.75,0,0), "cm")), 
-          fig4_C_simplified2, #+theme(plot.margin = unit(c(2,0,0,0), "cm"))
+          fig4_C_simpleColor + theme(legend.key.width = unit(10, 'in')), #fig4_C_simplified2, #+theme(plot.margin = unit(c(2,0,0,0), "cm"))
           rel_widths = c(0.7,1,1), ncol=3, labels = list("a.","b.","c."), label_size = 19,
           align = "v", axis = "b")
 while (!is.null(dev.list())) dev.off()
@@ -1430,6 +1597,134 @@ Marine renewable energy:
 - small proportion of articles associated with coastal ecosystems, but of these most are associated with salt marshes. This could just be an artefact of similar terms bewteen mitigation objectives?
 
 
+# Supplemental Hovmoller plot of ecosystem type over time
+
+
+```{r read in data for the plot}
+
+## Access relevant tables
+predRel <- tbl(dbcon, "pred_relevance") %>%
+  filter(0.5 <= relevance_mean) %>%
+  select(analysis_id)
+
+uniquerefs <- tbl(dbcon, "uniquerefs") %>%
+  select(analysis_id, year) %>%
+  collect() %>%
+  mutate(year = as.Date(paste0(year,"-01-01"))) %>% 
+  filter(as.Date("1980-01-01") <= year)
+
+predType <- tbl(dbcon, "pred_oro_type_long") %>%
+  filter(0.5 <= mean) %>%
+  select(analysis_id, oro_branch, oro_type) 
+
+
+predMarSys <- tbl(dbcon, "pred_marine_system") %>%
+  select(analysis_id, 
+         `marine_system.land - mean_prediction`,
+         `marine_system.coastal ocean - mean_prediction`,
+         `marine_system.open-ocean - mean_prediction`) %>% 
+  rename(land = `marine_system.land - mean_prediction`,
+         coastal_ocean = `marine_system.coastal ocean - mean_prediction`,
+         open_ocean = `marine_system.open-ocean - mean_prediction`) %>%
+  collect()%>%
+  reshape2::melt(id.vars = c("analysis_id"), variable.name = "marine_system", value.name = 'mean') %>%
+  filter(0.5 <= mean) %>%
+  select(-c(mean))
+
+
+predEcoType <- tbl(dbcon, "pred_ecosystem_type") %>%
+  select(analysis_id,
+         `ecosystem_type.Salt_marsh - mean_prediction`, ## ** `ecosystem_type.Salt_marsh - mean_prediction`
+         `ecosystem_type.Mangrove - mean_prediction`,
+         `ecosystem_type.Coral_reef - mean_prediction`,
+         `ecosystem_type.Seagrass - mean_prediction`) %>%
+  rename(Salt_marsh = `ecosystem_type.Salt_marsh - mean_prediction`,
+         Mangrove = `ecosystem_type.Mangrove - mean_prediction`,
+         Coral_reef = `ecosystem_type.Coral_reef - mean_prediction`,
+         Seagrass = `ecosystem_type.Seagrass - mean_prediction`) %>%
+  collect() 
+predEcoType <- reshape2::melt(predEcoType, id.vars = c("analysis_id"), variable.name = "ecosystem_type", value.name = 'prediction')
+  #filter(0.5 <= mean) %>%
+  # mutate(relevant = ifelse((ecosystem_type == "Salt_marsh" & 0.5 <= prediction) |
+  #                            (ecosystem_type != "Salt_marsh" & 0.5 <= prediction), 1,0)) %>%
+predEcoType <- predEcoType %>%
+  mutate(relevant = ifelse(0.5 <= prediction, 1,0)) %>%
+  filter(relevant == 1) %>%
+  select(-c(prediction, relevant)) 
+
+
+
+## Retrieve aesthetics for relevant factoring variables
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+ecoTypeAES <- factor_aes[which(factor_aes$variable == "ecosystem_type"),]
+ecoTypeAES <- ecoTypeAES[order(ecoTypeAES$order),]
+adaptAES <- factor_aes[which(factor_aes$variable == "adapt_to_threat"),]
+adaptAES <- adaptAES[order(adaptAES$order),]
+```
+
+
+
+```{r Format dataframes and calculate sums by ecosystem type and year}
+## Data joining
+
+# Format into data frame where each row is a publication (unique analysis_id)
+
+# Include only articles that have a prediction for ORO type AND coastal marine system and ecosystem type AND year greater or equal to 1980
+coastEcoTypeDf <- predRel %>%
+  inner_join(uniquerefs, by = "analysis_id", copy=T) %>%
+  inner_join(predType, by = "analysis_id", copy = T) %>%
+  inner_join(predMarSys, by="analysis_id", copy=T) %>%
+  filter(marine_system == "coastal_ocean") %>%
+  inner_join(predEcoType, by="analysis_id", copy=T) %>%
+  collect()
+
+
+## Factoring variables for plotting
+
+# use aesthetics to factor variables
+coastEcoTypeDf <- coastEcoTypeDf %>%
+  mutate(
+    oro_type = factor(oro_type, levels = typeAES$level, labels = typeAES$label),
+    ecosystem_type = factor(ecosystem_type, levels = ecoTypeAES$level, labels = ecoTypeAES$label)
+  )
+coastEcoTypeDf$year <- as.Date(coastEcoTypeDf$year,origin = as.Date("1970-01-01"))
+
+
+# Tabulate counts 
+library(tidyr)
+
+coastEcoTypeDfYearSums <- coastEcoTypeDf %>%
+  group_by(ecosystem_type, oro_type, year) %>%
+  summarise(n = n())
+
+# Bin counts to smooth out really high values
+coastEcoTypeDfYearSums <- coastEcoTypeDfYearSums %>%
+  mutate(n_bin = cut(n, unique(quantile(coastEcoTypeDfYearSums$n, probs = seq(0, 1, by=0.1))),
+                     include.lowest = TRUE))
+
+
+```
+
+```{r plot number of articles for ecosystem type over time}
+require(forcats)
+coastEcoTypeDfYearSums <- coastEcoTypeDfYearSums %>%
+  mutate(oro_type = fct_recode(oro_type, "Socio-\ninstitutional" = "Socio-institutional"))
+
+ecosystemTypeYear_ggp <- ggplot(coastEcoTypeDfYearSums, aes(x=year, y=ecosystem_type, fill=n_bin))+
+  facet_grid(oro_type ~., labeller = label_wrap_gen(width = 15))+
+  scale_fill_brewer()+
+  geom_tile()+
+  scale_x_date(limits = as.Date(c("1980-01-01","2022-12-31")))+
+  labs(y = "Ecosystem type", x="Year", fill = "N\nArticles")+
+  theme_bw()
+
+ecosystemTypeYear_ggp
+
+ggsave(here::here("figures/supplemental/ecosystemTypeHovmollerPlot.pdf"),
+       plot= ecosystemTypeYear_ggp,
+       width = 6, height = 8, units = 'in')
+```
 
 
 

@@ -282,16 +282,36 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     x <- scale(data_bivar_n_article_CO2em$Count_ORO, center = TRUE, scale = TRUE)
     y <- scale(data_bivar_n_article_CO2em$cumulative_co2_including_luc, center = TRUE, scale = TRUE)
     
-    # --- Test for normality
-    shapiro.test(x) # what is the p value? if >0.05, normal
-    shapiro.test(y) # same -- report p value
+    # plot distribution of data, looks like a log transform is appropriate 
+    
+    # --- Test for normality -- log transform works, null hypothesis is not rejected, data normal
+    shapiro.test(log(x)) # W = 0.94706, p-value = 0.0466
+    shapiro.test(log(y)) # W = 0.97455, p-value = 0.562
     
     # --- Test for linear relationship
-    plot(y, x)
+    plot(log(x), log(y))
     
     # --- calculate Spearman's correlation coefficienct (not Pearson's coefficient due to the non-normality of the data
+    mit_cor <- cor.test(log(x), log(y), method = "pearson")
+    mit_cor
+    # t = 2.5971, df = 21, p-value = 0.01682
+    # alternative hypothesis: true correlation is not equal to 0
+    # 95 percent confidence interval:
+    #   0.1014780 0.7523512
+    # sample estimates:
+    #   cor 
+    # 0.4930559
+    
+    # Check and compare to spearman's rank correlation (invariant under monotone transformations)
     mit_cor <- cor.test(x, y, method = "spearman")
     mit_cor
+    # S = 887871, p-value = 9.53e-10
+    # alternative hypothesis: true rho is not equal to 0
+    # sample estimates:
+    #   rho 
+    # 0.4080005 
+    
+    # They are comparable -- so value from spearman's rank is sensible.
       
 ### -----
     

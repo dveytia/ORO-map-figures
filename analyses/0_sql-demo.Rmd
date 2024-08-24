@@ -1,0 +1,190 @@
+---
+title: "0_sql-demo"
+author: "Devi Veytia"
+date: "2024-07-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+This file is to provide a short introduction on how to access the data tables from the sqlite database. 
+
+The database contains many different 2-D tables or dataframes, where each row corresponds to a publication. These tables have ID columns and data columns, and the beauty of sql is that queries can be written to join these tables by common columns, filter/select data based on other criteria, and summarise data, before 'loading' the data into your environment. This allows you to process large amounts of data quickly and efficiently.  
+
+## Key table descriptions
+
+
+### Tables with publication-level metadata from WOS/Scopus
+
+Table name: uniquerefs
+
+Table description: This table contains only unique references that have an abstract that is not NA. Note that the function "extract_unique_references" from the R revtools package was used to decide which record to retain when duplication was identified. In this case, the most complete record was retained where duplicates were identified. Therefore in this dataset, the duplicates are removed, thus each row represents a unique publication.
+
+ID columns: analysis_id: The unique record identifier for the publication. 
+
+Metadata columns: title, keywords, abstract, year, doi, ...
+
+
+### Tables with model predictions 
+
+These tables contain an ID column for analysis_id which can be cross-referenced to the 'uniquerefs' table, as well as columns for the lower, mean, and upper predictions for the different labels of a given variable. Each variable is given it's own table.
+
+The predictions for the screening model (binary classifer) are contained in the following table:
+
+Table name: pred_relevance
+Table description: This table provides the predicted relevance (lower, mean, upper and std) from the screening decision binary label model. Each row is a unique article (from uniquerefs) and is indexed by analysis_id. 
+ID columns: analysis_id
+Metadata columns: relevance_mean (the mean predicted relevance), relevance_std (the standard deviation), relevance_lower (the mean minus the std deviation), relevance_upper (the mean plus the std deviation)
+
+
+The predictions for the other metadata variables are presented using the following naming convention: pred_x (where x is a coded metadata variable name). For binary labels (i.e. there was only a 1 or 0 outcome possible for the variable), the predictions table will have the following column names: analysis_id, 0 – relevance – mean_prediction, 0 – relevance – std_prediction, 0 – relevance – lower_prediction, and 0 – relevance – upper_prediction. For multi-label variables, this naming convention is followed, but columns are added for each unique label. For example, for the variable “climate_threat” and label “Temperature”, there will be columns for climate_threat.Temperature - mean_prediction, climate_threat.Temperature - std_prediction and so on. 
+
+The following tables refer to the coded variable predictions:
+pred_adapt_to_threat, pred_blue_carbon, pred_climate_mitigation, pred_climate_threat, pred_data, pred_ecosystem_type, pred_marine_system, pred_method_type, pred_oro_any_mitigation, pred_oro_any_nature, pred_oro_any_societal, pred_oro_branch
+The table "pred_oro_type_long" combines and formats the predictions from pred_oro_any_x into long format for easier plotting.
+
+
+For the geoparsing results, I would consult with Gael and I know he did some cleaning/manipulations and I don't think he saved the outputs in the sql file.
+
+
+
+# Sample code
+
+
+```{r load libraries}
+library(dplyr)
+library(dbplyr)
+library(R.utils)
+library(RSQLite)
+library(ggplot2)
+```
+
+
+
+```{r create the connection to the sqlite database}
+# in here enter the file path to the .sqlite file 'all_tables_v4.sqlite'
+sqliteFile <- here::here("data/sqlite-databases/all_tables_v4.sqlite")
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), sqliteFile, create=FALSE)
+```
+
+```{r Sum the number articles per oro branch per year}
+
+## Establish connections to the tables I want to use
+# The command 'tbl' points to the table within the sqlite database, and allows you to do joins and manipulations, without loading it into the environment
+predRel <- tbl(dbcon, "pred_relevance") # Relevance (screening) predictions
+pred_oro_branch <- tbl(dbcon, "pred_oro_branch") # Predictions for ORO branch
+uniquerefs <- tbl(dbcon, "uniquerefs") # The metadata for each publication from WOS/Scopus
+
+
+
+## Join the predictions for ORO branch with metadata for year, and then sum grouping by year and branch
+
+thresholdLevel <- 0.5 # the cutoff threshold for whether an article is relevant or not
+
+# Join the databases
+oro_branch_by_year <- pred_oro_branch %>% 
+  # Filter to articles with a predicted relevance > threshold level
+  inner_join(predRel %>% select(analysis_id, relevance_mean), by = "analysis_id")%>%
+  filter(thresholdLevel <= relevance_mean) %>%
+  # Join the relevant publications with year metadata
+  inner_join(uniquerefs %>% select(analysis_id, year), by = "analysis_id") %>%
+  # Grouping by year, sum the number of articles for each ORO branch and prediction boundary (mean, lower, upper)
+  group_by(year) %>%
+  summarise(
+    Mitigation_mean = sum(thresholdLevel <= `oro_branch.Mitigation - mean_prediction`),
+    Mitigation_lower = sum(thresholdLevel <= `oro_branch.Mitigation - lower_pred`),
+    Mitigation_upper = sum(thresholdLevel <= `oro_branch.Mitigation - upper_pred`),
+    Nature_mean = sum(thresholdLevel <= `oro_branch.Nature - mean_prediction`),
+    Nature_lower = sum(thresholdLevel <= `oro_branch.Nature - lower_pred`),
+    Nature_upper = sum(thresholdLevel <= `oro_branch.Nature - upper_pred`),
+    Societal_mean = sum(thresholdLevel <= `oro_branch.Societal - mean_prediction`),
+    Societal_lower = sum(thresholdLevel <= `oro_branch.Societal - lower_pred`),
+    Societal_upper = sum(thresholdLevel <= `oro_branch.Societal - upper_pred`)
+  ) %>% 
+  # This last command collects the filtered and aggregated data and 'loads' it into your working environment
+  collect()
+
+
+
+## Melt and reformat so each line is a year x branch combination, and then columns for mean, lower and upper
+variables <- c("Mitigation","Nature","Societal")
+
+for(v in 1:length(variables)){
+  sub <- oro_branch_by_year[,c(1,grep(variables[v], colnames(oro_branch_by_year)))]
+  colnames(sub) <- gsub(paste0(variables[v],"_"),"", colnames(sub))
+  sub$ORO_branch <- paste(variables[v])
+  if(v==1){
+    timeline_df <- sub
+  }else{
+    timeline_df <- rbind(timeline_df, sub)
+  }
+}
+
+# Factor columns for plotting in order
+timeline_df <- timeline_df%>%
+  na.omit() %>%
+  mutate(year = as.Date(paste0(year, "-01-01")),
+         ORO_branch = factor(ORO_branch, levels = variables))
+
+timeline_df$ORO_branch <- factor(
+  timeline_df$ORO_branch,
+  levels = variables, labels = c("Mitigation","Natural resilience","Societal adaptation")
+)
+
+
+
+# Remove incomplete year 
+oro_branch_by_year_sums <- timeline_df %>%
+  filter(year < as.Date("2023-01-01"))
+
+# use the max year to set the x limits
+xmax = max(timeline_df$year)
+xmin = min(timeline_df$year)
+
+
+
+## Plot
+timeline_ggp <- ggplot()+
+  # Plot line for mean and an envelope for upper and lower
+  geom_ribbon(data = timeline_df, 
+              aes(x=year, ymin = log(lower), ymax=log(upper), fill = ORO_branch), alpha = 0.5)+
+  geom_line(data = timeline_df, aes(x=year, y=log(mean), col=ORO_branch), linewidth = 1,
+            na.rm=T)+
+  
+  # Format colour scales
+  scale_color_manual(values = c("#35a7d9","forestgreen","#7670a8"), 
+                     breaks = c("Mitigation","Natural resilience","Societal adaptation"),
+                     name = "ORO branch", guide=guide_legend(order=1, nrow=3), position = "top")+
+  scale_fill_manual(values = c("#35a7d9","forestgreen","#7670a8"),
+                     breaks = c("Mitigation","Natural resilience","Societal adaptation"),
+                    guide = "none")+
+  # Format axes
+  labs(x="Year", y="log(N articles)")+
+  scale_x_date(limits = c(as.Date("1980-01-01"),as.Date("2022-12-31")))+
+  scale_y_continuous(sec.axis = sec_axis(trans = exp, name = "N articles", 
+                                         breaks = c(0,100,1000,10000,30000,80000),
+                                         labels = function(x) formatC(x, big.mark=",", format="d")),
+                     breaks = seq(0,10, by= 2))+ #, limits = c(0,13)
+  
+  theme_classic()+
+  theme(
+    legend.position = "bottom",
+    legend.box = "vertical",
+    legend.text = element_text(size=8),
+    legend.title = element_text(size=10),
+    axis.text = element_text(size=7)
+    )
+
+timeline_ggp
+```
+
+
+
+
+
+
+

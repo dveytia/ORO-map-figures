@@ -1,0 +1,110 @@
+---
+title: "Affiliation-sub-analysis"
+author: "Devi Veytia"
+date: "2024-06-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Set up
+
+```{r load libraries}
+library(dplyr)
+library(dbplyr)
+library(broom)
+library(R.utils)
+library(RSQLite)
+library(ggplot2)
+library(countrycode)
+```
+
+
+```{r Get the latest version of sqlite database and connect}
+
+sqliteDir <- here::here("data/sqlite-databases")
+sqliteFiles <- dir(sqliteDir)
+sqliteVersions <- as.numeric(gsub(".sqlite","",substring(sqliteFiles, regexpr("_v", sqliteFiles) + 2)))
+latestVersion <- sqliteFiles[which.max(sqliteVersions)]
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+```
+
+```{r load functions}
+
+source(here::here("R", "functions_to_format.R")) # all functions needed to format data
+source(here::here("R", "functions_to_plot.R")) 
+```
+
+```{r load common objects}
+countries_ls <- read.csv(file = here::here("data", "external", "list_of_countries", "sql-pays.csv"), sep = ";") |>  # Countries names
+    dplyr::mutate(country = countrycode(sourcevar   = name_en,
+                                        origin      = "country.name",
+                                        destination = "country.name"),
+                  iso_code = countrycode(sourcevar   = country,
+                                         origin      = "country.name",
+                                         destination = "iso3c"))
+
+```
+
+
+
+# Get data
+
+```{r Extract 1st author affiliation from WOS or Scopus metadata}
+uniquerefs <- tbl(dbcon, "uniquerefs") # metadata on the unique references
+pred_relevance <- tbl(dbcon, "pred_relevance")  # which articles are relevant to OROs
+pred_oro_branch <- tbl(dbcon, "pred_oro_branch") 
+all_pubs <- pred_oro_branch %>% 
+  left_join(pred_relevance, by = "analysis_id") |> 
+  filter(0.5 <= relevance_mean) %>%
+  mutate(ORO = ifelse(0.5 <= `oro_branch.Nature - mean_prediction` |
+                        0.5 <= `oro_branch.Societal - mean_prediction` |
+                        0.5 <= `oro_branch.Mitigation - mean_prediction`,
+                             1, 0)) %>% 
+  filter(ORO == 1) %>%
+  dplyr::select(analysis_id) %>%
+  left_join(uniquerefs %>% dplyr::select(analysis_id, author, affiliation), by = "analysis_id") %>%
+  collect()
+  
+# --- Extract the country of the first author for each relevant publications
+data_1stA_country <- extract_1stA_affiliation(data         = all_pubs, 
+                                                     countries_ls = countries_ls) 
+
+```
+
+```{r test function to see if it extracts all affiliations}
+
+temp <- all_pubs[which(all_pubs$analysis_id == "59178"),]
+temp$affiliation
+# "Falcon-Suarez, IH (Corresponding Author), Univ Southampton, Natl Oceanog Ctr, Waterfront Campus,European Way, Southampton SO14 3ZH, Hants, England. Falcon-Suarez, Ismael Himar; Lichtschlag, Anna; Sahoo, Sourav K.; North, Laurence, Univ Southampton, Natl Oceanog Ctr, Waterfront Campus,European Way, Southampton SO14 3ZH, Hants, England. Roche, Ben; Callow, Ben; Gehrmann, Romina A. S., Univ Southampton, Sch Ocean \\& Earth Sci, Natl Oceanog Ctr Southampton, Waterfront Campus,European Way, Southampton SO14 3ZH, Hants, England. Marin-Moreno, Hector, Norwegian Geotech Inst, PB 3930 Ulleval Stadion, NO-08906 Oslo, Norway. Papageorgiou, Giorgos; Chapman, Mark, Univ Edinburgh, Sch Geosci, Grant Inst, West Mains Rd, Edinburgh EH9 3FE, Midlothian, Scotland. Papageorgiou, Giorgos, NTNU, Inst Geosci \\& Petr, SP Andersensvei 15A, N-7491 Trondheim, Norway."
+
+# So countries should be UK and Norway
+
+tmp_result <- extract_1stA_affiliation(data = temp, countries_ls = countries_ls)
+tmp_result$oroAff_1stA$country_aff
+# "United Kingdom"
+
+```
+
+```{r extract all affiliation data from crossref}
+require(rcrossref)
+
+dois <- cr_r(5)
+test <- cr_works(dois)
+test <- cr_works(query = "TWO REMARKABLE AFRICAN BUTTERFLIES, AND THE STUDY OF GEOGRAPHICAL DISTRIBUTION OF ANIMALS", facet="affiliation:*")
+
+test <- cr_works(query = "TWO REMARKABLE AFRICAN BUTTERFLIES, AND THE STUDY OF GEOGRAPHICAL DISTRIBUTION OF ANIMALS", facet="affiliation:*", limit = 0)
+
+
+test2 <- cr_members_(test$data$member[1], facet = "affiliation")
+
+test3 <- cr_members(member_ids=test$data$member[1], facet="affiliation:*", works = TRUE, limit = 0, flq = c(`query.container-title` = test$data$title[1]), select = 'title')
+
+test3 <- cr_members(98, works = TRUE, flq = c(`query.container-title` = 'Ecology'), select = 'affiliations')
+```
+
+
+
+
