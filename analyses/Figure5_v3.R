@@ -432,20 +432,13 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
   ## ---- GLM
     
-    ggplot(data = GHGemi_mitPubs_country_for_scale_stats) +
-      geom_point(mapping = aes(x = scales::rescale(cumulative_co2_including_luc, to = c(0, 1)),
-                               y = log(perc_mit/(1-perc_mit)),
-                               size = Count_ORO_adap_miti)) +
-      theme_bw()
-    
-    
     # --- Model with all countries
     y.mit.perc <- GHGemi_mitPubs_country_for_scale_stats$perc_mit
     count_total.mit <- GHGemi_mitPubs_country_for_scale_stats$Count_ORO_adap_miti
     x.mit <- GHGemi_mitPubs_country_for_scale_stats$cumulative_co2_including_luc 
     x.mit.scaled <- scales::rescale(x.mit, to = c(0, 1)) # Scale X data between 0 and 1 to compare it with adaptation
 
-    fit.mit <- glm(y.mit.perc ~ x.mit.scaled, family = binomial, weights = rep(10, length(x.mit.scaled))) ; summary(fit.mit)
+    #fit.mit <- glm(y.mit.perc ~ x.mit.scaled, family = binomial, weights = rep(10, length(x.mit.scaled))) ; summary(fit.mit)
     fit.mit <- glm(y.mit.perc ~ x.mit.scaled, family = binomial, weights = count_total.mit) ; summary(fit.mit)
     
     exp(fit.mit$coefficients[2])
@@ -460,6 +453,49 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     x.mit.scaled.USA <- scales::rescale(x.mit.USA, to = c(0, 1))
     fit.mit.USA <- glm(y.mit.perc.USA ~ x.mit.scaled.USA, family = binomial, weights = count_total.mit.USA) ; summary(fit.mit.USA)
     exp(fit.mit.USA$coefficients[2])
+    
+    ## Plot predictions with raw data
+    pred.x <- seq(0,1, length.out = 100)
+    pred.fit.mit <- data.frame(x.mit.scaled = pred.x)
+    pred.fit.mit <- predict(fit.mit, se.fit = TRUE, newdata = data.frame(x.mit.scaled = pred.x),
+                            type = "link")
+    pred.fit.mit <- as.data.frame(pred.fit.mit)
+    
+    pred.fit.mit.USA <- predict(fit.mit.USA, se.fit = TRUE, newdata = data.frame(x.mit.scaled.USA = pred.x),
+                            type = "link")
+    pred.fit.mit.USA <- as.data.frame(pred.fit.mit.USA)
+
+    pred.fit.all <- rbind(pred.fit.mit %>% mutate(Model = paste("All\nOR =", 
+                                                                signif(exp(fit.mit$coefficients[2]), 2))),
+                          pred.fit.mit.USA %>% mutate(Model = paste("- USA\nOR =", 
+                                                                    signif(exp(fit.mit.USA$coefficients[2]), 2))))
+    pred.fit.all$pred.x <- c(pred.x,pred.x)
+    
+    ggplot() +
+      geom_point(data = GHGemi_mitPubs_country_for_scale_stats,
+                 mapping = aes(x = scales::rescale(cumulative_co2_including_luc, to = c(0, 1)),
+                               y = log(perc_mit/(1-perc_mit)),
+                               size = Count_ORO_adap_miti)) +
+      geom_text(data = GHGemi_mitPubs_country_for_scale_stats|> 
+                   filter(iso_code == "USA"),
+                 x=1,
+                 mapping = aes(y = log(perc_mit/(1-perc_mit)),
+                               label = iso_code),
+                nudge_y = -0.2,
+                 col = "red") +
+      geom_line(data = pred.fit.all, aes(x=pred.x, y=fit, col = Model))+
+      geom_ribbon(data = pred.fit.all, aes(x=pred.x, ymin=fit-se.fit, ymax = fit+se.fit, fill = Model),
+                  alpha = 0.5)+
+    
+      labs(y = "log(p/(1-p))", x = "Cumulative CO2 emissions (scaled)",
+           size = "N articles")+
+      theme_bw()
+    
+    
+    ggsave(here::here("figures/supplemental/emissionsVsMitigationBinomialGlm_UsaOutlierRemoval.pdf"),
+           width = 6, height = 4, units = "in")
+    
+    
     
 ### -----  
   
