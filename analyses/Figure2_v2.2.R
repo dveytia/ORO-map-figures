@@ -160,14 +160,14 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       mutate(country = str_replace_all(country, c("Côte d’Ivoire" = "Ivory Coast",
                                                   "Congo - Brazzaville" = "Republic of the Congo",
                                                   "Congo - Kinshasa"    = "Democratic Republic of the Congo",
-                                                  "Somalia"             = "Federal Republic of Somalia")),
-             group_land = case_when(group_land %in% c("Island", "Land-locked", "SIDS", "Coastal") ~ group_land,
-                                    !is.na(group_land) & TERRITORY1 != country ~ "Island",
-                                    is.na(group_land)  & TERRITORY1 != country ~ "Island",
-                                    is.na(group_land)  & TERRITORY1 == country ~ "Coastal")) |> 
-      filter(group_land %in% c("Island", "SIDS", "AMUNRC") & !is.na(MRGID) & !is.na(layer)) |>
-      filter(group_land == "SIDS" & !is.na(MRGID) & !is.na(layer)) |>
-      filter(! TERRITORY1 %in% c("French Guiana", "Greenland")) |> 
+                                                  "Somalia"             = "Federal Republic of Somalia"))) |> 
+      #        group_land = case_when(group_land %in% c("Island", "Land-locked", "SIDS", "Coastal") ~ group_land,
+      #                               !is.na(group_land) & TERRITORY1 != country ~ "Island",
+      #                               is.na(group_land)  & TERRITORY1 != country ~ "Island",
+      #                               is.na(group_land)  & TERRITORY1 == country ~ "Coastal")) |> 
+      # filter(group_land %in% c("Island", "SIDS", "AMUNRC") & !is.na(MRGID) & !is.na(layer)) |>
+      # filter(group_land == "SIDS" & !is.na(MRGID) & !is.na(layer)) |>
+      # filter(! TERRITORY1 %in% c("French Guiana", "Greenland")) |> 
       sf::st_transform(crs = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
     
     # --- Format the data to produce the map
@@ -185,7 +185,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                            title_color       = "#ORO/#O&C (%)",
                            title_size        = "#ORO paper",
                            show.legend       = TRUE,
-                           name              = "main/map_ORO_O&Cpapers")
+                           name              = "main/map_ORO_O&Cpapers_TEST")
 
 ### -----
 
