@@ -815,6 +815,9 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       scale_y_continuous(limits=c(-100,100)) +
       theme_bw()
     
+    
+    ## ---- BINOMIAL GLM
+  
     # --- Model
     # fit.ada <- glm(y.ada.perc ~ x.ada.scaled, family = binomial, weights = rep(10, length(x.ada.scaled))) ; summary(fit.ada)
     # exp(fit.ada$coefficients[2])
@@ -850,7 +853,9 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
     fit.ada.ggp
     
-  ## Combine mitigation and adaptation model fit plots together and save  
+    
+    
+  ## Combine mitigation and adaptation model fit plots together and save  ---
   fit.mit.ada.ggp <- cowplot::plot_grid(fit.mit.ggp, fit.ada.ggp, nrow = 2, labels = c("a.","b."))
     
   ggsave(here::here("figures/supplemental/researchNeedVsEffortBinomialGlm.pdf"),
@@ -867,5 +872,20 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   
     
 
+  ## ---- POISSON GLM
+  # --- Model
+  # fit.ada <- glm(y.ada.perc ~ x.ada.scaled, family = binomial, weights = rep(10, length(x.ada.scaled))) ; summary(fit.ada)
+  # exp(fit.ada$coefficients[2])
+  
+  fit.ada.pois <- glm(y.ada.count ~ x.ada.scaled, family = poisson) ; summary(fit.ada.pois)
+  exp(fit.ada.pois$coefficients[2]) #2.846833, p <2e-16 ***
+  with(summary(fit.ada.pois), 1 - deviance/null.deviance) # pseudo r2 = 0.00975
+  
+  y.mit.count <- GHGemi_mitPubs_country_for_scale_stats$perc_mit*GHGemi_mitPubs_country_for_scale_stats$Count_ORO_adap_miti
+  fit.mit.pois <- glm(y.mit.count ~ x.mit.scaled, family = poisson) ; summary(fit.mit.pois)
+  exp(fit.mit.pois$coefficients[2]) # 35.60043, p <2e-16 ***
+  with(summary(fit.mit.pois), 1 - deviance/null.deviance) # pseudo r2 = 0.4397814
+  
+  
 ### -----
     
