@@ -465,10 +465,8 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                             type = "link")
     pred.fit.mit.USA <- as.data.frame(pred.fit.mit.USA)
 
-    pred.fit.all <- rbind(pred.fit.mit %>% mutate(Model = paste("All\nOR =", 
-                                                                signif(exp(fit.mit$coefficients[2]), 2))),
-                          pred.fit.mit.USA %>% mutate(Model = paste("- USA\nOR =", 
-                                                                    signif(exp(fit.mit.USA$coefficients[2]), 2))))
+    pred.fit.all <- rbind(pred.fit.mit %>% mutate(Model = paste("All")),
+                          pred.fit.mit.USA %>% mutate(Model = paste("- USA")))
     pred.fit.all$pred.x <- c(pred.x,pred.x)
     
     fit.mit.ggp <- ggplot() +
@@ -486,11 +484,22 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       geom_line(data = pred.fit.all, aes(x=pred.x, y=fit, col = Model))+
       geom_ribbon(data = pred.fit.all, aes(x=pred.x, ymin=fit-se.fit, ymax = fit+se.fit, fill = Model),
                   alpha = 0.5)+
+      geom_text(data = data.frame(x = 0.75, 
+                                  y = pred.fit.mit$fit[which.min(abs(pred.x-0.85))]),
+                aes(x=x, y=y), label = paste("OR =", signif(exp(fit.mit$coefficients[2]), 2),
+                                             "\nR2 = ", signif(with(summary(fit.mit), 1 - deviance/null.deviance),2)),
+                nudge_y = -0.25)+
+      geom_text(data = data.frame(x = 0.75, 
+                                  y = pred.fit.mit.USA$fit[which.min(abs(pred.x-0.85))]),
+                aes(x=x, y=y), label = paste("OR =", signif(exp(fit.mit.USA$coefficients[2]), 2),
+                                             "\nR2 = ", signif(with(summary(fit.mit.USA), 1 - deviance/null.deviance),2)),
+                nudge_y = +0.25)+
     
       labs(y = "log(p/(1-p))", x = "Cumulative CO2 emissions (scaled)",
            size = "N articles")+
       theme_bw()
     
+    fit.mit.ggp
     
     # ggsave(here::here("figures/supplemental/emissionsVsMitigationBinomialGlm_UsaOutlierRemoval.pdf"),
     #        width = 6, height = 4, units = "in")
@@ -812,7 +821,8 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
     fit.ada <- glm(y.ada.perc ~ x.ada.scaled, family = binomial, weights = count_total) ; summary(fit.ada)
     exp(fit.ada$coefficients[2])
-    
+    with(summary(fit.ada), 1 - deviance/null.deviance) # pseudo r2
+
     
     ## Plot predictions with raw data
     pred.x <- seq(0,1, length.out = 100)
@@ -831,13 +841,14 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       geom_ribbon(data = pred.fit.ada, aes(x=pred.x, ymin=fit-se.fit, ymax = fit+se.fit),
                   alpha = 0.5)+
       geom_text(data = data.frame(x = 0.75, y = pred.fit.ada$fit[which.min(abs(pred.fit.ada$pred.x-0.75))]),
-                aes(x=x, y=y), label = paste("OR =", signif(exp(fit.ada$coefficients[2]), 2)),
+                aes(x=x, y=y), label = paste("OR =", signif(exp(fit.ada$coefficients[2]), 2),
+                                             "\nR2 = ", signif(with(summary(fit.ada), 1 - deviance/null.deviance),2)),
                 nudge_x = -0.2)+
       labs(y = "log(p/(1-p))", x = "Risk (scaled)",
            size = "N articles")+
       theme_bw()
     
-  
+    fit.ada.ggp
     
   ## Combine mitigation and adaptation model fit plots together and save  
   fit.mit.ada.ggp <- cowplot::plot_grid(fit.mit.ggp, fit.ada.ggp, nrow = 2, labels = c("a.","b."))
@@ -845,10 +856,15 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   ggsave(here::here("figures/supplemental/researchNeedVsEffortBinomialGlm.pdf"),
            plot = fit.mit.ada.ggp,
            width = 6, height = 7, units = "in")
-    
-    
-    
-
+  
+  # compare these model results to spearman's rank correlation
+  mit_cor.count # 0.4889157, p-value = 3.122e-09
+  ada_cor.count # 0.1407662, p-value = 0.05598
+  
+   
+  mit_cor.perc # 0.1776855, p-value = 0.04232
+  ada_cor.perc # 0.0867767, p-value = 0.2402
+  
     
 
 ### -----
