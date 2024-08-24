@@ -15,7 +15,7 @@ univariate_map <- function(data_map, eez = NULL, color_scale, second.var, midpoi
     
     ## DBEM output grid
     ggplot2::geom_sf(data    = data_map$data,
-                     mapping = ggplot2::aes(fill     = layer,
+                     mapping = ggplot2::aes(fill = layer, 
                                             geometry = geometry),
                      color   = "grey10",
                      size    = 0.1,
@@ -165,7 +165,9 @@ univariate_map <- function(data_map, eez = NULL, color_scale, second.var, midpoi
   ### Save map
   if(! is.null(name)) {
     
-    ggplot2::ggsave(here::here("figures", paste0(name, ".pdf")), width = 7, height = 4.5, device = "pdf")
+    # ggplot2::ggsave(here::here("figures", paste0(name, ".pdf")), width = 7, height = 4.5, device = "pdf")
+    ggplot2::ggsave(here::here("figures", paste0(name, ".png")), width = 7, height = 4.5, device = "png")
+    
     
   }
   
@@ -405,12 +407,12 @@ bivariate_map <- function(data_map, data_map_univ, eez = NULL, data_world, color
     
     ## DBEM output grid
     ggplot2::geom_sf(data    = data_map$data, 
-                     mapping = ggplot2::aes(fill     = fill,
+                     mapping = ggplot2::aes(fill     = "grey90",#fill,
                                             geometry = geometry), 
                      color   = "black", 
                      size    = 0.1) +
     
-    ggplot2::scale_fill_identity(na.value = "grey80") +
+    ggplot2::scale_fill_identity(na.value = "grey90") +
     
     ggplot2::geom_sf(data   = data_map$box, 
                      colour = "black", 
@@ -515,8 +517,10 @@ bivariate_map <- function(data_map, data_map_univ, eez = NULL, data_world, color
   }
 
   ## Separate groups
-  data_col <- data_map$data |>  
+  data_col <- eez |> #data_map$data |>  
     sf::st_drop_geometry() |> 
+    dplyr::select(Country.x, group, fill) |> 
+    distinct() |> 
     separate(col = group, into = c("x", "y"), sep = "\\.", convert = TRUE, remove = FALSE) |>
     filter(! is.na(fill)) |> 
     group_by(fill) |> 
@@ -580,7 +584,7 @@ bivariate_map <- function(data_map, data_map_univ, eez = NULL, data_world, color
   ### Save map
   if(! is.null(name)) {
     
-    ggplot2::ggsave(here::here("figures", paste0(name, ".pdf")), width = 8.5, height = 6, device = "pdf")
+    ggplot2::ggsave(here::here("figures", paste0(name, ".png")), width = 8.5, height = 6, device = "png")
     
   }
   
