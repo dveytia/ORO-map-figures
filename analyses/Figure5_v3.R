@@ -471,7 +471,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                                                                     signif(exp(fit.mit.USA$coefficients[2]), 2))))
     pred.fit.all$pred.x <- c(pred.x,pred.x)
     
-    ggplot() +
+    fit.mit.ggp <- ggplot() +
       geom_point(data = GHGemi_mitPubs_country_for_scale_stats,
                  mapping = aes(x = scales::rescale(cumulative_co2_including_luc, to = c(0, 1)),
                                y = log(perc_mit/(1-perc_mit)),
@@ -492,8 +492,8 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       theme_bw()
     
     
-    ggsave(here::here("figures/supplemental/emissionsVsMitigationBinomialGlm_UsaOutlierRemoval.pdf"),
-           width = 6, height = 4, units = "in")
+    # ggsave(here::here("figures/supplemental/emissionsVsMitigationBinomialGlm_UsaOutlierRemoval.pdf"),
+    #        width = 6, height = 4, units = "in")
     
     
     
@@ -767,7 +767,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                        ylab       = "% ada. paper (GeoP)",
                        name       = "main/final_version/AdaPaperGeop_PERC_expo_territory_Geop") 
   
-  ## ---- DEVI, here is the model section for emissions and mitigation papers
+  ## ---- DEVI, here is the model section for risk and adaptation papers
   ## ---- You can load this data file
   load(here::here("data", "expo_adaPubs_mrgid_for_scale_stats.RData"))
   
@@ -791,7 +791,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   
   ## ---- GLM
     
-    # --- Scale Y data between 0 and 1 to compare it with adaptation
+    # --- Scale x data between 0 and 1 to compare it with mitigation
     y.ada.count <- expo_adaPubs_mrgid_for_scale_stats$Count_ORO_ada
     y.ada.perc <- expo_adaPubs_mrgid_for_scale_stats$perc_ada
     count_total <- expo_adaPubs_mrgid_for_scale_stats$Count_ORO_adap_miti
@@ -807,11 +807,46 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       theme_bw()
     
     # --- Model
-    fit.ada <- glm(y.ada.perc ~ x.ada.scaled, family = binomial, weights = rep(10, length(x.ada.scaled))) ; summary(fit.ada)
+    # fit.ada <- glm(y.ada.perc ~ x.ada.scaled, family = binomial, weights = rep(10, length(x.ada.scaled))) ; summary(fit.ada)
+    # exp(fit.ada$coefficients[2])
+    
+    fit.ada <- glm(y.ada.perc ~ x.ada.scaled, family = binomial, weights = count_total) ; summary(fit.ada)
     exp(fit.ada$coefficients[2])
     
-    fit.ada.weight <- glm(y.ada.perc ~ x.ada.scaled, family = binomial, weights = count_total) ; summary(fit.ada.weight)
-    exp(fit.ada.weight$coefficients[2])
+    
+    ## Plot predictions with raw data
+    pred.x <- seq(0,1, length.out = 100)
+    pred.fit.ada <- data.frame(x.ada.scaled = pred.x)
+    pred.fit.ada <- predict(fit.ada, se.fit = TRUE, newdata = data.frame(x.ada.scaled = pred.x),
+                            type = "link")
+    pred.fit.ada <- as.data.frame(pred.fit.ada)
+    pred.fit.ada$pred.x <- pred.x
+    
+    fit.ada.ggp <- ggplot() +
+      geom_point(data = expo_adaPubs_mrgid_for_scale_stats,
+                 mapping = aes(x = scales::rescale(exposure_perc, to = c(0, 1)),
+                               y = log(perc_ada/(1-perc_ada)),
+                               size = Count_ORO_adap_miti)) +
+      geom_line(data = pred.fit.ada, aes(x=pred.x, y=fit))+
+      geom_ribbon(data = pred.fit.ada, aes(x=pred.x, ymin=fit-se.fit, ymax = fit+se.fit),
+                  alpha = 0.5)+
+      geom_text(data = data.frame(x = 0.75, y = pred.fit.ada$fit[which.min(abs(pred.fit.ada$pred.x-0.75))]),
+                aes(x=x, y=y), label = paste("OR =", signif(exp(fit.ada$coefficients[2]), 2)),
+                nudge_x = -0.2)+
+      labs(y = "log(p/(1-p))", x = "Risk (scaled)",
+           size = "N articles")+
+      theme_bw()
+    
+  
+    
+  ## Combine mitigation and adaptation model fit plots together and save  
+  fit.mit.ada.ggp <- cowplot::plot_grid(fit.mit.ggp, fit.ada.ggp, nrow = 2, labels = c("a.","b."))
+    
+  ggsave(here::here("figures/supplemental/researchNeedVsEffortBinomialGlm.pdf"),
+           plot = fit.mit.ada.ggp,
+           width = 6, height = 7, units = "in")
+    
+    
     
 
     
