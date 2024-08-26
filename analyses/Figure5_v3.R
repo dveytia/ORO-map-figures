@@ -432,20 +432,13 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
   ## ---- GLM
     
-    ggplot(data = GHGemi_mitPubs_country_for_scale_stats) +
-      geom_point(mapping = aes(x = scales::rescale(cumulative_co2_including_luc, to = c(0, 1)),
-                               y = log(perc_mit/(1-perc_mit)),
-                               size = Count_ORO_adap_miti)) +
-      theme_bw()
-    
-    
     # --- Model with all countries
     y.mit.perc <- GHGemi_mitPubs_country_for_scale_stats$perc_mit
     count_total.mit <- GHGemi_mitPubs_country_for_scale_stats$Count_ORO_adap_miti
     x.mit <- GHGemi_mitPubs_country_for_scale_stats$cumulative_co2_including_luc 
     x.mit.scaled <- scales::rescale(x.mit, to = c(0, 1)) # Scale X data between 0 and 1 to compare it with adaptation
 
-    fit.mit <- glm(y.mit.perc ~ x.mit.scaled, family = binomial, weights = rep(10, length(x.mit.scaled))) ; summary(fit.mit)
+    #fit.mit <- glm(y.mit.perc ~ x.mit.scaled, family = binomial, weights = rep(10, length(x.mit.scaled))) ; summary(fit.mit)
     fit.mit <- glm(y.mit.perc ~ x.mit.scaled, family = binomial, weights = count_total.mit) ; summary(fit.mit)
     
     exp(fit.mit$coefficients[2])
@@ -460,6 +453,58 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     x.mit.scaled.USA <- scales::rescale(x.mit.USA, to = c(0, 1))
     fit.mit.USA <- glm(y.mit.perc.USA ~ x.mit.scaled.USA, family = binomial, weights = count_total.mit.USA) ; summary(fit.mit.USA)
     exp(fit.mit.USA$coefficients[2])
+    
+    ## Plot predictions with raw data
+    pred.x <- seq(0,1, length.out = 100)
+    pred.fit.mit <- data.frame(x.mit.scaled = pred.x)
+    pred.fit.mit <- predict(fit.mit, se.fit = TRUE, newdata = data.frame(x.mit.scaled = pred.x),
+                            type = "link")
+    pred.fit.mit <- as.data.frame(pred.fit.mit)
+    
+    pred.fit.mit.USA <- predict(fit.mit.USA, se.fit = TRUE, newdata = data.frame(x.mit.scaled.USA = pred.x),
+                            type = "link")
+    pred.fit.mit.USA <- as.data.frame(pred.fit.mit.USA)
+
+    pred.fit.all <- rbind(pred.fit.mit %>% mutate(Model = paste("All")),
+                          pred.fit.mit.USA %>% mutate(Model = paste("- USA")))
+    pred.fit.all$pred.x <- c(pred.x,pred.x)
+    
+    fit.mit.ggp <- ggplot() +
+      geom_point(data = GHGemi_mitPubs_country_for_scale_stats,
+                 mapping = aes(x = scales::rescale(cumulative_co2_including_luc, to = c(0, 1)),
+                               y = log(perc_mit/(1-perc_mit)),
+                               size = Count_ORO_adap_miti)) +
+      geom_text(data = GHGemi_mitPubs_country_for_scale_stats|> 
+                   filter(iso_code == "USA"),
+                 x=1,
+                 mapping = aes(y = log(perc_mit/(1-perc_mit)),
+                               label = iso_code),
+                nudge_y = -0.2,
+                 col = "red") +
+      geom_line(data = pred.fit.all, aes(x=pred.x, y=fit, col = Model))+
+      geom_ribbon(data = pred.fit.all, aes(x=pred.x, ymin=fit-se.fit, ymax = fit+se.fit, fill = Model),
+                  alpha = 0.5)+
+      geom_text(data = data.frame(x = 0.75, 
+                                  y = pred.fit.mit$fit[which.min(abs(pred.x-0.85))]),
+                aes(x=x, y=y), label = paste("OR =", signif(exp(fit.mit$coefficients[2]), 2),
+                                             "\nR2 = ", signif(with(summary(fit.mit), 1 - deviance/null.deviance),2)),
+                nudge_y = -0.25)+
+      geom_text(data = data.frame(x = 0.75, 
+                                  y = pred.fit.mit.USA$fit[which.min(abs(pred.x-0.85))]),
+                aes(x=x, y=y), label = paste("OR =", signif(exp(fit.mit.USA$coefficients[2]), 2),
+                                             "\nR2 = ", signif(with(summary(fit.mit.USA), 1 - deviance/null.deviance),2)),
+                nudge_y = +0.25)+
+    
+      labs(y = "log(p/(1-p))", x = "Cumulative CO2 emissions (scaled)",
+           size = "N articles")+
+      theme_bw()
+    
+    fit.mit.ggp
+    
+    # ggsave(here::here("figures/supplemental/emissionsVsMitigationBinomialGlm_UsaOutlierRemoval.pdf"),
+    #        width = 6, height = 4, units = "in")
+    
+    
     
 ### -----  
   
@@ -731,7 +776,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                        ylab       = "# ada. paper (GeoP)",
                        name       = "main/final_version/AdaPaperGeop_COUNT_expo_territory_Geop") 
   
-  ## ---- DEVI, here is the model section for emissions and mitigation papers
+  ## ---- DEVI, here is the model section for risk and adaptation papers
   ## ---- You can load this data file
   load(here::here("data", "expo_adaPubs_mrgid_for_scale_stats.RData"))
   
@@ -755,7 +800,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   
   ## ---- GLM
     
-    # --- Scale Y data between 0 and 1 to compare it with adaptation
+    # --- Scale x data between 0 and 1 to compare it with mitigation
     y.ada.count <- expo_adaPubs_mrgid_for_scale_stats$Count_ORO_ada
     y.ada.perc <- expo_adaPubs_mrgid_for_scale_stats$perc_ada
     count_total <- expo_adaPubs_mrgid_for_scale_stats$Count_ORO_adap_miti
@@ -770,15 +815,77 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       scale_y_continuous(limits=c(-100,100)) +
       theme_bw()
     
+    
+    ## ---- BINOMIAL GLM
+  
     # --- Model
-    fit.ada <- glm(y.ada.perc ~ x.ada.scaled, family = binomial, weights = rep(10, length(x.ada.scaled))) ; summary(fit.ada)
+    # fit.ada <- glm(y.ada.perc ~ x.ada.scaled, family = binomial, weights = rep(10, length(x.ada.scaled))) ; summary(fit.ada)
+    # exp(fit.ada$coefficients[2])
+    
+    fit.ada <- glm(y.ada.perc ~ x.ada.scaled, family = binomial, weights = count_total) ; summary(fit.ada)
     exp(fit.ada$coefficients[2])
-    
-    fit.ada.weight <- glm(y.ada.perc ~ x.ada.scaled, family = binomial, weights = count_total) ; summary(fit.ada.weight)
-    exp(fit.ada.weight$coefficients[2])
-    
+    with(summary(fit.ada), 1 - deviance/null.deviance) # pseudo r2
 
     
+    ## Plot predictions with raw data
+    pred.x <- seq(0,1, length.out = 100)
+    pred.fit.ada <- data.frame(x.ada.scaled = pred.x)
+    pred.fit.ada <- predict(fit.ada, se.fit = TRUE, newdata = data.frame(x.ada.scaled = pred.x),
+                            type = "link")
+    pred.fit.ada <- as.data.frame(pred.fit.ada)
+    pred.fit.ada$pred.x <- pred.x
+    
+    fit.ada.ggp <- ggplot() +
+      geom_point(data = expo_adaPubs_mrgid_for_scale_stats,
+                 mapping = aes(x = scales::rescale(exposure_perc, to = c(0, 1)),
+                               y = log(perc_ada/(1-perc_ada)),
+                               size = Count_ORO_adap_miti)) +
+      geom_line(data = pred.fit.ada, aes(x=pred.x, y=fit))+
+      geom_ribbon(data = pred.fit.ada, aes(x=pred.x, ymin=fit-se.fit, ymax = fit+se.fit),
+                  alpha = 0.5)+
+      geom_text(data = data.frame(x = 0.75, y = pred.fit.ada$fit[which.min(abs(pred.fit.ada$pred.x-0.75))]),
+                aes(x=x, y=y), label = paste("OR =", signif(exp(fit.ada$coefficients[2]), 2),
+                                             "\nR2 = ", signif(with(summary(fit.ada), 1 - deviance/null.deviance),2)),
+                nudge_x = -0.2)+
+      labs(y = "log(p/(1-p))", x = "Risk (scaled)",
+           size = "N articles")+
+      theme_bw()
+    
+    fit.ada.ggp
+    
+    
+    
+  ## Combine mitigation and adaptation model fit plots together and save  ---
+  fit.mit.ada.ggp <- cowplot::plot_grid(fit.mit.ggp, fit.ada.ggp, nrow = 2, labels = c("a.","b."))
+    
+  ggsave(here::here("figures/supplemental/researchNeedVsEffortBinomialGlm.pdf"),
+           plot = fit.mit.ada.ggp,
+           width = 6, height = 7, units = "in")
+  
+  # compare these model results to spearman's rank correlation
+  mit_cor.count # 0.4889157, p-value = 3.122e-09
+  ada_cor.count # 0.1407662, p-value = 0.05598
+  
+   
+  mit_cor.perc # 0.1776855, p-value = 0.04232
+  ada_cor.perc # 0.0867767, p-value = 0.2402
+  
+    
 
+  ## ---- POISSON GLM
+  # --- Model
+  # fit.ada <- glm(y.ada.perc ~ x.ada.scaled, family = binomial, weights = rep(10, length(x.ada.scaled))) ; summary(fit.ada)
+  # exp(fit.ada$coefficients[2])
+  
+  fit.ada.pois <- glm(y.ada.count ~ x.ada.scaled, family = poisson) ; summary(fit.ada.pois)
+  exp(fit.ada.pois$coefficients[2]) #2.846833, p <2e-16 ***
+  with(summary(fit.ada.pois), 1 - deviance/null.deviance) # pseudo r2 = 0.00975
+  
+  y.mit.count <- GHGemi_mitPubs_country_for_scale_stats$perc_mit*GHGemi_mitPubs_country_for_scale_stats$Count_ORO_adap_miti
+  fit.mit.pois <- glm(y.mit.count ~ x.mit.scaled, family = poisson) ; summary(fit.mit.pois)
+  exp(fit.mit.pois$coefficients[2]) # 35.60043, p <2e-16 ***
+  with(summary(fit.mit.pois), 1 - deviance/null.deviance) # pseudo r2 = 0.4397814
+  
+  
 ### -----
     
