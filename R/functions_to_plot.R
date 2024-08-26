@@ -584,7 +584,8 @@ bivariate_map <- function(data_map, data_map_univ, eez = NULL, data_world, color
   ### Save map
   if(! is.null(name)) {
     
-    ggplot2::ggsave(here::here("figures", paste0(name, ".png")), width = 8.5, height = 6, device = "png")
+    # ggplot2::ggsave(here::here("figures", paste0(name, ".png")), width = 8.5, height = 6, device = "png")
+    ggplot2::ggsave(here::here("figures", paste0(name, ".pdf")), width = 8.5, height = 6, device = "pdf")
     
   }
   

@@ -346,7 +346,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
 
     
     data_bivar_n_article_CO2em <- format_data_bivariate_map(data        = GHGemi_mitPubs_country_for_scale_stats,
-                                                            data.y      = "perc_mit", # "Count_ORO_mit"
+                                                            data.y      = "Count_ORO_mit", # "perc_mit"
                                                             data.x      = "cumulative_co2_including_luc",
                                                             color_table = bivariate_color_scale,
                                                             nquantiles  = 10,
@@ -399,8 +399,8 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                           data_world = NULL,
                           color      = bivariate_color_scale,
                           xlab       = "CO2eq. emissions",
-                          ylab       = "% mit. paper (GeoP)",
-                          name       = "main/final_version/bivar_map_GHGemi_mitPubs_PERC_Geop")
+                          ylab       = "# mit. paper (GeoP)",
+                          name       = "main/final_version/bivar_map_GHGemi_mitPubs_COUNT_Geop")
       
       
   ## ---- DEVI, here is the model section for emissions and mitigation papers
@@ -694,7 +694,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
 
     
     data_bivar_n_article_expo_mrgid <- format_data_bivariate_map(data        = expo_adaPubs_mrgid_for_scale_stats,
-                                                                 data.y      = "perc_ada", # "Count_ORO_ada"
+                                                                 data.y      = "Count_ORO_ada", # "perc_ada"
                                                                  data.x      = "exposure_perc", # "vulnerability",
                                                                  color_table = bivariate_color_scale,
                                                                  nquantiles  = 10) 
@@ -728,8 +728,8 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                        data_world = NULL,
                        color      = bivariate_color_scale,
                        xlab       = "Exposure",
-                       ylab       = "% ada. paper (GeoP)",
-                       name       = "main/final_version/AdaPaperGeop_PERC_expo_territory_Geop") 
+                       ylab       = "# ada. paper (GeoP)",
+                       name       = "main/final_version/AdaPaperGeop_COUNT_expo_territory_Geop") 
   
   ## ---- DEVI, here is the model section for emissions and mitigation papers
   ## ---- You can load this data file
