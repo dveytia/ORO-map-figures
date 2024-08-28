@@ -469,6 +469,10 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                           pred.fit.mit.USA %>% mutate(Model = paste("- USA")))
     pred.fit.all$pred.x <- c(pred.x,pred.x)
     
+    pval <- c(with(summary(fit.mit), coefficients[2,"Pr(>|z|)"]),
+              with(summary(fit.mit.USA), coefficients[2,"Pr(>|z|)"]))
+    pval <- ifelse(pval==0, "2e-16", signif(pval, 2))
+    
     fit.mit.ggp <- ggplot() +
       geom_point(data = GHGemi_mitPubs_country_for_scale_stats,
                  mapping = aes(x = scales::rescale(cumulative_co2_including_luc, to = c(0, 1)),
@@ -487,13 +491,17 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       geom_text(data = data.frame(x = 0.75, 
                                   y = pred.fit.mit$fit[which.min(abs(pred.x-0.85))]),
                 aes(x=x, y=y), label = paste("OR =", signif(exp(fit.mit$coefficients[2]), 2),
-                                             "\nR2 = ", signif(with(summary(fit.mit), 1 - deviance/null.deviance),2)),
-                nudge_y = -0.25)+
+                                             "\nR2 = ", signif(with(summary(fit.mit), 1 - deviance/null.deviance),2),
+                                             "\np =", pval[1]),
+                nudge_y = -0.4,
+                size = 3)+
       geom_text(data = data.frame(x = 0.75, 
                                   y = pred.fit.mit.USA$fit[which.min(abs(pred.x-0.85))]),
                 aes(x=x, y=y), label = paste("OR =", signif(exp(fit.mit.USA$coefficients[2]), 2),
-                                             "\nR2 = ", signif(with(summary(fit.mit.USA), 1 - deviance/null.deviance),2)),
-                nudge_y = +0.25)+
+                                             "\nR2 = ", signif(with(summary(fit.mit.USA), 1 - deviance/null.deviance),2),
+                                             "\np =", pval[2]),
+                nudge_y = +0.4,
+                size = 3)+
     
       labs(y = "log(p/(1-p))", x = "Cumulative CO2 emissions (scaled)",
            size = "N articles")+
@@ -816,7 +824,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       theme_bw()
     
     
-    ## ---- BINOMIAL GLM
+  ## ---- BINOMIAL GLM
   
     # --- Model
     # fit.ada <- glm(y.ada.perc ~ x.ada.scaled, family = binomial, weights = rep(10, length(x.ada.scaled))) ; summary(fit.ada)
@@ -835,6 +843,8 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     pred.fit.ada <- as.data.frame(pred.fit.ada)
     pred.fit.ada$pred.x <- pred.x
     
+    pval <- with(summary(fit.ada), coefficients[2,"Pr(>|z|)"])
+    pval <- ifelse(pval==0, "2e-16", signif(pval, 2))
     fit.ada.ggp <- ggplot() +
       geom_point(data = expo_adaPubs_mrgid_for_scale_stats,
                  mapping = aes(x = scales::rescale(exposure_perc, to = c(0, 1)),
@@ -845,8 +855,9 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                   alpha = 0.5)+
       geom_text(data = data.frame(x = 0.75, y = pred.fit.ada$fit[which.min(abs(pred.fit.ada$pred.x-0.75))]),
                 aes(x=x, y=y), label = paste("OR =", signif(exp(fit.ada$coefficients[2]), 2),
-                                             "\nR2 = ", signif(with(summary(fit.ada), 1 - deviance/null.deviance),2)),
-                nudge_x = -0.2)+
+                                             "\nR2 = ", signif(with(summary(fit.ada), 1 - deviance/null.deviance),2),
+                                             "\np =", pval),
+                nudge_y = -0.8)+
       labs(y = "log(p/(1-p))", x = "Risk (scaled)",
            size = "N articles")+
       theme_bw()
@@ -873,18 +884,219 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
 
   ## ---- POISSON GLM
-  # --- Model
-  # fit.ada <- glm(y.ada.perc ~ x.ada.scaled, family = binomial, weights = rep(10, length(x.ada.scaled))) ; summary(fit.ada)
-  # exp(fit.ada$coefficients[2])
+  # Useful resources:
+  # https://stats.oarc.ucla.edu/r/dae/negative-binomial-regression/ - negative binomial 
+  # https://stats.oarc.ucla.edu/r/dae/zip/ -- zero inflated poisson
+
   
+  ## Mitigation
+  y.mit.count <- GHGemi_mitPubs_country_for_scale_stats$perc_mit*GHGemi_mitPubs_country_for_scale_stats$Count_ORO_adap_miti
+  fit.mit.pois <- glm(y.mit.count ~ x.mit.scaled, family = poisson) 
+  summary(fit.mit.pois)
+  exp(fit.mit.pois$coefficients[2]) # 35.60043, p <2e-16 ***
+  with(summary(fit.mit.pois), 1 - deviance/null.deviance) # pseudo r2 = 0.4397814
+  performance::check_overdispersion(fit.mit.pois) # model overdispersed dispersion ratio =    78.407
+  # Fit negative binomial
+  fit.mit.nb <- MASS::glm.nb(y.mit.count ~ x.mit.scaled)
+  summary(fit.mit.nb)
+  with(summary(fit.mit.nb), 1 - deviance/null.deviance) # pseudo r2 = 0.2762038
+  # Fit zero-inflated poisson -- inflation model not significant except intercept
+  # Also there's no real logic for what the separate process might be for the 0s vs the count data, so don't use
+  fit.mit.zpois <- pscl::zeroinfl(y.mit.count ~ x.mit.scaled)
+  summary(fit.mit.zpois)
+  
+  ## Adaptation
   fit.ada.pois <- glm(y.ada.count ~ x.ada.scaled, family = poisson) ; summary(fit.ada.pois)
   exp(fit.ada.pois$coefficients[2]) #2.846833, p <2e-16 ***
   with(summary(fit.ada.pois), 1 - deviance/null.deviance) # pseudo r2 = 0.00975
+  performance::check_overdispersion(fit.ada.pois) # Overdispersed, dispersion ratio =    89.977
+  # Fit negative binomial
+  fit.ada.nb <- MASS::glm.nb(y.ada.count ~ x.ada.scaled)
+  summary(fit.ada.nb)
+  exp(fit.ada.nb$coefficients[2]) #5.173034, p 0.0841 ***
+  with(summary(fit.ada.nb), 1 - deviance/null.deviance) # pseudo r2 = 0.01032746
+  performance::check_overdispersion(fit.ada.nb)
+  # Fit quasipoisson -- still over-dispersed so stay with the negative binomial.
+  # Also I think the assumptions behind he negative binomial (where values with low mean are weighted less, then level off asymptoically are more appropriate than having weight increase with mean)
+  # Ver Hoef, Jay M. and Boveng, Peter L., "QUASI-POISSON VS. NEGATIVE BINOMIAL REGRESSION: HOW SHOULD WE MODEL OVERDISPERSED COUNT DATA?" (2007). Publications, Agencies and Staff of the U.S. Department of Commerce. 142. https://digitalcommons.unl.edu/usdeptcommercepub/142 
+  fit.ada.qpois <- glm(y.ada.count ~ x.ada.scaled, family = quasipoisson) ; 
+  summary(fit.ada.qpois)
+  exp(fit.ada.qpois$coefficients[2]) #1.0462, p 0.354 
+  with(summary(fit.ada.qpois), 1 - deviance/null.deviance) # 0.009754521
+  performance::check_overdispersion(fit.ada.qpois) # still overdispersed
   
-  y.mit.count <- GHGemi_mitPubs_country_for_scale_stats$perc_mit*GHGemi_mitPubs_country_for_scale_stats$Count_ORO_adap_miti
-  fit.mit.pois <- glm(y.mit.count ~ x.mit.scaled, family = poisson) ; summary(fit.mit.pois)
-  exp(fit.mit.pois$coefficients[2]) # 35.60043, p <2e-16 ***
-  with(summary(fit.mit.pois), 1 - deviance/null.deviance) # pseudo r2 = 0.4397814
+  
+  
+  ## Plot negative binomial predictions with raw data - link scale
+  
+  # Make predictions
+  pred.x <- seq(0,1, length.out = 100)
+  pred.fit.mit.nb <- predict(fit.mit.nb, se.fit = TRUE, newdata = data.frame(x.mit.scaled = pred.x),
+                          type = "link") %>%
+    as.data.frame()%>%
+    mutate(pred.x = pred.x)
+  
+  pred.fit.ada.nb <- predict(fit.ada.nb, se.fit = TRUE, newdata = data.frame(x.ada.scaled = pred.x),
+                               type = "link") %>%
+    as.data.frame()%>%
+    mutate(pred.x = pred.x)
+  
+  # plot mitigation
+  pval <- with(summary(fit.mit.nb), coefficients[2,"Pr(>|z|)"])
+  pval <- ifelse(pval==0, "2e-16", signif(pval, 2))
+  mit.ggp.dat <- GHGemi_mitPubs_country_for_scale_stats %>%
+    mutate(x = scales::rescale(cumulative_co2_including_luc, to = c(0, 1)),
+           y = log(perc_mit*Count_ORO_adap_miti),
+           size = Count_ORO_adap_miti,
+           out_x = rstatix::is_extreme(x),
+           out_y = rstatix::is_extreme(y)) %>%
+    mutate(out_x = ifelse(quantile(x, 0.5) <= x, out_x, FALSE)) 
+
+  fit.mit.nb.ggp <- ggplot() +
+    geom_point(data = mit.ggp.dat,
+               mapping = aes(x = x,
+                             y = y,
+                             size = size)) +
+    ggrepel::geom_label_repel(data = mit.ggp.dat[mit.ggp.dat$out_x,], 
+              aes(x=x, y=y, label = str_wrap(Country, 15)), 
+              col = "red", nudge_y = -1, size=2)+
+    geom_line(data = pred.fit.mit.nb, aes(x=pred.x, y=fit))+
+    geom_ribbon(data = pred.fit.mit.nb, aes(x=pred.x, ymin=fit-se.fit, ymax = fit+se.fit),
+                alpha = 0.5)+
+    geom_text(data = data.frame(x = 0.75, 
+                                y = pred.fit.mit.nb$fit[which.min(abs(pred.x-0.85))]),
+              aes(x=x, y=y), label = paste("B =", signif(fit.mit.nb$coefficients[2], 2),
+                                           "\nR sq. = ", signif(with(summary(fit.mit.nb), 1 - deviance/null.deviance),2),
+                                           "\np = ", pval),
+              nudge_y = -4)+
+    labs(y = "log(N mitigation articles)", x = "Cumulative CO2 emissions (scaled)", size = "Total\nN articles")+
+    theme_bw()
+  
+  fit.mit.nb.ggp
+  
+  # Plot adaptation
+  ada.ggp.dat <- expo_adaPubs_mrgid_for_scale_stats %>%
+    mutate(x = scales::rescale(exposure_perc, to = c(0, 1)),
+           y = log(perc_ada*Count_ORO_adap_miti),
+           size = Count_ORO_adap_miti,
+           out_x = rstatix::is_extreme(x),
+           out_y = rstatix::is_extreme(y)) %>%
+    mutate(out_x = ifelse(quantile(x, 0.5) <= x, out_x, FALSE)) 
+  
+  
+  fit.ada.nb.ggp <- ggplot() +
+    geom_point(data = ada.ggp.dat,
+               mapping = aes(x = x,
+                             y = y,
+                             size = size)) +
+    ggrepel::geom_label_repel(data = ada.ggp.dat[ada.ggp.dat$out_x,], 
+                             aes(x=x, y=y, label = str_wrap(`TERRITORY1`, 15)), 
+                             col = "red", nudge_y = -1, size=2)+
+    geom_line(data = pred.fit.ada.nb, aes(x=pred.x, y=fit))+
+    geom_ribbon(data = pred.fit.ada.nb, aes(x=pred.x, ymin=fit-se.fit, ymax = fit+se.fit),
+                alpha = 0.5)+
+    geom_text(data = data.frame(x = 0.75, 
+                                y = pred.fit.ada.nb$fit[which.min(abs(pred.x-0.85))]),
+              aes(x=x, y=y), label = paste("B =", signif(fit.ada.nb$coefficients[2], 2),
+                                           "\nR sq. = ", signif(with(summary(fit.ada.nb), 1 - deviance/null.deviance),2),
+                                           "\np = ", signif(with(summary(fit.ada.nb), coefficients[2,"Pr(>|z|)"]), 2)),
+              nudge_y = -2)+
+    labs(y = "log(N adaptation articles)", x = "Risk (scaled)", size = "Total\nN articles")+
+    theme_bw()
+  
+  fit.ada.nb.ggp
+  
+  # Combine mitigation and adaptation model fit plots together and save  ---
+  fit.mit.ada.nb.ggp <- cowplot::plot_grid(fit.mit.nb.ggp, fit.ada.nb.ggp, nrow = 2, labels = c("a.","b."))
+  
+  ggsave(here::here("figures/supplemental/researchNeedVsEffortNegativeBinomialGlm.pdf"),
+         plot = fit.mit.ada.nb.ggp,
+         width = 6, height = 7, units = "in")
+  
+  
+  
+  
+  ## Plot negative binomial predictions with raw data - response scale - more difficult to interpret
+  
+  # Make predictions
+  pred.x <- seq(0,1, length.out = 100)
+  pred.fit.mit.nb <- predict(fit.mit.nb, se.fit = TRUE, newdata = data.frame(x.mit.scaled = pred.x),
+                             type = "response") %>%
+    as.data.frame()%>%
+    mutate(pred.x = pred.x)
+  
+  pred.fit.ada.nb <- predict(fit.ada.nb, se.fit = TRUE, newdata = data.frame(x.ada.scaled = pred.x),
+                             type = "response") %>%
+    as.data.frame()%>%
+    mutate(pred.x = pred.x)
+  
+  # plot mitigation
+  pval <- with(summary(fit.mit.nb), coefficients[2,"Pr(>|z|)"])
+  pval <- ifelse(pval==0, "2e-16", signif(pval, 2))
+  mit.ggp.dat <- GHGemi_mitPubs_country_for_scale_stats %>%
+    mutate(x = scales::rescale(cumulative_co2_including_luc, to = c(0, 1)),
+           y = perc_mit*Count_ORO_adap_miti,
+           size = Count_ORO_adap_miti,
+           out_x = rstatix::is_extreme(x),
+           out_y = rstatix::is_extreme(y)) %>%
+    mutate(out_x = ifelse(quantile(x, 0.5) <= x, out_x, FALSE)) 
+  
+  fit.mit.nb.ggp <- ggplot() +
+    geom_point(data = mit.ggp.dat,
+               mapping = aes(x = x,
+                             y = y,
+                             size = size)) +
+    ggrepel::geom_label_repel(data = mit.ggp.dat[mit.ggp.dat$out_x,], 
+                              aes(x=x, y=y, label = str_wrap(Country, 15)), 
+                              col = "red", nudge_y = -1, size=2)+
+    geom_line(data = pred.fit.mit.nb, aes(x=pred.x, y=fit))+
+    geom_ribbon(data = pred.fit.mit.nb, aes(x=pred.x, ymin=fit-se.fit, ymax = fit+se.fit),
+                alpha = 0.5)+
+    geom_text(data = data.frame(x = 0.75, 
+                                y = pred.fit.mit.nb$fit[which.min(abs(pred.x-0.85))]),
+              aes(x=x, y=y), label = paste("B =", signif(exp(fit.mit.nb$coefficients[2]), 2),
+                                           "\nR sq. = ", signif(with(summary(fit.mit.nb), 1 - deviance/null.deviance),2),
+                                           "\np = ", pval),
+              nudge_y = -4)+
+    labs(y = "log(N mitigation articles)", x = "Cumulative CO2 emissions (scaled)", size = "Total\nN articles")+
+    theme_bw()
+  
+  fit.mit.nb.ggp
+  
+  # Plot adaptation
+  ada.ggp.dat <- expo_adaPubs_mrgid_for_scale_stats %>%
+    mutate(x = scales::rescale(exposure_perc, to = c(0, 1)),
+           y = perc_ada*Count_ORO_adap_miti,
+           size = Count_ORO_adap_miti,
+           out_x = rstatix::is_extreme(x),
+           out_y = rstatix::is_extreme(y)) %>%
+    mutate(out_x = ifelse(quantile(x, 0.5) <= x, out_x, FALSE)) 
+  
+  
+  fit.ada.nb.ggp <- ggplot() +
+    geom_point(data = ada.ggp.dat,
+               mapping = aes(x = x,
+                             y = y,
+                             size = size)) +
+    ggrepel::geom_label_repel(data = ada.ggp.dat[ada.ggp.dat$out_x,], 
+                              aes(x=x, y=y, label = str_wrap(`TERRITORY1`, 15)), 
+                              col = "red", nudge_y = -1, size=2)+
+    geom_line(data = pred.fit.ada.nb, aes(x=pred.x, y=fit))+
+    geom_ribbon(data = pred.fit.ada.nb, aes(x=pred.x, ymin=fit-se.fit, ymax = fit+se.fit),
+                alpha = 0.5)+
+    geom_text(data = data.frame(x = 0.75, 
+                                y = pred.fit.ada.nb$fit[which.min(abs(pred.x-0.85))]),
+              aes(x=x, y=y), label = paste("B =", signif(exp(fit.ada.nb$coefficients[2]), 2),
+                                           "\nR sq. = ", signif(with(summary(fit.ada.nb), 1 - deviance/null.deviance),2),
+                                           "\np = ", signif(with(summary(fit.ada.nb), coefficients[2,"Pr(>|z|)"]), 2)),
+              nudge_y = -2)+
+    labs(y = "log(N adaptation articles)", x = "Risk (scaled)", size = "Total\nN articles")+
+    theme_bw()
+  
+  fit.ada.nb.ggp
+  
+  
+  
   
   
 ### -----
