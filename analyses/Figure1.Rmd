@@ -842,6 +842,18 @@ oroTypeSums_confidence <- predTypeDf %>%
   ) 
 oroTypeSums_confidence
 
+# Sum mitigation OROs with and without conference proceedings
+oroTypeSums %>%
+  filter(oro_type %in% c("Built infrastructure & technology",
+                         "CO2 removal or storage",
+                         "Marine renewable energy")) %>%
+  group_by(conference_proceeding) %>%
+  summarise(n_mean = sum(n_mean))
+#   conference_proceeding n_mean
+#   <lgl>                  <int>
+# 1 FALSE                  27837
+# 2 TRUE                    8853
+
 ## Format data for plotting by factoring using common aesthetics
 
 # Read in the aethetics for oro_type -- determines order of x axis
