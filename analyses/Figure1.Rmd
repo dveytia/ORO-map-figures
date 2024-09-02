@@ -996,9 +996,9 @@ oroMatchesProp <- merge(oroMatchesSums, oroTypeSums,
                         suffixes = c(".matches",".total"))
 oroMatchesProp <- oroMatchesProp %>%
   mutate(
-    prop_mean = n_mean.matches/n_mean.total,
-    prop_lower = n_lower.matches/n_lower.total,
-    prop_upper = n_upper.matches/n_upper.total
+    prop_mean = `n_mean.matches`/`n_mean.total`
+    #prop_lower = n_lower.matches/n_lower.total,
+    #prop_upper = n_upper.matches/n_upper.total
   )
 
 ## What is the percentage of IPCC literature dedicated to a particular ORO?
@@ -1192,10 +1192,10 @@ oroBranchDf <- oroBranchDf[!duplicated(oroBranchDf),]
 # Which papers are positive for all three branches?
 # all Mitigation, but for two of them, I could see how keywords such as bio-productivity or "protection scheme" could flag relevance for other ORO types.
 allBranchIds <- oroBranchDf$analysis_id[table(oroBranchDf$analysis_id) == 3]
-uniquerefs %>% 
-  filter(analysis_id %in% allBranchIds) %>%
-  collect() %>%
-  View() 
+# uniquerefs %>% 
+#   filter(analysis_id %in% allBranchIds) %>%
+#   collect() %>%
+#   View() 
 
 oroBranchInteractions_venn <- list(
   oroBranchDf$analysis_id[oroBranchDf$oro_branch == "Mitigation"],
@@ -1213,11 +1213,11 @@ branchAES <- branchAES[order(branchAES$order),]
 require(ggvenn)
 interactions_venn_ggp <- ggvenn(oroBranchInteractions_venn,
        show_percentage = FALSE,
-       fill_color = branchAES$colour, fill_alpha = 1,
-       text_color = "white",
+       fill_color = branchAES$colour, fill_alpha = 0.5,
+       text_color = "black",
        stroke_size = 0.5, set_name_size = 4)
 
-
+interactions_venn_ggp
 
 ```
 
@@ -1258,7 +1258,7 @@ fig1_ggp <- plot_grid(fig1_B_ggp_inset+theme(legend.position = "bottom",
                       scale = c(1,1.2,1,1),
           nrow=2, ncol=2, labels = c("a.","b.","c",""), align = "hv", axis="b", rel_widths = c(1.3,1),
           rel_heights = c(2,1))
-
+fig1_ggp
 
 ## Save file
 ggsave(filename = "oroBranchTimeAndIpccMatches_Venn.pdf",
