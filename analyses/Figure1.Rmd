@@ -220,7 +220,7 @@ fig1_A_ggp <- ggplot()+
                         guide=guide_legend(order=2, nrow=2), position = "bottom")+
   labs(x="Year", y="log(N articles)")+
   scale_x_date(limits = c(as.Date("1980-01-01"),as.Date("2022-12-31")))+
-  scale_y_continuous(sec.axis = sec_axis(trans = exp, name = "N articles", 
+  scale_y_continuous(sec.axis = sec_axis(transform = exp, name = "N articles",
                                          breaks = c(0,100,1000,10000,30000,80000),
                                          labels = function(x) formatC(x, big.mark=",", format="d")),
                      breaks = seq(0,10, by= 2))+ #, limits = c(0,13)
@@ -884,8 +884,11 @@ typeAES <- merge(typeAES, branchTypeLookup,
 oroTypeSums <- merge(oroTypeSums,typeAES[,c("oro_type","order","colour","oro_branch")])
 oroTypeSums$oro_branch <- factor(oroTypeSums$oro_branch,
                                  levels = branchAES$label[branchAES$order])
+
+# oroTypeSums$order <- factor(oroTypeSums$order,
+#                             levels = oroTypeSums$order[order(oroTypeSums$order)])
 oroTypeSums$order <- factor(oroTypeSums$order,
-                            levels = oroTypeSums$order[order(oroTypeSums$order)])
+                            levels = unique(oroTypeSums$order)[order(unique(oroTypeSums$order))])
 
 oroTypeSums_confidence <- merge(oroTypeSums_confidence,typeAES[,c("oro_type","order","colour","oro_branch")])
 oroTypeSums_confidence$oro_branch <- factor(oroTypeSums_confidence$oro_branch,
@@ -1157,10 +1160,28 @@ fig1_B_ggp_inset
 # Add venn diagram of interactions between ORO branches
 
 ```{r Load aesthetics for branch interaction venn diagram}
+## Load data
+predRel <- tbl(dbcon, "pred_relevance") 
+predType <- tbl(dbcon, "pred_oro_type_long") 
+uniquerefs <- tbl(dbcon, "uniquerefs")
+
+## Format and collect needed data
+predTypeDf <- predRel %>% 
+  filter(thresholdLevel <= relevance_mean) %>%
+  select(analysis_id) %>%
+  inner_join(predType, by ="analysis_id") %>%
+  left_join(uniquerefs %>% select(analysis_id, year), by = "analysis_id") %>%
+  collect()
+
+
+
 
 # # Format aesthetics for plotting
 branchAES <- factor_aes[which(factor_aes$variable == "ORO_branch"),]
 branchAES <- branchAES[order(branchAES$order),]
+
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
 
 upsetCols <- typeAES %>%
   rename(set = label, fill = colour) %>%
@@ -1168,47 +1189,100 @@ upsetCols <- typeAES %>%
 
 
 # # Also calculate interaction matrix
-# oroTypeDf_mat <- crossprod(table(oroTypeDf[,c("analysis_id","oro_type")]))
+#oroTypeDf_mat <- crossprod(table(oroTypeDf[,c("analysis_id","oro_type")]))
 
+
+```
+
+```{r plot the venn diagram of overlap between branches - ggVennDiagram}
+## Calculate interaction matrix
+oroBranchMat <- predTypeDf %>%
+  filter(mean <= 0.5) %>% 
+  distinct(analysis_id, oro_branch) %>% 
+  mutate(presence = 1) %>%
+  tidyr::pivot_wider(id_cols = analysis_id, names_from = oro_branch, values_from = presence, values_fill = 0)
+summary(oroBranchMat)
+anyDuplicated(oroBranchMat$analysis_id) # check no duplicates
+
+## Check that the number of articles counted == the total number of relevant articles
+sum(colSums(oroBranchMat[,2:3]))
+
+## Format into list
+vennList <- vector("list", length = ncol(oroBranchMat)-1)
+names(vennList) <- colnames(oroBranchMat)[-1]
+for(s in 1:length(vennList)){
+  vennList[[s]] <- oroBranchMat$analysis_id[oroBranchMat[,s+1] == 1]
+}
+vennList <- Filter(function(x) length(x) > 0, vennList)
+
+## Plot  
+require(ggVennDiagram)
+venn_ggp1 <- ggVennDiagram(vennList, label_alpha = 0)+
+      ggplot2::scale_fill_distiller(name = "N articles", palette = "Blues", direction = 1)
+
+venn_ggp1
 ```
 
 
 ```{r plot the venn diagram of overlap between branches}
 predRel <- tbl(dbcon, "pred_relevance") %>%
   filter(0.5 <= relevance_mean) %>%
-  select(analysis_id)
+  select(analysis_id) %>%
+  collect()
 predBranch <- tbl(dbcon, "pred_oro_type_long") %>%
   filter(0.5 <= mean) %>%
-  select(analysis_id, oro_branch)
+  select(analysis_id, oro_branch) %>%
+  collect()
 
 ## Join together to get relevance preditions for all included
 oroBranchDf <- predRel %>%
   inner_join(predBranch, by ="analysis_id") %>% 
   select(analysis_id, oro_branch) %>%
   collect()
-# remove branch duplicates
-oroBranchDf <- oroBranchDf[!duplicated(oroBranchDf),]
+
+# Check numbers
+# Number of articles predicted relevant but not allocated an ORO type
+nOther <- length(unique(predRel$analysis_id))-length(unique(oroBranchDf$analysis_id)) 
+nOther #1435
+# Number of branch duplicates (same article relevant to different ORO types within the same branch)
+BranchDup <- oroBranchDf[duplicated(oroBranchDf),] 
+nBranchDup <- length(unique(BranchDup$analysis_id))
+nBranchDup # 2684
+# without branch duplicates
+noDup <- oroBranchDf[!duplicated(oroBranchDf),]
+nnoDup <- length(unique(noDup$analysis_id))
+nnoDup # 42758
+# Check that I can arrive back at total number of relevant articles -- yes
+length(unique(predRel$analysis_id)) # 44193
+nnoDup + nOther # 44193
+
+
+
 
 # Which papers are positive for all three branches?
 # all Mitigation, but for two of them, I could see how keywords such as bio-productivity or "protection scheme" could flag relevance for other ORO types.
-allBranchIds <- oroBranchDf$analysis_id[table(oroBranchDf$analysis_id) == 3]
+allBranchIds <- noDup$analysis_id[table(noDup$analysis_id) == 3]
 # uniquerefs %>% 
 #   filter(analysis_id %in% allBranchIds) %>%
 #   collect() %>%
 #   View() 
 
-oroBranchInteractions_venn <- list(
-  oroBranchDf$analysis_id[oroBranchDf$oro_branch == "Mitigation"],
-  oroBranchDf$analysis_id[oroBranchDf$oro_branch == "Natural resilience"],
-  oroBranchDf$analysis_id[oroBranchDf$oro_branch == "Societal adaptation"]
-)
-names(oroBranchInteractions_venn) <- c("Mitigation","Natural resilience","Societal adaptation")
+
 
 # Get aesthetics
-
 branchAES <- factor_aes[which(factor_aes$variable == "ORO_branch"),]
 branchAES <- branchAES[order(branchAES$order),]
 
+
+
+## Plot using GGVENN -- can allocate a different colour to each set
+## Format into list
+oroBranchInteractions_venn <- list(
+  noDup$analysis_id[noDup$oro_branch == "Mitigation"],
+  noDup$analysis_id[noDup$oro_branch == "Natural resilience"],
+  noDup$analysis_id[noDup$oro_branch == "Societal adaptation"]
+)
+names(oroBranchInteractions_venn) <- c("Mitigation","Natural resilience","Societal adaptation")
 # Plot
 require(ggvenn)
 interactions_venn_ggp <- ggvenn(oroBranchInteractions_venn,
@@ -1218,6 +1292,23 @@ interactions_venn_ggp <- ggvenn(oroBranchInteractions_venn,
        stroke_size = 0.5, set_name_size = 4)
 
 interactions_venn_ggp
+
+
+
+## Plot using GGVENNDIAGRAM -- each set is coloured according to count
+## Format into list
+vennList <- vector("list", length = length(branchAES$label))
+names(vennList) <- branchAES$label
+for(s in 1:length(vennList)){
+  vennList[[s]] <- noDup$analysis_id[noDup$oro_branch == branchAES$label[s]]
+}
+vennList <- Filter(function(x) length(x) > 0, vennList)
+# Plot  
+require(ggVennDiagram)
+venn_ggp1 <- ggVennDiagram(oroBranchInteractions_venn, label_alpha = 0)+
+      ggplot2::scale_fill_distiller(name = "N articles", palette = "Blues", direction = 1)
+
+venn_ggp1
 
 ```
 
@@ -1368,7 +1459,7 @@ predType <- tbl(dbcon, "pred_oro_type_long")
 uniquerefs <- tbl(dbcon, "uniquerefs")
 
 ## Format and collect needed data
-predTypeDf <- predRel %>%
+predTypeDf <- predRel %>% 
   filter(thresholdLevel <= relevance_mean) %>%
   select(analysis_id) %>%
   inner_join(predType, by ="analysis_id") %>%
