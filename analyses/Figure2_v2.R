@@ -151,6 +151,109 @@ countries_ls <- read.csv(file = here::here("data", "external", "list_of_countrie
       # Save for Devi
       # save(ratio_ORO_totPub, file = here::here("data", "ratio_ORO_totPub.RData"))
     
+    
+    
+    
+    # ---------- DEVI MODEL ratio of ORO to ocean and climate by country type
+    
+    # No significant difference in proportion if SIDS or not
+    load(here::here("data", "ratio_ORO_totPub.RData"))
+    ratio_ORO_totPub_modDf <- ratio_ORO_totPub %>%
+      mutate(propORO = layer/100) %>%
+      left_join(country_grp, by = "iso_code") %>%
+      mutate(SIDS = ifelse(group_land == "SIDS", "SIDS","Other")) %>%
+      mutate(SIDS = ifelse(is.na(SIDS), "Other", SIDS)) %>%
+      mutate(SIDS = factor(SIDS, levels = c("Other","SIDS")))
+    
+    summary(ratio_ORO_totPub_modDf)
+    
+    ggplot(ratio_ORO_totPub_glm, aes(x = SIDS, y = propORO))+
+      geom_boxplot()
+    
+    ratio_ORO_totPub_glm <- glm(propORO ~ SIDS, weights = Record.Count, family = "binomial", data = ratio_ORO_totPub_modDf)
+    summary(ratio_ORO_totPub_glm)
+    
+    
+    # Instead try by climate zone
+    # download ascii file from http://koeppen-geiger.vu-wien.ac.at/
+    # Or maybe current and future https://www.nature.com/articles/sdata2018214
+    # Used National Aggregates of Geospatial Data Collection: Population, Landscape and Climate Estimaes v2 (1990-2000)
+    # https://sedac.ciesin.columbia.edu/data/set/nagdc-population-landscape-climate-estimates-v2/data-download
+    
+    ## read in climate zone data
+    climZoneDf <- readxl::read_excel(here::here("data/external/nagdc-population-landscape-climate-estimates-v2.xls"), sheet = "AREA2000", col_names = TRUE, trim_ws = TRUE)
+    # Subset to columns of interest
+    climZoneDf <- climZoneDf[,c(1,grep("PARCZ", colnames(climZoneDf)),186)] %>%
+      select(-PARCZ00) %>%
+      rename(iso_code = ISO3V10, total_sq_km = T_ARCZ)
+    # Mutate to long format
+    climZoneDf <- reshape2::melt(climZoneDf, id.vars = c("iso_code", "total_sq_km"), variable.name = "climate_zone_S", value.name = "perc_land_area")
+    climZoneDf$prop_land_area = climZoneDf$perc_land_area/100
+    # Classify columns by larger zone
+    zoneLookup <- list(
+      paste0("PARCZ", 1:6),
+      paste0("PARCZ", 7:10),
+      paste0("PARCZ", 11:26),
+      paste0("PARCZ", 27:37),
+      paste0("PARCZ", 38:41),
+      paste0("PARCZ", 42:45)
+    )
+    names(zoneLookup) <- c("Tropical", "Polar","Temperate","Cold","Dry","Desert")
+    zoneLookup <- lapply(zoneLookup, function(x) {data.frame(climate_zone_S = x)})
+    zoneLookup <- mapply(cbind, zoneLookup, "climate_zone_L"=c("Tropical", "Polar","Temperate","Cold","Dry","Desert"),SIMPLIFY = F)
+    zoneLookup <- do.call(rbind.data.frame, zoneLookup)
+    climZoneDf <- climZoneDf %>%
+      left_join(zoneLookup, by = "climate_zone_S")
+    
+    ## Join climate zone data to ratio data
+    ratio_ORO_totPub_modDf <- ratio_ORO_totPub %>%
+      mutate(propORO = layer/100) %>%
+      left_join(country_grp, by = "iso_code") %>%
+      mutate(SIDS = ifelse(group_land == "SIDS", "SIDS","Other")) %>%
+      mutate(SIDS = ifelse(is.na(SIDS), "Other", SIDS)) %>%
+      mutate(SIDS = factor(SIDS, levels = c("Other","SIDS"))) %>%
+      left_join(climZoneDf, by = "iso_code") %>%
+      mutate(climate_tropical = ifelse(climate_zone_L == "Tropical","Tropical","Other")) %>%
+      mutate(climate_zone_L_f = factor(climate_zone_L, levels = c("Polar", "Cold","Temperate","Dry","Desert","Tropical")),
+             climate_tropical_f = factor(climate_tropical, levels = c("Other","Tropical")))
+
+    summary(ratio_ORO_totPub_modDf)
+    
+    
+    ## Fit models
+    
+    # The likelihood of publishing an ORO as a function of % land area classified as tropical
+    ratio_ORO_totPub_percTropical_glm <- glm(propORO ~ perc_land_area, weights = Record.Count, family = "binomial", data = ratio_ORO_totPub_modDf, subset = climate_zone_L == "Tropical")
+    summary(ratio_ORO_totPub_percTropical_glm)
+    
+    ggplot()+
+      geom_point(data = ratio_ORO_totPub_modDf %>%
+                   filter(climate_zone_L == "Tropical"),
+                 aes(x = perc_land_area, y = propORO)) # try log odds ratio instead
+    
+    # # Extract the summary statistics for just the slope (year)
+    # summaryTable <- do.call(rbind, lapply(modFits, function(x) summary(x)$tTable['year_num',]))
+    # summaryTable <- summaryTable |> 
+    #   as.data.frame() |> 
+    #   arrange(desc(Value)) |> 
+    #   mutate(Coefficient = "Year") |> 
+    #   # country_aff = names(modFits)) |>
+    #   tibble::rownames_to_column(var = "country") |>
+    #   select(country, Coefficient, Value, Std.Error, `t-value`, `p-value`) |> 
+    #   mutate(iso_code = countrycode(sourcevar   = country,
+    #                                 origin      = "country.name",
+    #                                 destination = "iso3c"))
+    # # layer    = cut()) 
+    # # filter(`p-value` <= 0.05) |> 
+    # # rename(layer = Value) 
+    # 
+    # ## Save to outputs
+    # write.csv(summaryTable, here::here("outputs/glsCountryPublicationTrendsSummaryTable.csv"))
+    
+    
+    # ----- End DEVI MODELLING -----------------------------
+    
+    
     # --- Format the shapefile of the world countries polygon and bind data
     world_shp_boundaries <- format_shp_of_the_world(world_shp    = world_shp,
                                                     data_to_bind = ratio_ORO_totPub,
@@ -285,23 +388,79 @@ countries_ls <- read.csv(file = here::here("data", "external", "list_of_countrie
     ## Save to outputs
     write.csv(summaryTable, here::here("outputs/glsCountryPublicationTrendsSummaryTable.csv"))
     
-    # summaryTable$Value[summaryTable$`p-value` > 0.05] <- "NS"
     
-    data_Signif <- summaryTable |> 
-      filter(`p-value` <= 0.05) |> 
-      mutate(cut   = cut(Value, breaks = 10, dig.lab = 2),
-             layer = factor(paste0(">", str_extract(cut, "0\\.\\d+(?=,)"))),
-             layer = forcats::fct_relevel(layer, rev(levels(layer)))) |> 
-      select(-cut)
     
-    data_NSignif <- summaryTable |> 
-      filter(`p-value` > 0.05) |> 
-      mutate(layer = factor("NS"))
-      
-    data_trends <- bind_rows(data_Signif, data_NSignif) 
     
-    # quick plot of only the significant exponential trends
-    ggplot(summaryTable %>% filter(`p-value` <= 0.05), aes(layer))+ geom_density()+ theme_bw()
+    ##### DEVI -- SUB-ANALYSIS OF TRENDS BY COUNTRY CHARACTERISTICS #--------------------------
+    summaryTable <- read.csv(here::here("outputs/glsCountryPublicationTrendsSummaryTable.csv"))
+    
+    # join with column to indicate country type: land locked, coastal, SIDS
+    landlocked <- read.csv(file = here::here("data", "external", "special_country_groups", "landlocked-countries-2024.csv"), sep = ",") |> 
+      select(country, LandlockedCountries) |> 
+      rename(Country    = country, 
+             group_land = LandlockedCountries) |> 
+      mutate(iso_code = countrycode::countrycode(sourcevar   = Country,
+                                    origin      = "country.name",
+                                    destination = "iso3c"),
+             group_land = case_when(group_land == "yes" ~ "Land-locked",
+                                    TRUE ~ "NA")) 
+    
+    AMUNRC <- c("American Samoa", "Anguilla", "Aruba", "Bermuda", "British", "Virgin Islands", "Cayman Islands", "Commonwealth of Northern Marianas",
+                "Curacao", "French Polynesia", "Guadeloupe", "Guam", "Martinique", "Montserrat", "New Caledonia", "Puerto Rico", "Sint Maarten",
+                "Turks and Caicos Islands", "United States Virgin Islands")
+    SIDS <- read.csv(file = here::here("data", "external", "special_country_groups", "special-country-groups.csv"), sep = ",")
+    SIDS <- SIDS %>%
+      mutate(iso_code = countrycode::countrycode(sourcevar   = Country,
+                                                 origin      = "country.name",
+                                                 destination = "iso3c"))
+    
+    country_grp <-  SIDS |> 
+      select(Country, LLDC, SIDS) |> 
+      mutate(iso_code = countrycode::countrycode(sourcevar   = Country,
+                                    origin      = "country.name",
+                                    destination = "iso3c"),
+             group_land = case_when(LLDC == "No" & SIDS == "Yes" ~ "SIDS",
+                                    LLDC == "Yes" & SIDS == "No" ~ "Land-locked",
+                                    TRUE ~ "Coastal")) |> 
+    
+      select(-LLDC, -SIDS) |> 
+      rbind(landlocked) |> 
+      distinct() |> 
+      mutate(group_land = case_when(Country %in% AMUNRC ~ "AMUNRC",
+                                    TRUE ~ group_land)) |> 
+      filter(Country != "Bolivia (Plurinational State of)") |> 
+      rename(country = Country)
+    
+    unique(country_grp$group_land)
+    
+    trendCountryTypeDf <- summaryTable %>%
+      #filter(p.value <= 0.05) %>%
+      left_join(SIDS[,c("SIDS","iso_code")], by = "iso_code") %>% 
+      mutate(SIDS = factor(SIDS, levels = c("Yes","No"))) %>%
+      left_join(country_grp[,c("iso_code","group_land")], by = c("iso_code")) %>%
+      #mutate(group_land = ifelse(SIDS == "Yes", "SIDS", group_land)) %>%
+      mutate(group_land = factor(group_land, levels = c("Land-locked","Coastal","SIDS"))) %>%
+      mutate(significant = ifelse(p.value <= 0.05, TRUE, FALSE))
+    
+    # Number of SIDS is 13, but number of sids in the group_land column is 9...ffor some reason they are NA in the group_land column
+    summary(trendCountryTypeDf)
+    trendCountryTypeDf %>%
+      filter(SIDS == "Yes" & is.na(group_land)) %>%
+      print()
+    
+    # Other countries are also NA in the group_land classification
+    View(trendCountryTypeDf[is.na(trendCountryTypeDf$group_land),])
+    
+    # So actually SIDS have lower and insignificant trend in ORO publication
+    ggplot(trendCountryTypeDf, aes(x=SIDS, y = Value))+
+      geom_boxplot()+
+      geom_jitter(aes(col = significant))
+    
+
+    
+    
+    
+    
     
   ## ---- Format map data
     
