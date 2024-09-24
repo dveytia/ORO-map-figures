@@ -208,10 +208,13 @@ countries_ls <- read.csv(file = here::here("data", "external", "list_of_countrie
     ## Join climate zone data to ratio data
     ratio_ORO_totPub_modDf <- ratio_ORO_totPub %>%
       mutate(propORO = layer/100) %>%
+      mutate(logOR = log(propORO/(1-propORO))) %>%
       left_join(country_grp, by = "iso_code") %>%
+      mutate(group_land = ifelse(is.na(group_land), "Coastal", group_land)) %>%
+      mutate(group_land = ifelse(group_land == "AMUNRC", "Coastal", group_land)) %>% 
       mutate(SIDS = ifelse(group_land == "SIDS", "SIDS","Other")) %>%
-      mutate(SIDS = ifelse(is.na(SIDS), "Other", SIDS)) %>%
-      mutate(SIDS = factor(SIDS, levels = c("Other","SIDS"))) %>%
+      mutate(SIDS_f = factor(SIDS, levels = c("Other","SIDS")),
+             group_land_f = factor(group_land, levels = c("Land-locked","Coastal","SIDS"))) %>%
       left_join(climZoneDf, by = "iso_code") %>%
       mutate(climate_tropical = ifelse(climate_zone_L == "Tropical","Tropical","Other")) %>%
       mutate(climate_zone_L_f = factor(climate_zone_L, levels = c("Polar", "Cold","Temperate","Dry","Desert","Tropical")),
@@ -222,34 +225,78 @@ countries_ls <- read.csv(file = here::here("data", "external", "list_of_countrie
     
     ## Fit models
     
-    # The likelihood of publishing an ORO as a function of % land area classified as tropical
-    ratio_ORO_totPub_percTropical_glm <- glm(propORO ~ perc_land_area, weights = Record.Count, family = "binomial", data = ratio_ORO_totPub_modDf, subset = climate_zone_L == "Tropical")
+    # The likelihood of publishing an ORO as a function of % tropical land area classified as tropical
+    ratio_ORO_totPub_percTropical_glm <- glm(propORO ~ perc_land_area + group_land_f, weights = Record.Count, family = "binomial", data = ratio_ORO_totPub_modDf, subset = climate_zone_L == "Tropical")
     summary(ratio_ORO_totPub_percTropical_glm)
+    # 1.005154 increase in odds of ORO pub as a function of % tropical land area
+    # perc_land_area 
+    # 1.004884
+    exp(ratio_ORO_totPub_percTropical_glm$coefficients[2]) 
+    # Odds of publishing ORO in coastal or SIDS is > 5x greater than for land-locked
+    # group_land_fCoastal    group_land_fSIDS 
+    # 5.359489            5.341645
+    exp(ratio_ORO_totPub_percTropical_glm$coefficients[3:4])-exp(ratio_ORO_totPub_percTropical_glm$coefficients[1])
     
-    ggplot()+
+    
+    # Plot predictions with raw data
+    pred.x <- seq(0,100, length.out = 100)
+    newdat <-  data.frame(
+      group_land_f = rep(levels(ratio_ORO_totPub_modDf$group_land_f), length(pred.x)) %>% sort,
+      perc_land_area = rep(pred.x, 3))
+    pred.fit <- predict(ratio_ORO_totPub_percTropical_glm,
+                        se.fit = TRUE, 
+                        newdata = newdat,
+                        type = "link")
+    pred.fit <- as.data.frame(pred.fit)
+    pred.fit$group_land_f <- factor(newdat$group_land_f, levels = levels(ratio_ORO_totPub_modDf$group_land_f))
+    pred.fit$x <- newdat$perc_land_area
+   
+    
+    pvalSlope <- signif(with(summary(ratio_ORO_totPub_percTropical_glm), coefficients[2,"Pr(>|z|)"]), 2)
+    pvalSlope <- ifelse(pvalSlope < 0.01, "< 0.01", pvalSlope)
+    ORSlope <- format(exp(ratio_ORO_totPub_percTropical_glm$coefficients[2]), digits=4)
+    R2 = signif(with(summary(ratio_ORO_totPub_percTropical_glm), 1 - deviance/null.deviance),2)
+    ORDat <- data.frame(
+      group_land_f = levels(ratio_ORO_totPub_modDf$group_land_f),
+      OR = format(exp(ratio_ORO_totPub_percTropical_glm$coefficients[c(1,3:4)]), digits = 1),
+      `P value` = signif(with(summary(ratio_ORO_totPub_percTropical_glm), coefficients[c(1,3:4),"Pr(>|z|)"]), 2),
+      y = rep(-3.5, 3),
+      x = rep(85, 3)
+    )
+    ORDat$P.value = ifelse(ORDat$P.value < 0.01, "< 0.01", pvalSlope)
+    ORDat$group_land_f = factor(ORDat$group_land_f, levels(ratio_ORO_totPub_modDf$group_land_f))
+    
+    ratio_ORO_totPub_percTropical_glm_ggp <- ggplot() +
       geom_point(data = ratio_ORO_totPub_modDf %>%
                    filter(climate_zone_L == "Tropical"),
-                 aes(x = perc_land_area, y = propORO)) # try log odds ratio instead
+                 aes(x = perc_land_area, y = logOR, size = Record.Count, col = group_land_f))+ 
+      geom_line(data = pred.fit, aes(x=x, y=fit))+
+      geom_ribbon(data = pred.fit, aes(x=x, ymin=fit-se.fit, ymax = fit+se.fit),
+                  alpha = 0.5)+
+      geom_text(data = ORDat,
+                aes(x=x, y=y, label = paste("OR =", OR,"\np =", P.value), col = group_land_f), 
+                nudge_y = -0.4,
+                size = 3)+
+      geom_text(data = data.frame(x=50, y = Inf, OR = ORSlope, P.value = pvalSlope, R2 = R2, group_land_f = factor("Coastal", levels = levels(ratio_ORO_totPub_modDf$group_land_f))),
+                aes(x=x, y=y, label = paste("OR % Tropical land area =", OR,
+                                            "\np =", P.value,
+                                            "\nModel R2 = ", R2)),
+                vjust = 1,
+                size = 3)+
+      labs(y = "log(p/(1-p))", x = "% Tropical land area",
+           size = "N articles", col = "Country\ntype")+
+      facet_wrap(vars(group_land_f))+
+      theme_bw()+
+      theme(
+        legend.position = "bottom"
+      )
     
-    # # Extract the summary statistics for just the slope (year)
-    # summaryTable <- do.call(rbind, lapply(modFits, function(x) summary(x)$tTable['year_num',]))
-    # summaryTable <- summaryTable |> 
-    #   as.data.frame() |> 
-    #   arrange(desc(Value)) |> 
-    #   mutate(Coefficient = "Year") |> 
-    #   # country_aff = names(modFits)) |>
-    #   tibble::rownames_to_column(var = "country") |>
-    #   select(country, Coefficient, Value, Std.Error, `t-value`, `p-value`) |> 
-    #   mutate(iso_code = countrycode(sourcevar   = country,
-    #                                 origin      = "country.name",
-    #                                 destination = "iso3c"))
-    # # layer    = cut()) 
-    # # filter(`p-value` <= 0.05) |> 
-    # # rename(layer = Value) 
-    # 
-    # ## Save to outputs
-    # write.csv(summaryTable, here::here("outputs/glsCountryPublicationTrendsSummaryTable.csv"))
+    ratio_ORO_totPub_percTropical_glm_ggp
     
+    ggsave(here::here("figures/supplemental/ratioOROtoOceanClimByCountryTypeAndTropical_binomialGLM.pdf"),
+           width = 6, height = 4, units = "in")
+    
+  
     
     # ----- End DEVI MODELLING -----------------------------
     
