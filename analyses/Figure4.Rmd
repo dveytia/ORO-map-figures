@@ -265,7 +265,7 @@ fig4_B_quantile_ggp <- ggplot(nDat, aes(x = climate_threat, y=oro_type))+
                     position = "bottom")+
   
   # other aesthetics
-  labs(x="Climate impact driver")+ 
+  labs(x="Climatic impact-driver")+ 
   scale_y_discrete(limits = rev)+
 
   theme_bw()+
@@ -343,7 +343,7 @@ fig4_B_even_ggp <- ggplot(nDat, aes(x = climate_threat, y=oro_type))+
                     position = "bottom")+
   
   # other aesthetics
-  labs(x="Climate impact driver")+ 
+  labs(x="Climatic impact-driver")+ 
   
   scale_y_discrete(limits = rev)+
   #coord_flip()+
@@ -428,7 +428,7 @@ fig4_B_percent_ggp <- ggplot(nDat, aes(x = climate_threat, y=oro_type))+
                     position = "bottom")+
   
   # other aesthetics
-  labs(x="Climate impact driver")+ 
+  labs(x="Climatic impact-driver")+ 
   
   #scale_y_discrete(limits = rev)+
   #coord_flip()+
@@ -564,7 +564,7 @@ fig4_B_percent_nonlinear_ggp <- ggplot(marSysTypeThreatSumsNorm2,
             col="black", size=3)+
   
   # other aesthetics
-  labs(y="Climate impact driver", x="ORO type")+ 
+  labs(y="Climatic impact-driver", x="ORO type")+ 
   geom_vline(xintercept = c(3.5, 5.5), col="red", linewidth = 1.5)+
   
   #scale_y_discrete(limits = rev)+
