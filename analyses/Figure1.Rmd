@@ -1547,6 +1547,80 @@ Sfig_oro_ggp
 ggsave(here::here("figures/supplemental/allOROsTimeline.pdf"), width=5, height=6, units="in")
 ```
 
+# Supplementary figure: Number of publications by scientific discipline
+
+
+```{r load predictions for ORO type}
+predRel <- tbl(dbcon, "pred_relevance") 
+predBranch <- tbl(dbcon, "pred_oro_branch")
+uniquerefs <- tbl(dbcon, "uniquerefs")
+
+## Format and collect needed data
+branchDisciplineDf <- predRel %>%
+  filter(thresholdLevel <= relevance_mean) %>%
+  select(analysis_id) %>%
+  left_join(predBranch, by = "analysis_id") %>%
+  mutate(Mitigation = ifelse(thresholdLevel <= `oro_branch.Mitigation - mean_prediction`,1,0),
+         Adaptation = case_when(
+           thresholdLevel <= `oro_branch.Nature - mean_prediction` ~ 1,
+           thresholdLevel <= `oro_branch.Societal - mean_prediction` ~ 1,
+           TRUE ~ 0
+         )) %>%
+  select(analysis_id, Mitigation, Adaptation) %>%
+  filter(Mitigation != Adaptation) %>% # remove rows where mitigation and adaptation are the same -- would cancel out
+  left_join(uniquerefs, by = "analysis_id") %>%
+  select(analysis_id, Mitigation, Adaptation, research_areas, web_of_science_categories) %>%
+  collect()
+
+research_areas <- strsplit(branchDisciplineDf$research_areas, "; ")
+research_areas <- data.frame(analysis_id = rep.int(branchDisciplineDf$analysis_id, sapply(research_areas, length)),
+                             research_area = unlist(research_areas))
+research_areas <- subset(research_areas, !is.na(research_area))
+
+branchDisciplineDf <- research_areas %>%
+  left_join(branchDisciplineDf %>% select(analysis_id, Mitigation, Adaptation), by = "analysis_id")
+
+
+researchAreaTab <- branchDisciplineDf %>%
+  group_by(research_area) %>%
+  summarise(n_research_area = n()) %>%
+  arrange(desc(n_research_area))
+
+researchAreaTab %>% head(20)
+
+write.csv(researchAreaTab, here::here("outputs/research_areas_tab.csv"))
+
+researchAreaLookup <- read.csv(here::here("outputs/research_areas_tab.csv"), strip.white = TRUE, header = TRUE)
+researchAreaLookup$X <- NULL
+researchAreaLookup$n_research_area <- NULL
+
+branchDisciplineDf <- branchDisciplineDf %>%
+  left_join(researchAreaLookup, by = "research_area")
+
+branchDisciplineDf <- branchDisciplineDf %>%
+  filter(!is.na(Category)) %>%
+  mutate(ORO_branch = ifelse(Mitigation == 1, "Mitigation","Adaptation")) %>%
+  mutate(ORO_branch_f = factor(ORO_branch, levels = c("Mitigation","Adaptation")),
+         Category_f = factor(Category, 
+                             levels = c("Physical","Natural","Social"), 
+                             labels = c("Physical Sciences","Natural and\nLife Sciences","Social Sciences")))
+
+branchDisciplineSums <- branchDisciplineDf %>%
+  group_by(ORO_branch_f, Category_f) %>%
+  summarise(n = n_distinct(analysis_id))
+
+research_area_ggp <- ggplot(branchDisciplineSums, aes(x = ORO_branch_f, y = n,label = n, fill = Category_f)) +
+  geom_col()+
+  geom_text(position = position_stack(vjust = 0.5))+
+  scale_fill_brewer(type = "qual", palette = "Accent")+
+  labs(y = "N Articles",x = "ORO branch", fill = "Research\area")+
+  theme_bw()
+
+
+ggsave(filename = here::here("figures/supplemental/nArticlesResearchAreaByOroBranch.pdf"),
+       plot = research_area_ggp,
+       width = 6, height = 4, units = "in")
+```
 
 
 
