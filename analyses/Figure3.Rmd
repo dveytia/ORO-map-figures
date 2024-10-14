@@ -171,8 +171,7 @@ percentEmpirical <- typeMethodDf %>%
 ```
 
 ```{r write table to csv}
-write.csv(typeMethodDf %>% select(method_type, oro_type, method_sum, oroTotal, method_percent),
-          here::here("outputs/methodTypeByOROTypeSummaryTable.csv"))
+write.csv(typeMethodDf %>% select(oro_type, method_type, method_sum, oroTotal, method_percent) %>% arrange(oro_type, method_type),here::here("outputs/methodTypeByOROTypeSummaryTable.csv"))
 
 ```
 
