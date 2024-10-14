@@ -242,7 +242,7 @@ fig3_ggp <- ggplot(typeMethodDf, aes(x=order, y=method_percent))+
                     guide = guide_legend(nrow=2))+
   scale_x_discrete(limits = levels(typeMethodDf$order), 
                     labels = levels(typeMethodDf$oro_type))+
-  ylim(c(0,115))+
+  scale_y_continuous(limits = c(0,115), breaks = seq(0,100, by = 25))+
   
   labs(y="Percent contribution")+
   theme(
