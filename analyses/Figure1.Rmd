@@ -402,7 +402,7 @@ unlist(corToScopus)
 by_dataset3 <- rbind(oro_branch_by_year_sums %>% 
                       rename(Dataset = ORO_branch, n_articles = mean) %>%
                       select(year, n_articles, Dataset),
-  scopus_by_year %>% mutate(Dataset = paste("Scopus")),
+  scopus_by_year %>% mutate(Dataset = paste("Ocean & Climate")),
   wos_by_year %>% mutate(Dataset = paste("WOS"))) %>%
   mutate(year = as.numeric(format(year, "%Y"))) %>%
   group_by(Dataset) %>%
@@ -466,7 +466,9 @@ interannualTrendText <- interannualTrendText %>%
 gamm_ggp <- plot_smooths(model = gammFit$gam, series = year, comparison = Dataset)+
   geom_point(data = by_dataset3 %>% filter(Dataset != "WOS" & 1980 <= year) %>% droplevels(),
              aes(x=year, y = log(n_articles), col = Dataset), size = 0.5, alpha = 0.5)+
-  labs(y = "log(N articles)", x= "Year", caption = "All smoothing terms significant, shown on link scale\n Each line labelled with linear trend (1975 - 2022) quantified using gls model of the form:\nlog(N articles) ~ year * Dataset with correlation = corAR1(Year|Dataset)")+
+  labs(y = "log(N articles)", x= "Year" 
+       #caption = "All smoothing terms significant, shown on link scale\n Each line labelled with linear trend (1975 - 2022) quantified using gls model of the form:\nlog(N articles) ~ year * Dataset with correlation = corAR1(Year|Dataset)"
+       )+
   geom_text(label = "N articles ~ s(Year, by = Dataset) + Dataset\nFamily = poisson(link = 'log')\nCorrelation = corAR1(Year | Dataset)",
             x = 1980, y=12, vjust = 'inward', hjust = 'inward', size = 3)+
   geom_text(data = interannualTrendText %>%
@@ -478,12 +480,12 @@ gamm_ggp <- plot_smooths(model = gammFit$gam, series = year, comparison = Datase
             aes(x=year, y=log(n_articles), label = Value_abs_label),
             parse=TRUE, vjust = 1.2)+
   xlim(c(1980, 2022))+ ylim(c(0, 12))+
-  scale_color_manual(values = c("Scopus"="black", "Mitigation"=varAES$colour[1],
+  scale_color_manual(values = c("Ocean & Climate"="black", "Mitigation"=varAES$colour[1],
                                 "Natural resilience" = varAES$colour[2],
                                 "Societal adaptation" = varAES$colour[3]),
                      name = "Dataset",
                      guide=guide_legend(order=2, nrow=2), position = "bottom")+
-  scale_fill_manual(values = c("Scopus"="black", "Mitigation"=varAES$colour[1],
+  scale_fill_manual(values = c("Ocean & Climate"="black", "Mitigation"=varAES$colour[1],
                                 "Natural resilience" = varAES$colour[2],
                                 "Societal adaptation" = varAES$colour[3]),
                      name = "Dataset", guide=guide_legend(order=2, nrow=2), position = "bottom")+
