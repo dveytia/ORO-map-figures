@@ -1,5 +1,5 @@
 ---
-title: "Figure1"
+title: "Figure2"
 author: "Devi Veytia"
 date: "2023-12-19"
 output: html_document
