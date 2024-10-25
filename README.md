@@ -7,3 +7,5 @@ This project is organized into the following directories:
 - data: any data that will be required to run the scripts. Note that individual data folders may come with a readme/description document to explain the format of the data
 - outputs: any other outputs 
 - R: .R scripts to source/run functions within the analyses scripts
+
+In order to run the script, the .sqlite file containing the necessarily datatables needs to be downloaded from the repository: https://zenodo.org/records/13349908, and the file placed in the relative directory /data/sqlite-databases/
