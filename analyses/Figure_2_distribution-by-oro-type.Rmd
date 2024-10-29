@@ -1,5 +1,5 @@
 ---
-title: "Figure1"
+title: "Figure2"
 author: "Devi Veytia"
 date: "2023-12-19"
 output: html_document
@@ -220,7 +220,7 @@ fig1_A_ggp <- ggplot()+
                         guide=guide_legend(order=2, nrow=2), position = "bottom")+
   labs(x="Year", y="log(N articles)")+
   scale_x_date(limits = c(as.Date("1980-01-01"),as.Date("2022-12-31")))+
-  scale_y_continuous(sec.axis = sec_axis(trans = exp, name = "N articles", 
+  scale_y_continuous(sec.axis = sec_axis(transform = exp, name = "N articles",
                                          breaks = c(0,100,1000,10000,30000,80000),
                                          labels = function(x) formatC(x, big.mark=",", format="d")),
                      breaks = seq(0,10, by= 2))+ #, limits = c(0,13)
@@ -402,7 +402,7 @@ unlist(corToScopus)
 by_dataset3 <- rbind(oro_branch_by_year_sums %>% 
                       rename(Dataset = ORO_branch, n_articles = mean) %>%
                       select(year, n_articles, Dataset),
-  scopus_by_year %>% mutate(Dataset = paste("Scopus")),
+  scopus_by_year %>% mutate(Dataset = paste("Ocean & Climate")),
   wos_by_year %>% mutate(Dataset = paste("WOS"))) %>%
   mutate(year = as.numeric(format(year, "%Y"))) %>%
   group_by(Dataset) %>%
@@ -466,7 +466,9 @@ interannualTrendText <- interannualTrendText %>%
 gamm_ggp <- plot_smooths(model = gammFit$gam, series = year, comparison = Dataset)+
   geom_point(data = by_dataset3 %>% filter(Dataset != "WOS" & 1980 <= year) %>% droplevels(),
              aes(x=year, y = log(n_articles), col = Dataset), size = 0.5, alpha = 0.5)+
-  labs(y = "log(N articles)", x= "Year", caption = "All smoothing terms significant, shown on link scale\n Each line labelled with linear trend (1975 - 2022) quantified using gls model of the form:\nlog(N articles) ~ year * Dataset with correlation = corAR1(Year|Dataset)")+
+  labs(y = "log(N articles)", x= "Year" 
+       #caption = "All smoothing terms significant, shown on link scale\n Each line labelled with linear trend (1975 - 2022) quantified using gls model of the form:\nlog(N articles) ~ year * Dataset with correlation = corAR1(Year|Dataset)"
+       )+
   geom_text(label = "N articles ~ s(Year, by = Dataset) + Dataset\nFamily = poisson(link = 'log')\nCorrelation = corAR1(Year | Dataset)",
             x = 1980, y=12, vjust = 'inward', hjust = 'inward', size = 3)+
   geom_text(data = interannualTrendText %>%
@@ -478,12 +480,12 @@ gamm_ggp <- plot_smooths(model = gammFit$gam, series = year, comparison = Datase
             aes(x=year, y=log(n_articles), label = Value_abs_label),
             parse=TRUE, vjust = 1.2)+
   xlim(c(1980, 2022))+ ylim(c(0, 12))+
-  scale_color_manual(values = c("Scopus"="black", "Mitigation"=varAES$colour[1],
+  scale_color_manual(values = c("Ocean & Climate"="black", "Mitigation"=varAES$colour[1],
                                 "Natural resilience" = varAES$colour[2],
                                 "Societal adaptation" = varAES$colour[3]),
                      name = "Dataset",
                      guide=guide_legend(order=2, nrow=2), position = "bottom")+
-  scale_fill_manual(values = c("Scopus"="black", "Mitigation"=varAES$colour[1],
+  scale_fill_manual(values = c("Ocean & Climate"="black", "Mitigation"=varAES$colour[1],
                                 "Natural resilience" = varAES$colour[2],
                                 "Societal adaptation" = varAES$colour[3]),
                      name = "Dataset", guide=guide_legend(order=2, nrow=2), position = "bottom")+
@@ -842,6 +844,18 @@ oroTypeSums_confidence <- predTypeDf %>%
   ) 
 oroTypeSums_confidence
 
+# Sum mitigation OROs with and without conference proceedings
+oroTypeSums %>%
+  filter(oro_type %in% c("Built infrastructure & technology",
+                         "CO2 removal or storage",
+                         "Marine renewable energy")) %>%
+  group_by(conference_proceeding) %>%
+  summarise(n_mean = sum(n_mean))
+#   conference_proceeding n_mean
+#   <lgl>                  <int>
+# 1 FALSE                  27837
+# 2 TRUE                    8853
+
 ## Format data for plotting by factoring using common aesthetics
 
 # Read in the aethetics for oro_type -- determines order of x axis
@@ -872,8 +886,11 @@ typeAES <- merge(typeAES, branchTypeLookup,
 oroTypeSums <- merge(oroTypeSums,typeAES[,c("oro_type","order","colour","oro_branch")])
 oroTypeSums$oro_branch <- factor(oroTypeSums$oro_branch,
                                  levels = branchAES$label[branchAES$order])
+
+# oroTypeSums$order <- factor(oroTypeSums$order,
+#                             levels = oroTypeSums$order[order(oroTypeSums$order)])
 oroTypeSums$order <- factor(oroTypeSums$order,
-                            levels = oroTypeSums$order[order(oroTypeSums$order)])
+                            levels = unique(oroTypeSums$order)[order(unique(oroTypeSums$order))])
 
 oroTypeSums_confidence <- merge(oroTypeSums_confidence,typeAES[,c("oro_type","order","colour","oro_branch")])
 oroTypeSums_confidence$oro_branch <- factor(oroTypeSums_confidence$oro_branch,
@@ -984,9 +1001,9 @@ oroMatchesProp <- merge(oroMatchesSums, oroTypeSums,
                         suffixes = c(".matches",".total"))
 oroMatchesProp <- oroMatchesProp %>%
   mutate(
-    prop_mean = n_mean.matches/n_mean.total,
-    prop_lower = n_lower.matches/n_lower.total,
-    prop_upper = n_upper.matches/n_upper.total
+    prop_mean = `n_mean.matches`/`n_mean.total`
+    #prop_lower = n_lower.matches/n_lower.total,
+    #prop_upper = n_upper.matches/n_upper.total
   )
 
 ## What is the percentage of IPCC literature dedicated to a particular ORO?
@@ -1145,10 +1162,28 @@ fig1_B_ggp_inset
 # Add venn diagram of interactions between ORO branches
 
 ```{r Load aesthetics for branch interaction venn diagram}
+## Load data
+predRel <- tbl(dbcon, "pred_relevance") 
+predType <- tbl(dbcon, "pred_oro_type_long") 
+uniquerefs <- tbl(dbcon, "uniquerefs")
+
+## Format and collect needed data
+predTypeDf <- predRel %>% 
+  filter(thresholdLevel <= relevance_mean) %>%
+  select(analysis_id) %>%
+  inner_join(predType, by ="analysis_id") %>%
+  left_join(uniquerefs %>% select(analysis_id, year), by = "analysis_id") %>%
+  collect()
+
+
+
 
 # # Format aesthetics for plotting
 branchAES <- factor_aes[which(factor_aes$variable == "ORO_branch"),]
 branchAES <- branchAES[order(branchAES$order),]
+
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
 
 upsetCols <- typeAES %>%
   rename(set = label, fill = colour) %>%
@@ -1156,56 +1191,126 @@ upsetCols <- typeAES %>%
 
 
 # # Also calculate interaction matrix
-# oroTypeDf_mat <- crossprod(table(oroTypeDf[,c("analysis_id","oro_type")]))
+#oroTypeDf_mat <- crossprod(table(oroTypeDf[,c("analysis_id","oro_type")]))
 
+
+```
+
+```{r plot the venn diagram of overlap between branches - ggVennDiagram}
+## Calculate interaction matrix
+oroBranchMat <- predTypeDf %>%
+  filter(mean <= 0.5) %>% 
+  distinct(analysis_id, oro_branch) %>% 
+  mutate(presence = 1) %>%
+  tidyr::pivot_wider(id_cols = analysis_id, names_from = oro_branch, values_from = presence, values_fill = 0)
+summary(oroBranchMat)
+anyDuplicated(oroBranchMat$analysis_id) # check no duplicates
+
+## Check that the number of articles counted == the total number of relevant articles
+sum(colSums(oroBranchMat[,2:3]))
+
+## Format into list
+vennList <- vector("list", length = ncol(oroBranchMat)-1)
+names(vennList) <- colnames(oroBranchMat)[-1]
+for(s in 1:length(vennList)){
+  vennList[[s]] <- oroBranchMat$analysis_id[oroBranchMat[,s+1] == 1]
+}
+vennList <- Filter(function(x) length(x) > 0, vennList)
+
+## Plot  
+require(ggVennDiagram)
+venn_ggp1 <- ggVennDiagram(vennList, label_alpha = 0)+
+      ggplot2::scale_fill_distiller(name = "N articles", palette = "Blues", direction = 1)
+
+venn_ggp1
 ```
 
 
 ```{r plot the venn diagram of overlap between branches}
 predRel <- tbl(dbcon, "pred_relevance") %>%
   filter(0.5 <= relevance_mean) %>%
-  select(analysis_id)
+  select(analysis_id) %>%
+  collect()
 predBranch <- tbl(dbcon, "pred_oro_type_long") %>%
   filter(0.5 <= mean) %>%
-  select(analysis_id, oro_branch)
+  select(analysis_id, oro_branch) %>%
+  collect()
 
 ## Join together to get relevance preditions for all included
 oroBranchDf <- predRel %>%
   inner_join(predBranch, by ="analysis_id") %>% 
   select(analysis_id, oro_branch) %>%
   collect()
-# remove branch duplicates
-oroBranchDf <- oroBranchDf[!duplicated(oroBranchDf),]
+
+# Check numbers
+# Number of articles predicted relevant but not allocated an ORO type
+nOther <- length(unique(predRel$analysis_id))-length(unique(oroBranchDf$analysis_id)) 
+nOther #1435
+# Number of branch duplicates (same article relevant to different ORO types within the same branch)
+BranchDup <- oroBranchDf[duplicated(oroBranchDf),] 
+nBranchDup <- length(unique(BranchDup$analysis_id))
+nBranchDup # 2684
+# without branch duplicates
+noDup <- oroBranchDf[!duplicated(oroBranchDf),]
+nnoDup <- length(unique(noDup$analysis_id))
+nnoDup # 42758
+# Check that I can arrive back at total number of relevant articles -- yes
+length(unique(predRel$analysis_id)) # 44193
+nnoDup + nOther # 44193
+
+
+
 
 # Which papers are positive for all three branches?
 # all Mitigation, but for two of them, I could see how keywords such as bio-productivity or "protection scheme" could flag relevance for other ORO types.
-allBranchIds <- oroBranchDf$analysis_id[table(oroBranchDf$analysis_id) == 3]
-uniquerefs %>% 
-  filter(analysis_id %in% allBranchIds) %>%
-  collect() %>%
-  View() 
+allBranchIds <- noDup$analysis_id[table(noDup$analysis_id) == 3]
+# uniquerefs %>% 
+#   filter(analysis_id %in% allBranchIds) %>%
+#   collect() %>%
+#   View() 
 
-oroBranchInteractions_venn <- list(
-  oroBranchDf$analysis_id[oroBranchDf$oro_branch == "Mitigation"],
-  oroBranchDf$analysis_id[oroBranchDf$oro_branch == "Natural resilience"],
-  oroBranchDf$analysis_id[oroBranchDf$oro_branch == "Societal adaptation"]
-)
-names(oroBranchInteractions_venn) <- c("Mitigation","Natural resilience","Societal adaptation")
+
 
 # Get aesthetics
-
 branchAES <- factor_aes[which(factor_aes$variable == "ORO_branch"),]
 branchAES <- branchAES[order(branchAES$order),]
 
+
+
+## Plot using GGVENN -- can allocate a different colour to each set
+## Format into list
+oroBranchInteractions_venn <- list(
+  noDup$analysis_id[noDup$oro_branch == "Mitigation"],
+  noDup$analysis_id[noDup$oro_branch == "Natural resilience"],
+  noDup$analysis_id[noDup$oro_branch == "Societal adaptation"]
+)
+names(oroBranchInteractions_venn) <- c("Mitigation","Natural resilience","Societal adaptation")
 # Plot
 require(ggvenn)
 interactions_venn_ggp <- ggvenn(oroBranchInteractions_venn,
        show_percentage = FALSE,
-       fill_color = branchAES$colour, fill_alpha = 1,
-       text_color = "white",
+       fill_color = branchAES$colour, fill_alpha = 0.5,
+       text_color = "black",
        stroke_size = 0.5, set_name_size = 4)
 
+interactions_venn_ggp
 
+
+
+## Plot using GGVENNDIAGRAM -- each set is coloured according to count
+## Format into list
+vennList <- vector("list", length = length(branchAES$label))
+names(vennList) <- branchAES$label
+for(s in 1:length(vennList)){
+  vennList[[s]] <- noDup$analysis_id[noDup$oro_branch == branchAES$label[s]]
+}
+vennList <- Filter(function(x) length(x) > 0, vennList)
+# Plot  
+require(ggVennDiagram)
+venn_ggp1 <- ggVennDiagram(oroBranchInteractions_venn, label_alpha = 0)+
+      ggplot2::scale_fill_distiller(name = "N articles", palette = "Blues", direction = 1)
+
+venn_ggp1
 
 ```
 
@@ -1246,7 +1351,7 @@ fig1_ggp <- plot_grid(fig1_B_ggp_inset+theme(legend.position = "bottom",
                       scale = c(1,1.2,1,1),
           nrow=2, ncol=2, labels = c("a.","b.","c",""), align = "hv", axis="b", rel_widths = c(1.3,1),
           rel_heights = c(2,1))
-
+fig1_ggp
 
 ## Save file
 ggsave(filename = "oroBranchTimeAndIpccMatches_Venn.pdf",
@@ -1356,7 +1461,7 @@ predType <- tbl(dbcon, "pred_oro_type_long")
 uniquerefs <- tbl(dbcon, "uniquerefs")
 
 ## Format and collect needed data
-predTypeDf <- predRel %>%
+predTypeDf <- predRel %>% 
   filter(thresholdLevel <= relevance_mean) %>%
   select(analysis_id) %>%
   inner_join(predType, by ="analysis_id") %>%
@@ -1444,6 +1549,80 @@ Sfig_oro_ggp
 ggsave(here::here("figures/supplemental/allOROsTimeline.pdf"), width=5, height=6, units="in")
 ```
 
+# Supplementary figure: Number of publications by scientific discipline
+
+
+```{r load predictions for ORO type}
+predRel <- tbl(dbcon, "pred_relevance") 
+predBranch <- tbl(dbcon, "pred_oro_branch")
+uniquerefs <- tbl(dbcon, "uniquerefs")
+
+## Format and collect needed data
+branchDisciplineDf <- predRel %>%
+  filter(thresholdLevel <= relevance_mean) %>%
+  select(analysis_id) %>%
+  left_join(predBranch, by = "analysis_id") %>%
+  mutate(Mitigation = ifelse(thresholdLevel <= `oro_branch.Mitigation - mean_prediction`,1,0),
+         Adaptation = case_when(
+           thresholdLevel <= `oro_branch.Nature - mean_prediction` ~ 1,
+           thresholdLevel <= `oro_branch.Societal - mean_prediction` ~ 1,
+           TRUE ~ 0
+         )) %>%
+  select(analysis_id, Mitigation, Adaptation) %>%
+  filter(Mitigation != Adaptation) %>% # remove rows where mitigation and adaptation are the same -- would cancel out
+  left_join(uniquerefs, by = "analysis_id") %>%
+  select(analysis_id, Mitigation, Adaptation, research_areas, web_of_science_categories) %>%
+  collect()
+
+research_areas <- strsplit(branchDisciplineDf$research_areas, "; ")
+research_areas <- data.frame(analysis_id = rep.int(branchDisciplineDf$analysis_id, sapply(research_areas, length)),
+                             research_area = unlist(research_areas))
+research_areas <- subset(research_areas, !is.na(research_area))
+
+branchDisciplineDf <- research_areas %>%
+  left_join(branchDisciplineDf %>% select(analysis_id, Mitigation, Adaptation), by = "analysis_id")
+
+
+researchAreaTab <- branchDisciplineDf %>%
+  group_by(research_area) %>%
+  summarise(n_research_area = n()) %>%
+  arrange(desc(n_research_area))
+
+researchAreaTab %>% head(20)
+
+write.csv(researchAreaTab, here::here("outputs/research_areas_tab.csv"))
+
+researchAreaLookup <- read.csv(here::here("outputs/research_areas_tab.csv"), strip.white = TRUE, header = TRUE)
+researchAreaLookup$X <- NULL
+researchAreaLookup$n_research_area <- NULL
+
+branchDisciplineDf <- branchDisciplineDf %>%
+  left_join(researchAreaLookup, by = "research_area")
+
+branchDisciplineDf <- branchDisciplineDf %>%
+  filter(!is.na(Category)) %>%
+  mutate(ORO_branch = ifelse(Mitigation == 1, "Mitigation","Adaptation")) %>%
+  mutate(ORO_branch_f = factor(ORO_branch, levels = c("Mitigation","Adaptation")),
+         Category_f = factor(Category, 
+                             levels = c("Physical","Natural","Social"), 
+                             labels = c("Physical Sciences","Natural and\nLife Sciences","Social Sciences")))
+
+branchDisciplineSums <- branchDisciplineDf %>%
+  group_by(ORO_branch_f, Category_f) %>%
+  summarise(n = n_distinct(analysis_id))
+
+research_area_ggp <- ggplot(branchDisciplineSums, aes(x = ORO_branch_f, y = n,label = n, fill = Category_f)) +
+  geom_col()+
+  geom_text(position = position_stack(vjust = 0.5))+
+  scale_fill_brewer(type = "qual", palette = "Accent")+
+  labs(y = "N Articles",x = "ORO branch", fill = "Research\area")+
+  theme_bw()
+
+
+ggsave(filename = here::here("figures/supplemental/nArticlesResearchAreaByOroBranch.pdf"),
+       plot = research_area_ggp,
+       width = 6, height = 4, units = "in")
+```
 
 
 

@@ -1,29 +1,29 @@
-"","method_type","oro_type","method_sum","oroTotal","method_percent"
-"1","Empirical - other","Built infrastructure & technology",288,3891,7
-"2","Empirical - other","Conservation",2159,4824,45
-"3","Empirical - other","Marine renewable energy",2603,25093,10
-"4","Empirical - other","Human-assisted evolution",231,274,84
-"5","Empirical - other","Increase efficiency",378,2664,14
-"6","Empirical - other","CO2 removal or storage",3601,7706,47
-"7","Empirical - other","Socio-institutional",51,2337,2
-"8","Empirical - social primary","Socio-institutional",1188,2337,51
-"9","Empirical - social primary","CO2 removal or storage",49,7706,1
-"10","Empirical - social primary","Human-assisted evolution",1,274,0
-"11","Empirical - social primary","Built infrastructure & technology",1352,3891,35
-"12","Empirical - social primary","Conservation",381,4824,8
-"13","Empirical - social primary","Increase efficiency",13,2664,0
-"14","Empirical - social primary","Marine renewable energy",215,25093,1
-"15","Other","Built infrastructure & technology",1472,3891,38
-"16","Other","Conservation",1386,4824,29
-"17","Other","CO2 removal or storage",2038,7706,26
-"18","Other","Increase efficiency",1115,2664,42
-"19","Other","Human-assisted evolution",21,274,8
-"20","Other","Marine renewable energy",7697,25093,31
-"21","Other","Socio-institutional",999,2337,43
-"22","Prediction/simulation","Built infrastructure & technology",779,3891,20
-"23","Prediction/simulation","Conservation",898,4824,19
-"24","Prediction/simulation","CO2 removal or storage",2018,7706,26
-"25","Prediction/simulation","Human-assisted evolution",21,274,8
-"26","Prediction/simulation","Increase efficiency",1158,2664,43
-"27","Prediction/simulation","Marine renewable energy",14578,25093,58
-"28","Prediction/simulation","Socio-institutional",99,2337,4
+"","oro_type","method_type","method_sum","oroTotal","method_percent"
+"1","Marine renewable energy","Empirical - other",2603,25093,10
+"2","Marine renewable energy","Empirical - social primary",215,25093,1
+"3","Marine renewable energy","Prediction/simulation",14578,25093,58
+"4","Marine renewable energy","Other",7697,25093,31
+"5","CO2 removal or storage","Empirical - other",3601,7706,47
+"6","CO2 removal or storage","Empirical - social primary",49,7706,1
+"7","CO2 removal or storage","Prediction/simulation",2018,7706,26
+"8","CO2 removal or storage","Other",2038,7706,26
+"9","Increase efficiency","Empirical - other",378,2664,14
+"10","Increase efficiency","Empirical - social primary",13,2664,0
+"11","Increase efficiency","Prediction/simulation",1158,2664,43
+"12","Increase efficiency","Other",1115,2664,42
+"13","Conservation","Empirical - other",2159,4824,45
+"14","Conservation","Empirical - social primary",381,4824,8
+"15","Conservation","Prediction/simulation",898,4824,19
+"16","Conservation","Other",1386,4824,29
+"17","Human-assisted evolution","Empirical - other",231,274,84
+"18","Human-assisted evolution","Empirical - social primary",1,274,0
+"19","Human-assisted evolution","Prediction/simulation",21,274,8
+"20","Human-assisted evolution","Other",21,274,8
+"21","Built infrastructure & technology","Empirical - other",288,3891,7
+"22","Built infrastructure & technology","Empirical - social primary",1352,3891,35
+"23","Built infrastructure & technology","Prediction/simulation",779,3891,20
+"24","Built infrastructure & technology","Other",1472,3891,38
+"25","Socio-institutional","Empirical - other",51,2337,2
+"26","Socio-institutional","Empirical - social primary",1188,2337,51
+"27","Socio-institutional","Prediction/simulation",99,2337,4
+"28","Socio-institutional","Other",999,2337,43
