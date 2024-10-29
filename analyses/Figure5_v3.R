@@ -654,7 +654,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                           title_color       = "% of pop in LECZ",
                           title_size        = NULL,
                           show.legend       = TRUE,
-                          name              = "main/final_version/mrgid_population_in_LECZ_perc3")
+                          name              = "main/final_version/mrgid_population_in_LECZ_perc")
     # ----- 
   
     
@@ -768,13 +768,13 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     # ---- 
     
   ## ---- MAP DATA
-  map <- bivariate_map(data_map   = data_2_map_mrgid,
-                       eez        = eez_shp_mrgid, 
-                       data_world = NULL,
-                       color      = bivariate_color_scale,
-                       xlab       = "Exposure",
-                       ylab       = "# ada. paper (GeoP)",
-                       name       = "main/final_version/AdaPaperGeop_COUNT_expo_territory_Geop") 
+  panelB <- bivariate_map(data_map   = data_2_map_mrgid,
+                          eez        = eez_shp_mrgid, 
+                          data_world = NULL,
+                          color      = bivariate_color_scale,
+                          xlab       = "Exposure",
+                          ylab       = "# ada. paper (GeoP)",
+                          name       = "main/final_version/AdaPaperGeop_COUNT_expo_territory_Geop") 
   
   ## ---- DEVI, here is the model section for risk and adaptation papers
   ## ---- You can load this data file
@@ -887,5 +887,21 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   with(summary(fit.mit.pois), 1 - deviance/null.deviance) # pseudo r2 = 0.4397814
   
   
+### -----
+  
+  
+### ----- Arrange the figure -----
+
+figure5 <- cowplot::ggdraw() +  
+  cowplot::draw_plot(panelA, x = 0.0, y = 0.56, width = 1.0, height = 0.5) +
+  cowplot::draw_plot(panelB, x = 0.0, y = 0.20, width = 1.0, height = 0.5) +
+  cowplot::draw_plot_label(label = c("(a)", "(b)"),
+                           size = 15,
+                           x = c(0, 0),
+                           y = c(0.97, 0.60)) 
+
+ggplot2::ggsave(plot = figure5, here::here("figures", "main", "maps_bivar_MitiEmi_AdaExpo_COUNT_vf.pdf"), width = 15, height = 15, device = "pdf")
+
+
 ### -----
     
