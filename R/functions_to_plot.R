@@ -165,8 +165,8 @@ univariate_map <- function(data_map, eez = NULL, color_scale, second.var, midpoi
   ### Save map
   if(! is.null(name)) {
     
-    # ggplot2::ggsave(here::here("figures", paste0(name, ".pdf")), width = 7, height = 4.5, device = "pdf")
-    ggplot2::ggsave(here::here("figures", paste0(name, ".png")), width = 7, height = 4.5, device = "png")
+    ggplot2::ggsave(here::here("figures", paste0(name, ".pdf")), width = 7, height = 4.5, device = "pdf")
+    # ggplot2::ggsave(here::here("figures", paste0(name, ".png")), width = 7, height = 4.5, device = "png")
     
     
   }
