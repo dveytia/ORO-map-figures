@@ -1,0 +1,1602 @@
+---
+title: "France-analysis_PPR_12-24"
+author: "Devi Veytia"
+date: "2024-11-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# Set up
+
+```{r load libraries}
+## Load libraries
+library(dplyr)
+library(dbplyr)
+library(R.utils)
+library(RSQLite)
+library(ggplot2)
+library(tidyr)
+library(stringr)
+library(viridis)
+#library(rgdal)
+library(countrycode)
+library(broom)
+library(raster)
+```
+
+```{r load objects}
+## Load functions
+source(here::here("R", "functions_to_format.R")) # all functions needed to format data
+source(here::here("R", "functions_to_plot.R")) # all functions needed to plot data
+
+## Latest sqlite database
+sqliteDir <- here::here("data/sqlite-databases")
+sqliteFiles <- dir(sqliteDir)
+sqliteVersions <- as.numeric(gsub(".sqlite","",substring(sqliteFiles, regexpr("_v", sqliteFiles) + 2)))
+latestVersion <- sqliteFiles[which.max(sqliteVersions)]
+
+## AESTHETICS
+factor_aes <- readxl::read_excel(here::here("R/factor_aesthetics.xlsx"))
+typeAES <- factor_aes[which(factor_aes$variable == "oro_type"),]
+typeAES <- typeAES[order(typeAES$order),]
+typeAES$frenchLabel <- c("Energies renouvelables", "Élimination ou stockage du CO2", "Augmentation de l'efficacité",
+"Conservation", "Évolution assistée", "Infrastructures et technologies", "Socio-institutionnel")
+branchAES <- factor_aes[which(factor_aes$variable == "ORO_branch"),]
+branchAES <- branchAES[order(branchAES$order),]
+branchAES$frenchLabel <- c("Atténuation", "Résilience naturelle", "Adaptation sociétale")
+ecoTypeAES <- factor_aes[which(factor_aes$variable == "ecosystem_type"),]
+ecoTypeAES <- ecoTypeAES[order(ecoTypeAES$order),]
+marSysAES <- factor_aes[which(factor_aes$variable == "marine_system"),]
+marSysAES <- marSysAES[order(marSysAES$order),]
+```
+
+
+# IPCC research doughnut
+
+```{r IPCC research doughnut}
+# Load in de-deuplicated ipcc matches
+load(here::here('data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs_matches.RData'))
+ipccRefsTotal <- nrow(ipccMatches)
+# Filter to only records where there is a match for an analysis_id
+ipccMatches <- ipccMatches[!is.na(ipccMatches$ipccRef_id),]
+
+# Database
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+predRel <- tbl(dbcon, "pred_relevance") 
+predType <- tbl(dbcon, "pred_oro_type_long")
+predTypeDf <- predRel %>%
+  filter(0.5 <= relevance_mean) %>%
+  dplyr::select(analysis_id) %>%
+  inner_join(predType, by ="analysis_id") %>%
+  collect()
+DBI::dbDisconnect(dbcon)
+
+
+
+## Calculations
+# For each ORO, sum the number of matches to the ipcc
+oroMatchesSums <- predTypeDf %>%
+  inner_join(ipccMatches, by="analysis_id") %>%
+  group_by(oro_type) %>%
+  summarise(
+    n_mean = sum(0.5 <= mean),
+    n_lower = sum(0.5 <= lower),
+    n_upper = sum(0.5 <= upper), 
+    .drop = FALSE
+  ) 
+
+# Sum number of relevant articles for each oro type
+oroTypeSums <- predTypeDf %>% 
+  group_by(oro_type) %>%
+  summarise(
+    n_mean = sum(0.5 <= mean)
+  ) 
+
+
+# Format data for plotting by factoring using common aesthetics
+oroMatchesSums$oro_type <- factor(
+  oroMatchesSums$oro_type, 
+  levels = typeAES$level, labels = typeAES$label
+)
+oroTypeSums$oro_type <- factor(
+  oroTypeSums$oro_type, 
+  levels = typeAES$level, labels = typeAES$label
+)
+
+# Join in with aesthetics for ORO branch -- determines colour of bar by oro_branch
+branchTypeLookup <- data.frame(
+  label = typeAES$label,
+  oro_branch = c(rep("Mitigation",3), rep("Natural resilience",2), rep("Societal adaptation",2))
+)
+typeAES2 <- merge(typeAES, branchTypeLookup,
+                 by = "label") %>%
+  rename(oro_type = label)
+
+# Merge sums with plotting order, colour and corresponding branch 
+oroMatchesSums <- merge(oroMatchesSums,typeAES2[,c("oro_type","order","colour","oro_branch")])
+oroMatchesSums$oro_branch <- factor(oroMatchesSums$oro_branch,
+                                 levels = branchAES$label[branchAES$order])
+oroMatchesSums$order <- factor(oroMatchesSums$order,
+                            levels = oroMatchesSums$order[order(oroMatchesSums$order)])
+oroTypeSums <- merge(oroTypeSums,typeAES2[,c("oro_type","order","colour","oro_branch")])
+oroTypeSums$oro_branch <- factor(oroTypeSums$oro_branch,
+                                 levels = branchAES$label[branchAES$order])
+oroTypeSums$order <- factor(oroTypeSums$order,
+                            levels = unique(oroTypeSums$order)[order(unique(oroTypeSums$order))])
+
+# Lastly calculate sums as a proportion of total corpus of each oro type
+oroMatchesProp <- merge(oroMatchesSums, oroTypeSums, 
+                        by = c("oro_type","order","colour","oro_branch"),
+                        suffixes = c(".matches",".total"))
+oroMatchesProp <- oroMatchesProp %>%
+  mutate(
+    prop_mean = `n_mean.matches`/`n_mean.total`
+    #prop_lower = n_lower.matches/n_lower.total,
+    #prop_upper = n_upper.matches/n_upper.total
+  )
+
+# What is the percentage of IPCC literature dedicated to a particular ORO?
+
+oroMatchesProp_IPCC <- oroMatchesSums %>%
+  mutate(prop_IPCC = n_mean/ipccRefsTotal,
+         prop_IPCC_ORO = n_mean/sum(oroMatchesSums$n_mean, na.rm=T)) %>%
+  dplyr::select(oro_type, prop_IPCC,prop_IPCC_ORO, order, colour, oro_branch)
+
+oroMatchesProp_IPCC <- rbind( # add in a row for other topics
+  oroMatchesProp_IPCC %>%
+    mutate(order = as.numeric(order)),
+  data.frame(
+    oro_type = "Non-ORO",
+    prop_IPCC = 1-sum(oroMatchesProp_IPCC$prop_IPCC),
+    prop_IPCC_ORO = 1-sum(oroMatchesProp_IPCC$prop_IPCC_ORO),
+    order = nlevels(oroMatchesProp_IPCC$order)+1,
+    colour = "grey",
+    oro_branch = "Non-ORO"
+  )
+)
+
+
+## PLOTTING
+# Doughnut plot of the proportion of IPCC literature devoted to each oro type
+
+prop_IPCC <- oroMatchesProp_IPCC %>%
+  arrange(oro_type) %>%
+  mutate(ymax = cumsum(prop_IPCC)) %>% 
+  mutate(ymax = ifelse(oro_type == "Non-ORO", 1, ymax),
+         ymin = lag(ymax, default = 0))
+all_ORO_in_IPCC <- 1-prop_IPCC$prop_IPCC[which(prop_IPCC$oro_type == "Non-ORO")]
+all_ORO_in_IPCC <- paste0(signif(all_ORO_in_IPCC, digits = 2)*100,"%", collapse=" ")
+
+prop_IPCC_ORO <- oroMatchesProp_IPCC %>%
+  arrange(oro_type) %>%
+  mutate(ymax = cumsum(prop_IPCC_ORO)) %>% 
+  mutate(ymax = ifelse(oro_type == "Non-ORO", 1, ymax),
+         ymin = lag(ymax, default = 0))
+
+fig1_B_doughnut_ggp <- 
+  ggplot()+
+  #geom_rect(data = prop_IPCC, aes(ymax = ymax, ymin = ymin, xmax = 3, xmin = 2, fill = oro_type))+
+  geom_rect(data = prop_IPCC_ORO, aes(ymax = ymax, ymin = ymin, xmax = 4, xmin = 2.5, fill = oro_type))+
+  geom_text(data = data.frame(x=0,y=0,label = all_ORO_in_IPCC),
+            aes(x,y,label=label), size = 4.5)+
+  xlim(c(0,4))+
+  coord_polar(theta = "y")+
+  scale_fill_manual(name = "",values = as.vector(oroMatchesProp_IPCC$colour[order(oroMatchesProp_IPCC$order)]),
+                    breaks = as.vector(oroMatchesProp_IPCC$oro_type[oroMatchesProp_IPCC$order]))+
+  ggtitle("IPCC")+
+  # scale_x_discrete(limits = levels(typeMethodDf$order), 
+  #                   labels = levels(typeMethodDf$oro_type))+
+  # ylim(c(0,105))+
+  # guides(fill=guide_legend(ncol=2))+
+  
+  # labs(y="Percent contribution")+
+  theme(
+    panel.background = element_rect(fill = "transparent",colour = NA), # or theme_blank()
+    panel.grid.minor = element_blank(), 
+    panel.grid.major = element_blank(),
+    plot.background = element_rect(fill = "transparent",colour = NA),
+    axis.ticks.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.title.y = element_blank(),
+    strip.background = element_blank(),
+    strip.text = element_blank(),
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5, vjust = 0)
+  )
+fig1_B_doughnut_ggp
+
+ggsave(filename = here::here("figures/france-analysis-2024/IPCC_doughnut_plot.png"), plot= fig1_B_doughnut_ggp, width = 419, height = 457, units = "px")
+
+rm(ipccRefsTotal, ipccMatches)
+```
+
+
+# Research need vs effort scatterplot
+
+Variation from document Figure5_v3.R
+
+```{r Research need vs effort scatterplot}
+load(here::here("data", "expo_adaPubs_mrgid_for_scale_stats.RData"))
+load(here::here("data", "GHGemi_mitPubs_country_for_scale_stats.RData"))
+
+# Assign country group
+country_grp <- read.csv(file = here::here("data", "external", "special_country_groups", "special-country-groups.csv"), sep = ",") %>%
+  mutate(iso_code = countrycode::countrycode(sourcevar = Country,origin      = "country.name",destination = "iso3c"))
+
+# GDP per capita
+gdp_per_capita <- readr::read_csv(here::here("data/external/gdp-per-capita/gdp-per-capita-worldbank-2021.csv"), 
+                                    show_col_types = FALSE) |>
+    filter(Year > 1980) |> 
+    rename(country = Entity,
+           GDP_per_capita = `GDP per capita, PPP (constant 2017 international $)`) |> 
+    group_by(country, Code) |> 
+    summarise(GDP_per_capita = median(GDP_per_capita, na.rm = T)) |> 
+    mutate(country = countrycode(sourcevar   = country,
+                                 origin      = "country.name",
+                                 destination = "country.name"),
+           iso_code = countrycode(sourcevar   = country,
+                                  origin      = "country.name",
+                                  destination = "iso3c")) |> 
+    filter(!is.na(iso_code) & !is.na(GDP_per_capita))
+
+# Tropical land area
+## read in climate zone data
+climZoneDf <- readxl::read_excel(here::here("data/external/nagdc-population-landscape-climate-estimates-v2.xls"), sheet = "AREA2000", col_names = TRUE, trim_ws = TRUE)
+# Subset to columns of interest
+climZoneDf <- climZoneDf[,c(1,grep("PARCZ", colnames(climZoneDf)),186)] %>%
+      dplyr::select(-PARCZ00) %>%
+      rename(iso_code = ISO3V10, total_sq_km = T_ARCZ)
+# Mutate to long format
+climZoneDf <- reshape2::melt(climZoneDf, id.vars = c("iso_code", "total_sq_km"), variable.name = "climate_zone_S", value.name = "perc_land_area")
+climZoneDf$prop_land_area = climZoneDf$perc_land_area/100
+# Classify columns by larger zone
+zoneLookup <- list(
+      paste0("PARCZ", 1:6),
+      paste0("PARCZ", 7:10),
+      paste0("PARCZ", 11:26),
+      paste0("PARCZ", 27:37),
+      paste0("PARCZ", 38:41),
+      paste0("PARCZ", 42:45)
+    )
+names(zoneLookup) <- c("Tropical", "Polar","Temperate","Cold","Dry","Desert")
+zoneLookup <- lapply(zoneLookup, function(x) {data.frame(climate_zone_S = x)})
+zoneLookup <- mapply(cbind, zoneLookup, "climate_zone_L"=c("Tropical", "Polar","Temperate","Cold","Dry","Desert"),SIMPLIFY = F)
+zoneLookup <- do.call(rbind.data.frame, zoneLookup)
+tropArea <- climZoneDf %>%
+      left_join(zoneLookup, by = "climate_zone_S") %>% 
+  filter(climate_zone_L == "Tropical" & 0 < prop_land_area) %>%
+  mutate(prop_tropical = prop_land_area) %>%
+  dplyr::select(iso_code, prop_tropical)
+tropArea$tropical_cut <- cut(tropArea$prop_tropical, breaks = c(0, 0.25, 1))
+
+## Fit mitigation NB model
+y.mit.count <- GHGemi_mitPubs_country_for_scale_stats$perc_mit*GHGemi_mitPubs_country_for_scale_stats$Count_ORO_adap_miti
+y.mit.perc <- GHGemi_mitPubs_country_for_scale_stats$perc_mit
+count_total.mit <- GHGemi_mitPubs_country_for_scale_stats$Count_ORO_adap_miti
+x.mit <- GHGemi_mitPubs_country_for_scale_stats$cumulative_co2_including_luc 
+x.mit.scaled <- scales::rescale(x.mit, to = c(0, 1))
+
+fit.mit.nb <- MASS::glm.nb(y.mit.count ~ x.mit.scaled)
+
+
+## Fit adaptation NB model
+# --- Scale x data between 0 and 1 to compare it with mitigation
+y.ada.count <- expo_adaPubs_mrgid_for_scale_stats$Count_ORO_ada
+y.ada.perc <- expo_adaPubs_mrgid_for_scale_stats$perc_ada
+count_total <- expo_adaPubs_mrgid_for_scale_stats$Count_ORO_adap_miti
+x.ada <- expo_adaPubs_mrgid_for_scale_stats$exposure_perc
+x.ada.scaled <- scales::rescale(x.ada, to = c(0, 1))
+
+fit.ada.nb <- MASS::glm.nb(y.ada.count ~ x.ada.scaled)
+
+
+## Plot negative binomial predictions with raw data - link scale
+  
+# Make predictions
+  pred.x <- seq(0,1, length.out = 100)
+  pred.fit.mit.nb <- predict(fit.mit.nb, se.fit = TRUE, newdata = data.frame(x.mit.scaled = pred.x),
+                          type = "link") %>%
+    as.data.frame()%>%
+    mutate(pred.x = pred.x)
+  
+  pred.fit.ada.nb <- predict(fit.ada.nb, se.fit = TRUE, newdata = data.frame(x.ada.scaled = pred.x),
+                               type = "link") %>%
+    as.data.frame()%>%
+    mutate(pred.x = pred.x)
+  
+  
+# Plot adaptation
+ada.ggp.dat <- expo_adaPubs_mrgid_for_scale_stats %>%
+  left_join(country_grp[,c("iso_code","SIDS")], by = "iso_code") %>%
+  left_join(gdp_per_capita[,c("iso_code","GDP_per_capita")], by = "iso_code") %>%
+  left_join(tropArea, by = "iso_code") %>%
+    mutate(x = scales::rescale(exposure_perc, to = c(0, 1)),
+           y = log(perc_ada*Count_ORO_adap_miti),
+           size = Count_ORO_adap_miti,
+           #gdp_perc = ifelse(GDP_per_capita <= quantile(GDP_per_capita, prob=0.25, na.rm=TRUE), "Low","High")
+           gdp_perc = case_when(
+             GDP_per_capita <= quantile(GDP_per_capita, prob=0.25, na.rm=TRUE) ~ "Low",
+             is.na(GDP_per_capita) ~ "High",
+             TRUE ~ "High"),
+           tropical_cut = ifelse(is.na(tropical_cut), "(0,0.25]", tropical_cut)) %>%
+  group_by(gdp_perc) %>%
+  mutate(out_x = rstatix::is_outlier(x, coef = 1),
+           out_y = rstatix::is_outlier(y)) %>%
+  ungroup() %>%
+  mutate(out_x = ifelse(quantile(x, 0.5) <= x, out_x, FALSE))
+
+ada.ggp.dat <- ada.ggp.dat[!duplicated(ada.ggp.dat$TERRITORY1),]
+
+  
+fit.ada.nb.ggp <- ggplot() +
+    geom_point(data = ada.ggp.dat[ada.ggp.dat$iso_code != "FRA",],
+               mapping = aes(x = x,
+                             y = y,
+                             size = size,
+                             col = gdp_perc),
+               shape = 19) +
+    geom_point(data = ada.ggp.dat[ada.ggp.dat$iso_code == "FRA",],
+               mapping = aes(x = x,
+                             y = y,
+                             size = size),
+               col = "red", shape = 19) +
+    ggrepel::geom_label_repel(data = ada.ggp.dat[ada.ggp.dat$out_x & ada.ggp.dat$gdp_perc == "Low",], 
+                             aes(x=x, y=y, label = str_wrap(`TERRITORY1`, 15), col = gdp_perc), 
+                             nudge_y = -1, size=2, force = 2, force_pull = 0.5)+
+    ggrepel::geom_label_repel(data = ada.ggp.dat[ada.ggp.dat$iso_code == "FRA" & ada.ggp.dat$`TERRITORY1` != "France",], 
+                             aes(x=x, y=y, label = str_wrap(`TERRITORY1`, 10)), 
+                             col = "red", nudge_y = -1, size=1.5, force = 2, force_pull = 0.5, fill = "transparent")+
+    ggrepel::geom_label_repel(data = ada.ggp.dat[ada.ggp.dat$`TERRITORY1` == "France",], 
+                             aes(x=x, y=y, label = str_wrap(`TERRITORY1`, 10)), 
+                             col = "red", nudge_y = -1, size=3, force = 2, force_pull = 0.5)+
+    geom_line(data = pred.fit.ada.nb, aes(x=pred.x, y=fit))+
+    geom_line(data = pred.fit.ada.nb, aes(x=pred.x, y=fit-se.fit), linetype = "dashed")+
+    geom_line(data = pred.fit.ada.nb, aes(x=pred.x, y=fit+se.fit), linetype = "dashed")+
+    geom_ribbon(data = pred.fit.ada.nb, aes(x=pred.x, ymin=fit-se.fit, ymax = fit+se.fit),
+                alpha = 0.05)+
+    geom_text(data = data.frame(x = 0.85, 
+                                y = pred.fit.ada.nb$fit[which.min(abs(pred.x-0.85))]),
+              aes(x=x, y=y), label = paste("p = ", signif(with(summary(fit.ada.nb), coefficients[2,"Pr(>|z|)"]), 1)),
+              nudge_y = -1)+
+    scale_color_manual(values = c("High" = "gray40","Low" = "cyan4"), name = "Pays", limits = c("Low"), labels = "En\ndével-\noppement")+
+    labs(y = "log(# documents d'adaptation)", x = "Risque côtier\n(échelle allant de 0 à 1)", size = "# documents")+
+    theme_bw()
+  
+fit.ada.nb.ggp
+
+
+
+# Plot mitigation v2
+pval <- with(summary(fit.mit.nb), coefficients[2,"Pr(>|z|)"])
+pval <- ifelse(pval< 0.001, "p << 0,01", signif(pval, 2))
+
+
+mit.ggp.dat <- GHGemi_mitPubs_country_for_scale_stats %>%
+    mutate(x = scales::rescale(cumulative_co2_including_luc, to = c(0, 1)),
+           y = log(perc_mit*Count_ORO_adap_miti),
+           size = Count_ORO_adap_miti) %>%
+  mutate(out_x = rstatix::is_extreme(x),
+           out_y = rstatix::is_outlier(y)) %>%
+  mutate(out_x = ifelse(quantile(x, 0.5) <= x, out_x, FALSE))
+
+mit.ggp.dat <- mit.ggp.dat[!duplicated(mit.ggp.dat$Country),]
+
+  
+fit.mit.nb.ggp <- ggplot() +
+    geom_point(data = mit.ggp.dat[mit.ggp.dat$iso_code != "FRA",],
+               mapping = aes(x = x,
+                             y = y,
+                             size = size),
+               col = "grey40",shape = 19) +
+    geom_point(data = mit.ggp.dat[mit.ggp.dat$iso_code == "FRA",],
+               mapping = aes(x = x,
+                             y = y,
+                             size = size),
+               col = "red", shape = 19) +
+    ggrepel::geom_label_repel(data = mit.ggp.dat[mit.ggp.dat$out_x,], 
+                             aes(x=x, y=y, label = str_wrap(`Country`, 15)), 
+                             nudge_y = -1, size=2, col = "grey40", force = 2, force_pull = 0.5)+
+    ggrepel::geom_label_repel(data = mit.ggp.dat[mit.ggp.dat$iso_code == "FRA",], 
+                             aes(x=x, y=y, label = str_wrap(`Country`, 10)), 
+                             col = "red", nudge_y = -1, size=3, force = 10, force_pull = 0.1)+
+    geom_line(data = pred.fit.mit.nb, aes(x=pred.x, y=fit))+
+    geom_line(data = pred.fit.mit.nb, aes(x=pred.x, y=fit-se.fit))+
+    geom_line(data = pred.fit.mit.nb, aes(x=pred.x, y=fit+se.fit))+
+    geom_ribbon(data = pred.fit.mit.nb, aes(x=pred.x, ymin=fit-se.fit, ymax = fit+se.fit),
+                alpha = 0.5)+
+    geom_text(data = data.frame(x = 0.85, 
+                                y = pred.fit.mit.nb$fit[which.min(abs(pred.x-0.85))]),
+              aes(x=x, y=y), label = paste(pval),
+              nudge_y = -2.5)+
+    labs(y = "log(# documents d'atténuation)", x = "Émissions de CO2\n(échelle allant de 0 à 1)", size = "# documents")+
+    theme_bw()
+  
+fit.mit.nb.ggp
+
+
+  
+  # Combine mitigation and adaptation model fit plots together and save  ---
+fit.mit.ada.nb.ggp <- cowplot::plot_grid(fit.mit.nb.ggp+theme(legend.position = "none"), fit.ada.nb.ggp+theme(plot.margin = unit(c(0.2,0.1,0.1,1), "cm")), nrow = 1, rel_widths = c(1,1.25))
+  
+ggsave(here::here("figures/france-analysis-2024/researchNeedVsEffortNegativeBinomialGlmFrance.png"),
+         plot = fit.mit.ada.nb.ggp,
+         width = 9, height = 3, units = "in",dpi = 600)
+```
+
+From file Figure2_v2.R
+```{r biplot doughnuts mitigation and adaptation}
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+pred_oro_branch <- tbl(dbcon, "pred_oro_branch")  # predictions for ORO branch
+pred_relevance <- tbl(dbcon, "pred_relevance") 
+uniquerefs <- tbl(dbcon, "uniquerefs") 
+
+
+load(here::here("data", "ratio_ORO_totPub.RData"))
+
+countries_ls <- read.csv(file = here::here("data", "external", "list_of_countries", "sql-pays.csv"), sep = ";") |>  # Countries names
+  dplyr::mutate(country = countrycode(sourcevar   = name_en,
+                                      origin      = "country.name",
+                                      destination = "country.name"),
+                iso_code = countrycode(sourcevar   = country,
+                                       origin      = "country.name",
+                                       destination = "iso3c"))
+
+
+# --- Land locked country. Use countrycode::countrycode() to give the same name to countries for all different databasess
+    landlocked <- read.csv(file = here::here("data", "external", "special_country_groups", "landlocked-countries-2024.csv"), sep = ",") |> 
+      dplyr::select(country, LandlockedCountries) |> 
+      rename(Country    = country, 
+             group_land = LandlockedCountries) |> 
+      mutate(iso_code = countrycode(sourcevar   = Country,
+                                    origin      = "country.name",
+                                    destination = "iso3c"),
+             group_land = case_when(group_land == "yes" ~ "Land-locked",
+                                    TRUE ~ "NA"))
+  
+    # --- AMUNRC: Associate Members of United Nations Regional Commissions
+    AMUNRC <- c("American Samoa", "Anguilla", "Aruba", "Bermuda", "British Virgin Islands", "Cayman Islands", "Commonwealth of Northern Marianas",
+                "Curacao", "French Polynesia", "Guadeloupe", "Guam", "Martinique", "Montserrat", "New Caledonia", "Puerto Rico", "Sint Maarten",
+                "Turks and Caicos Islands", "United States Virgin Islands")
+  
+    # --- Category of each country (SIDS, land-locked, coastal)
+    country_grp <- read.csv(file = here::here("data", "external", "special_country_groups", "special-country-groups.csv"), sep = ",") |> 
+      dplyr::select(Country, LLDC, SIDS) |> 
+      mutate(iso_code = countrycode(sourcevar   = Country,
+                                    origin      = "country.name",
+                                    destination = "iso3c"),
+             group_land = case_when(LLDC == "No" & SIDS == "Yes" ~ "SIDS",
+                                    LLDC == "Yes" & SIDS == "No" ~ "Land-locked",
+                                    TRUE ~ "Coastal")) |> 
+      dplyr::select(-LLDC, -SIDS) |> 
+      rbind(landlocked) |> 
+      distinct() |> 
+      mutate(group_land = case_when(Country %in% AMUNRC ~ "AMUNRC",
+                                    TRUE ~ group_land))
+    
+
+    
+  ## ---- FORMAT DATA
+    
+    # --- Just simplify and create a column that idenfies with 1 or 0 whether 
+    # --- a publication is relevant for mitiagion or adaptation
+    mitAdaptPubs <- pred_oro_branch %>% 
+      left_join(pred_relevance, by = "analysis_id") |> 
+      filter(0.5 <= relevance_mean) %>%
+      mutate(adaptation = ifelse(0.5 <= `oro_branch.Nature - mean_prediction` |
+                                 0.5 <= `oro_branch.Societal - mean_prediction`,
+                                 1, 0),
+             mitigation = ifelse(0.5 <= `oro_branch.Mitigation - mean_prediction`, 1 ,0)) %>% 
+      dplyr::select(analysis_id, adaptation, mitigation) %>%
+      left_join(uniquerefs %>% dplyr::select(analysis_id, affiliation), by = "analysis_id") %>%
+      collect()
+    
+    # --- Extract the country of the first author for each relevant publications
+    data_1stA_country_MA <- extract_1stA_affiliation(data         = mitAdaptPubs, 
+                                                     countries_ls = countries_ls) 
+    
+    # --- Ratio # of mitigation publications over # of adaptation publications
+    ratio_mitig_adapt <- data_1stA_country_MA$oroAff_1stA |> 
+      mutate(country_aff = countrycode(sourcevar   = country_aff,
+                                       origin      = "country.name",
+                                       destination = "country.name"),
+             iso_code = countrycode(sourcevar   = country_aff,
+                                    origin      = "country.name",
+                                    destination = "iso3c")) |>
+      group_by(country_aff, iso_code) |> 
+      summarise(adaptation = sum(adaptation, na.rm = TRUE),
+                mitigation = sum(mitigation, na.rm = TRUE)) |> 
+      mutate(ratio   = mitigation/adaptation,
+             mit_ada = mitigation + adaptation,
+             layer   = (mitigation/mit_ada)*100) |>  # % mitigation
+      rename(Country = country_aff) 
+    
+  
+    # --- Find the predominant ORO type (adaptation vs. mitigation)
+    # --- And bind all data together
+    data_panelC <- ratio_ORO_totPub |> 
+      rename(ORO_OC = layer) |> 
+      full_join(ratio_mitig_adapt |>  rename(perc_mit = layer), by = "iso_code") |> 
+      dplyr::select(-Country, -ratio, -mit_ada) |> 
+      # left_join(income_grp |>  select(-country), by = "iso_code") |>
+      left_join(country_grp |> dplyr::select(iso_code, group_land), by = "iso_code") |>
+      replace_na(list(group_land = "Coastal")) |>
+      filter(!is.na(country) & group_land != "AMUNRC") |> 
+      filter(!is.na(perc_mit)) |> 
+      mutate(adaptation_log = log(adaptation + 1),
+             mitigation_log = log(mitigation + 1),
+             labels         = case_when(adaptation >= mitigation ~ "Adaptation",
+                                        TRUE ~ "Mitigation")) |> 
+      ungroup()
+    
+    # --- Data for donuts
+    n_LL = sum(data_panelC$group_land == "Land-locked")
+    n_C = sum(data_panelC$group_land == "Coastal")
+    n_SIDS = sum(data_panelC$group_land == "SIDS")
+    
+    data_donut = data_panelC |> 
+      group_by(group_land, labels) |> 
+      summarise(count = n()) |> 
+      mutate(total_count = case_when(group_land == "Coastal" ~ n_C,
+                                     group_land == "SIDS" ~ n_SIDS,
+                                     TRUE ~ n_LL),
+             perc = (count/total_count)*100) |> 
+      group_split(group_land)
+    
+
+
+# --- Biplot adaptation ~ f(mitigation)
+    biplot <- biplot_fig2c(data        = data_panelC,
+                           var.y       = "adaptation",
+                           var.x       = "mitigation",
+                           var.col     = "group_land",
+                           # var.shape   = "group_land",
+                           ylab        = "log(# documents d'adaptation)",
+                           xlab        = "log(# documents d'atténuation)",
+                           one_one_line = TRUE,
+                           # color_scale = c("#4c4680","white", "#197da8"),
+                           color_title = "#ORO/#O&C (%)",
+                           log.transf  = TRUE,
+                           quant.prob  = 0.90, 
+                           name        = "main/biplot_adapt_mitig") 
+   biplot <-  biplot +
+      geom_point(data = filter(data_panelC, iso_code == "FRA"),
+                 mapping = aes(x = log(mitigation)+1, y = log(adaptation)+1), size = 2.5,
+                 col = "red", inherit.aes = FALSE) +
+      geom_text_repel(data         = filter(data_panelC, iso_code == "FRA"), 
+                    mapping      = aes(x = log(mitigation)+1, y = log(adaptation)+1, label = country), # 
+                    max.overlaps = 100,
+                    size   = 6,
+                    show.legend  = FALSE,
+                    min.segment.length = 0.1,
+                    col = "red",
+                    inherit.aes = FALSE)+ #c(, , )
+      scale_color_manual(values = c("SIDS" = "#0fbcd6",
+                                 "Land-locked" = "#b36705",
+                                 "Coastal" = "#3f47e8"),
+                         labels = c("Côtière",
+                                    "Sans débouché maritime",
+                                    "petits États insulaires\nen développement"),
+                      name = NULL)+
+     labs(x = "log(# documents d'atténuation)",y = "log(# documents d'adaptation)")+
+      theme(legend.text = element_text(size = 15,
+                                         face  = "bold"))
+    biplot
+    
+    # --- Donuts % of mitigation per country type (LL, Coastal, SIDS)
+    plot_donuts_ls <- lapply(data_donut, function(x){
+      
+      x_plot <- x |> 
+        dplyr::select(-group_land) |> 
+        mutate(Type     = "MitAda",
+               cat = factor(labels, levels = c("Mitigation", "Adaptation"))) |> 
+        arrange(cat) |> 
+        mutate(pos = round(cumsum(perc) - (0.5 * perc), 2))  
+      
+      ggplot(x_plot, aes(x = Type, y = perc, fill = labels)) +
+        geom_col(show.legend = F) +
+        geom_text(aes(label = paste0(round(perc, 1), "%"), x = Type, y = pos), size = 6, color = "white") +
+        # Colors
+        scale_fill_manual(name   = NULL,
+                          values = c("Adaptation"  = "#4c4680",
+                                     "Mitigation" = "#197da8")) +
+        scale_x_discrete(limits = c(" ", "MitAda")) +
+        coord_polar("y") +
+        theme_void()
+      
+    })
+    
+    # --- Get plot legend
+    legend = ggpubr::get_legend(
+      ggplot(data_donut[[1]], aes(x = labels, y = perc, fill = labels)) +
+        geom_col() +
+        scale_fill_manual(name = NULL, 
+                          values = c("Adaptation"  = "#4c4680",
+                                     "Mitigation" = "#197da8"),
+                          labels = c("Adaptation" = "Au dessus (Adaptation)",
+                                     "Mitigation" = "En dessous (Atténuation)")) +
+        theme(legend.direction = "horizontal",
+              legend.text     = element_text(size = 16, face  = "bold"),
+              legend.background = element_blank()))
+    
+    
+    # --- Arrange plot
+    plot_final <- cowplot::ggdraw() +
+      cowplot::draw_plot(biplot, x = 0.0, y = 0.0, width = 0.60, height = 1.0) +
+      cowplot::draw_plot(plot_donuts_ls[[1]], x = 0.50, y = 0.45, width = 0.4, height = 0.4) +
+      cowplot::draw_plot(plot_donuts_ls[[2]], x = 0.70, y = 0.45, width = 0.4, height = 0.4) +
+      cowplot::draw_plot(plot_donuts_ls[[3]], x = 0.60, y = 0.05, width = 0.4, height = 0.4) +
+      cowplot::draw_text(text = c("Côtière", "Sans débouché\nmaritime", "petits États insulaires\nen développement"),
+                         fontface = rep("bold", 3),
+                         color = c("#3f47e8", "#b36705", "#0fbcd6"),
+                         x = c(0.70, 0.90, 0.80), 
+                         y = c(0.47-0.01, 0.47-0.02, 0.06-0.02), size = 18) +
+      # y = c(0.52, 0.52, 0.12), size = 16) +
+      cowplot::draw_text(text = "% au-dessus de la ligne 1:1", x = 0.8, y = 0.95, size = 19, fontface = "bold") +
+      cowplot::draw_plot(legend, x = 0.65, y = 0.82, width = 0.3, height = 0.1) ; plot_final
+    
+    # ggplot2::ggsave(plot = plot_final, here::here("figures", "main", "donuts_test.jpeg"), width = 15, height = 5, device = "jpeg")
+    # ggplot2::ggsave(plot = plot_final, here::here("figures", "main", "figure2_panelC_donuts4.jpeg"), width = 13, height = 7, device = "jpeg")
+
+ggplot2::ggsave(plot = plot_final, here::here("figures", "france-analysis-2024", "biplot_donuts_mitigation_vs_adaptation.png"), width = 15, height = 7, dpi = 600)
+    
+    
+DBI::dbDisconnect(dbcon)
+```
+
+# 1. Spatial distribution of french research
+
+
+
+## Where do French-affiliated authors publish? 
+
+```{r, out.width="1\\linewidth", include=TRUE, fig.align="center", fig.cap=c("Map of geoparsing results from french-affiliated 1st authors")}
+# include figure from file "france_gridding_locations_0.5res.Rmd"
+knitr::include_graphics(here::here("figures/france-analysis-2024/france1stAuth_geoparsed-text-map_v3.pdf"))
+
+```
+
+## ORO research published in France and Outre-Mer 
+
+```{r, out.width="1\\linewidth", include = TRUE, fig.align = "center", fig.cap = c("Geoparsed ORO articles, zooming in on articles published in France and outre-mer (0.5 degree grid)")}
+# include figure from file "france_gridding_locations_0.5res.Rmd"
+knitr::include_graphics(here::here("figures/france-analysis-2024/geoparsed-text-map_franceZoom_v3.pdf"))
+```
+
+
+
+# 2. French research themes -- strengths
+
+
+```{r extract metadata for french research}
+require(bibliometrix)
+
+## Load data
+
+# load lookup of analysis id and country affiliation
+# from france_gridding_locations_0.5res.Rmd
+id_aff <- read.csv(here::here("outputs/france-analysis-2024/1stAuthAff_analysis_id.csv")) 
+id_aff$X <- NULL
+
+
+
+
+# Get predictions for ORO type for each analysis id and join with 1st auth aff and EEZ area
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+predRel <- tbl(dbcon, "pred_relevance")
+uniquerefs <- tbl(dbcon, "uniquerefs")
+franceRefs <- predRel %>% 
+  filter(0.5 <= relevance_mean) %>%
+  left_join(uniquerefs) %>%
+  collect() 
+franceRefs <- id_aff %>%
+  dplyr::select(analysis_id, country_aff, iso_code) %>%
+  filter(country_aff == "France") %>%
+  left_join(franceRefs, by = "analysis_id")
+DBI::dbDisconnect(dbcon)
+
+
+# Write all french DOIs to a file so I can search in WOS and get citation data as well
+franceDOIS <- franceRefs$doi[!is.na(franceRefs$doi)]
+# sink("data/france-analysis-2024/francePubsDOIs.txt")
+# cat(paste0(franceDOIS, sep = " OR"))
+# sink()
+# use to create search query: https://www.webofscience.com/wos/woscc/summary/152124ea-a9b0-4402-b5e4-76d1e3f07128-0123bc0570/relevance/1
+
+
+## Perform BiblioAnalysis
+# M <- franceRefs %>%
+#   mutate(DT = "article", DB = TRUE) %>%
+#   rename(AU = author, TI = title, SO = source_title, DE = keywords, ID = keywords_other, AB = abstract, C1 = affiliation, PY = year, SC = web_of_science_categories, UT = analysis_id) 
+#res1 <- biblioAnalysis(M, sep = ";")
+#save(res1, file=here::here("outputs/france-analysis-2024/biblioAnalysisFrance.RData"))
+#load(here::here("outputs/france-analysis-2024/biblioAnalysisFrance.RData"))
+M <- convert2df(c(here::here("data/france-analysis-2024/francePubsWOSexport_1.bib"),
+                  here::here("data/france-analysis-2024/francePubsWOSexport_2.bib")), format = "bibtex", dbsource = "wos")
+res1 <- biblioAnalysis(M, sep = ";")
+
+## Summarise
+s1 = summary(res1)
+s1$MainInformationDF
+```
+
+```{r funding to affiliations to keywords}
+# CR - cited referenecs
+# Z9 total times cited
+# U2 usage count
+# AU_CO - authors countries
+# TC - Web of Science Core Collection Times Cited Count
+threeFieldsPlot(M, fields = c("FU", # Funding
+                              "affiliations", # Affiliations
+                              "DE" # keywords
+                              ),
+                n=c(5,10,15))
+```
+
+```{r map of motor niche emerging and basic themes}
+
+# Thematic map
+Map = thematicMap(M, field = "DE")
+plot(Map$map)
+
+
+# Thematic evolution
+MapEvol = thematicEvolution(M, field = "DE", years = c(2010, 2015), minFreq = 2, n=100)
+plotThematicEvolution(MapEvol$Nodes, MapEvol$Edges)
+```
+
+```{r author collaboration}
+NetMatrix <- biblioNetwork(M, analysis = "authors", network = "", sep = ";")
+net = networkPlot(NetMatrix, n=30, type = "sphere", labelsize = 1)
+
+```
+
+
+## France research ranking by marine system 
+
+```{r}
+## Load data
+
+# load lookup of analysis id and country affiliation from france_gridding_locations_0.5res.Rmd
+id_aff <- read.csv(here::here("outputs/france-analysis-2024/1stAuthAff_analysis_id.csv")) 
+id_aff$X <- NULL
+
+# Access document metadata
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+
+predType <- tbl(dbcon, "pred_oro_type_long") %>%
+  filter(0.5 <= mean) %>%
+  dplyr::select(analysis_id, oro_branch, oro_type) %>%
+  collect()
+
+predMarSys <- tbl(dbcon, "pred_marine_system") %>%
+  dplyr::select(analysis_id, 
+         `marine_system.land - mean_prediction`,
+         `marine_system.coastal ocean - mean_prediction`,
+         `marine_system.open-ocean - mean_prediction`) %>% 
+  rename(land = `marine_system.land - mean_prediction`,
+         coastal_ocean = `marine_system.coastal ocean - mean_prediction`,
+         open_ocean = `marine_system.open-ocean - mean_prediction`) %>%
+  collect()%>%
+  reshape2::melt(id.vars = c("analysis_id"), variable.name = "marine_system", value.name = 'mean') %>%
+  filter(0.5 <= mean) %>%
+  dplyr::select(-c(mean))
+
+predEcoType <- tbl(dbcon, "pred_ecosystem_type") %>%
+  dplyr::select(analysis_id,
+         `ecosystem_type.Salt_marsh - mean_prediction`, ## ** `ecosystem_type.Salt_marsh - mean_prediction`
+         `ecosystem_type.Mangrove - mean_prediction`,
+         `ecosystem_type.Coral_reef - mean_prediction`,
+         `ecosystem_type.Seagrass - mean_prediction`) %>%
+  rename(Salt_marsh = `ecosystem_type.Salt_marsh - mean_prediction`,
+         Mangrove = `ecosystem_type.Mangrove - mean_prediction`,
+         Coral_reef = `ecosystem_type.Coral_reef - mean_prediction`,
+         Seagrass = `ecosystem_type.Seagrass - mean_prediction`) %>%
+  collect() %>%
+  reshape2::melt(id.vars = c("analysis_id"), variable.name = "ecosystem_type", value.name = 'mean') %>% 
+  filter(0.5 <= mean) %>%
+  dplyr::select(-c(mean))
+
+DBI::dbDisconnect(dbcon)
+
+
+
+## Tabulating data
+coastEcoTypeDf <- id_aff %>% 
+  inner_join(predMarSys, by="analysis_id") %>%
+  inner_join(predType, by="analysis_id") %>%
+  left_join(predEcoType, by="analysis_id") %>% 
+  mutate(ecosystem_type = ifelse(marine_system == "coastal_ocean" & oro_type %in% c("CO2 removal or storage", "Conservation"), as.character(ecosystem_type), NA)) 
+  
+
+coastEcoTypeDfSums <- coastEcoTypeDf %>%
+  group_by(marine_system, ecosystem_type, oro_branch, oro_type, iso_code) %>%
+  summarise(n_articles = n_distinct(analysis_id)) %>%
+  group_by(marine_system, ecosystem_type, oro_type) %>%
+  mutate(type_rank = rank(-n_articles, ties.method = "max")) %>%
+  filter(iso_code == "FRA")%>%
+  mutate(oro_branch = ifelse(
+    !is.na(ecosystem_type), "Carbonne bleu", oro_branch
+  )) %>%
+  group_by(marine_system, ecosystem_type, oro_branch) %>% 
+  mutate(avg_branch_rank = mean(type_rank)) %>%
+  filter(
+    (marine_system == "land" & oro_branch == "Societal adaptation") |
+      (marine_system == "coastal_ocean" & !is.na(ecosystem_type)) |
+      (marine_system == "coastal_ocean" & oro_type == "Marine renewable energy") |
+      (marine_system == "open_ocean" & oro_type %in% c("CO2 removal or storage", "Increase efficiency"))
+  ) %>%
+  mutate(
+    rank = ifelse(
+      (marine_system == "coastal_ocean" & oro_type == "Marine renewable energy") |
+        (marine_system == "open_ocean"),
+      type_rank, avg_branch_rank),
+    oro_category = ifelse(
+      (marine_system == "coastal_ocean" & oro_type == "Marine renewable energy") |
+        (marine_system == "open_ocean"),
+      oro_type, oro_branch)
+  ) %>%
+  dplyr::select(marine_system, ecosystem_type, oro_category, rank) %>% #oro_branch, oro_type,
+  distinct(marine_system, rank, .keep_all = TRUE) %>%
+  mutate(
+    marine_system = factor(marine_system, levels = c(marSysAES$level), labels = marSysAES$label),
+    ecosystem_type = factor(ecosystem_type, levels = ecoTypeAES$level, labels = ecoTypeAES$label),
+    oro_category = factor(oro_category,
+                          levels = c("Societal adaptation", 
+                                     "Marine renewable energy","Carbonne bleu",
+                                     "Increase efficiency","CO2 removal or storage"))
+  ) %>%
+  arrange(marine_system, oro_category, ecosystem_type) %>%
+  group_by(marine_system, oro_category) %>%
+  mutate(y_lab = row_number()-0.5)
+coastEcoTypeDfSums$rank_f <- round(coastEcoTypeDfSums$rank)
+coastEcoTypeDfSums$rank_f <- factor(coastEcoTypeDfSums$rank_f,
+                                    levels = seq(min(coastEcoTypeDfSums$rank_f), max(coastEcoTypeDfSums$rank_f), by=1))
+
+ggplot(coastEcoTypeDfSums, aes(x = oro_category, fill = rank_f))+
+  facet_grid(marine_system~., scale = "free")+
+  geom_col(aes(y = 1))+
+  geom_text(aes(label = rank_f, y = y_lab-0.3), size = 3)+
+  scale_fill_brewer(direction=-1, palette = "YlOrBr", guide = "none")+
+  coord_flip()+
+  theme_void()+
+  theme(strip.text = element_blank())
+
+ggsave(filename = here::here("figures/france-analysis-2024/marSysResearchRankHeatmap.png"), width = 600, height = 1200, units = "px")
+  
+```
+
+
+## Keywords that distinguish french research 
+
+```{r extract metadata for french research}
+require(bibliometrix)
+
+## Load data
+
+# load lookup of analysis id and country affiliation
+# from france_gridding_locations_0.5res.Rmd
+id_aff <- read.csv(here::here("outputs/france-analysis-2024/1stAuthAff_analysis_id.csv")) 
+id_aff$X <- NULL
+
+
+
+
+# Get predictions for ORO type for each analysis id and join with 1st auth aff and EEZ area
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+predRel <- tbl(dbcon, "pred_relevance")
+uniquerefs <- tbl(dbcon, "uniquerefs")
+franceRefs <- predRel %>% 
+  filter(0.5 <= relevance_mean) %>%
+  left_join(uniquerefs) %>%
+  collect() 
+franceRefs <- id_aff %>%
+  dplyr::select(analysis_id, country_aff, iso_code) %>%
+  filter(country_aff == "France") %>%
+  left_join(franceRefs, by = "analysis_id")
+DBI::dbDisconnect(dbcon)
+
+
+# Write all french DOIs to a file so I can search in WOS and get citation data as well
+franceDOIS <- franceRefs$doi[!is.na(franceRefs$doi)]
+# sink("data/france-analysis-2024/francePubsDOIs.txt")
+# cat(paste0(franceDOIS, sep = " OR"))
+# sink()
+# use to create search query: https://www.webofscience.com/wos/woscc/summary/152124ea-a9b0-4402-b5e4-76d1e3f07128-0123bc0570/relevance/1
+
+
+## Perform BiblioAnalysis
+# M <- franceRefs %>%
+#   mutate(DT = "article", DB = TRUE) %>%
+#   rename(AU = author, TI = title, SO = source_title, DE = keywords, ID = keywords_other, AB = abstract, C1 = affiliation, PY = year, SC = web_of_science_categories, UT = analysis_id) 
+#res1 <- biblioAnalysis(M, sep = ";")
+#save(res1, file=here::here("outputs/france-analysis-2024/biblioAnalysisFrance.RData"))
+#load(here::here("outputs/france-analysis-2024/biblioAnalysisFrance.RData"))
+M <- convert2df(c(here::here("data/france-analysis-2024/francePubsWOSexport_1.bib"),
+                  here::here("data/france-analysis-2024/francePubsWOSexport_2.bib")), format = "bibtex", dbsource = "wos")
+res1 <- biblioAnalysis(M, sep = ";")
+
+## Summarise
+s1 = summary(res1)
+s1$MainInformationDF
+```
+
+
+
+## Where are french research institutions situated in the solution space?
+
+NOTE should replicate this with all .bib files using the convert2df function 
+```{r identify top publishing french institutions counting all authors}
+allAff <- merge(M[,c("affiliations","DI")], 
+                franceRefs[,c("analysis_id","doi")], 
+                by.x = "DI", by.y = "doi", all.x = FALSE, all.y = FALSE)%>%
+  tidyr::separate_rows(affiliations, sep = "; ")
+
+# Join with ORO type
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+allAff <- tbl(dbcon, "pred_oro_type_long") %>%
+  right_join(allAff, by = "analysis_id", copy = TRUE) %>%
+  collect()
+DBI::dbDisconnect(dbcon)
+
+
+# Identify top affiliations
+# Frequency distribution of affiliations (of all co-authors of each paper)
+
+allAff <- allAff %>%
+  mutate(affGrouped = case_when(
+    grepl("CNRS", affiliations) ~ "CNRS",
+    TRUE ~ affiliations
+    # grepl("IRD", affiliations) ~ "IRD",
+    # grepl("CEA", affiliations) ~ "Commissariat à l'énergie atomique et aux énergies alternatives"
+  ))
+topFrenchAff <- table(allAff$affGrouped) %>% as.data.frame()
+topFrenchAff <- topFrenchAff[quantile(topFrenchAff$Freq, 0.85) <= topFrenchAff$Freq,]
+dim((topFrenchAff))
+
+topFrenchAff <- topFrenchAff[!(topFrenchAff$Var1 %in% c("NATURAL ENVIRONMENT RESEARCH COUNCIL (NERC)",
+                                                   "UNIVERSITY OF CALIFORNIA SYSTEM",
+                                                   "SHANGHAI MARITIME UNIVERSITY",
+                                                   "UK RESEARCH \\& INNOVATION (UKRI)",
+                                                   "UNIV BRITISH COLUMBIA",
+                                                   "UNIVERSITY OF BRITISH COLUMBIA",
+                                                   "COMMONWEALTH SCIENTIFIC \\& INDUSTRIAL RESEARCH ORGANISATION (CSIRO)",
+                                                   "CONSEJO SUPERIOR DE INVESTIGACIONES CIENTIFICAS (CSIC)",
+                                                   "HELMHOLTZ ASSOCIATION",
+                                                   "HESAM UNIVERSITE",
+                                                   "NATIONAL OCEANIC ATMOSPHERIC ADMIN (NOAA) - USA",
+                                                   "NERC BRITISH GEOLOGICAL SURVEY",
+                                                   "UNIVERSITY OF ALASKA FAIRBANKS",
+                                                   "UNIVERSITY OF ALASKA SYSTEM",
+                                                   "UNIVERSITY OF PLYMOUTH",
+                                                   # "MARINE STRUCT LAB",
+                                                   # "UNIV SOUTHAMPTON",
+                                                   "BANGOR UNIVERSITY"
+                                                   # "UNIV BERN",
+                                                   # "UNIV QUEBEC",
+                                                   # "FRANCE.",
+                                                   # "CTR SCI MONACO",
+                                                   # "CASABLANCA",
+                                                   # "DUKE UNIV",
+                                                   # "SCHLIFFKE",
+                                                   # "JAMES COOK UNIV",
+                                                   # "UNIV QUEENSLAND",
+                                                   # "HUMBOLDT UNIV",
+                                                   # "CTR SCIENTIF MONACO",
+                                                   # "UNIV LEEDS",
+                                                   # "UNIV PLYMOUTH",
+                                                   # "AUSTRALIAN NATL UNIV",
+                                                   # "UNIV UTRECHT"
+                                                   )),]
+colnames(topFrenchAff) <- c("institution","n_articles")
+topFrenchAff <- topFrenchAff %>%
+  arrange(n_articles)
+
+
+#write.csv(topFrenchAff, file = here::here("outputs/france-analysis-2024/franceInstitutionLocation.csv"))
+topFrenchAff <- read.csv(here::here("outputs/france-analysis-2024/franceInstitutionLocationLookup.csv"))
+topFrenchAff$X <- NULL
+```
+
+
+### Bubble map of universities where the bubble is a pie chart of ORO type
+
+```{r bubble map of institutions by oro branch}
+require(scatterpie)
+require(rnaturalearth)
+require(ggrepel)
+
+## Load data
+france <- ne_countries(scale = 10, type = "countries", returnclass = "sf", country = 'France')#%>%
+  # # Convert WGS84 to projected crs (here Robinson)
+  # sf::st_transform(france, crs="ESRI:54030")
+
+## Format data
+pieMapDf <- merge(allAff, topFrenchAff, by.x = "affGrouped", by.y = "institution", all.x = FALSE, all.y=TRUE)
+pieMapDf <- pieMapDf %>%
+  filter(0.5 <= mean) %>%
+  group_by(oro_branch, lon, lat, city) %>% #affGrouped, , 
+  summarise(nOro = n_distinct(analysis_id, oro_branch)) %>% 
+  pivot_wider(names_from = oro_branch, values_from = nOro, values_fill = 0) %>% 
+  left_join(topFrenchAff %>% group_by(city) %>% summarise(n_total = sum(n_articles))) %>%
+  mutate(radius = log(n_total)/8) 
+colnames(pieMapDf)[4:6] <- c("Atténuation", "Résilience naturelle", "Adaptation sociétale")
+pieMapDf.nona <- pieMapDf %>% na.omit()
+
+# For all-france institutions
+pieMapDf.na <- merge(allAff, topFrenchAff, by.x = "affGrouped", by.y = "institution", all.x = FALSE, all.y=TRUE) %>% 
+  filter(0.5 <= mean, is.na(city)) %>%
+  group_by(oro_branch, lon, lat, affGrouped) %>% #affGrouped, , 
+  summarise(nOro = n_distinct(analysis_id, oro_branch)) %>% 
+  pivot_wider(names_from = oro_branch, values_from = nOro, values_fill = 0) %>% 
+  left_join(topFrenchAff %>% group_by(institution) %>% summarise(n_total = sum(n_articles)), by = c("affGrouped" = "institution")) %>%
+  mutate(radius = log(n_total)/8,
+         lon = 11, 
+         lat = 54.5) 
+colnames(pieMapDf.na)[4:6] <- c("Atténuation", "Résilience naturelle", "Adaptation sociétale")
+pieMapDf.na <- pieMapDf.na %>% arrange(n_total)
+pieMapDf.na$lat <- seq(42, 51, length.out =nrow(pieMapDf.na))
+
+
+## Factoring information
+affTypeSums$oro_type_f <- factor(
+  affTypeSums$oro_type, 
+  levels = typeAES$level, labels = typeAES$label
+)
+
+
+## Plot
+pieMap <- ggplot()+
+  # Plot map
+  geom_sf(data = france, color = 'black', fill = "darkgrey")+
+  coord_sf(xlim = c(-5.5,20), ylim = c(40.5,51.5))+
+  # Plot piecharts
+  geom_scatterpie(data = pieMapDf.nona, 
+                  aes(x=lon, y=lat, group=city, r = radius), 
+                  cols = c("Atténuation", "Résilience naturelle", "Adaptation sociétale"),
+                  alpha = 0.7)+
+  geom_scatterpie(data = pieMapDf.na, 
+                  aes(x=lon, y=lat, group=affGrouped, r = radius), 
+                  cols = c("Atténuation", "Résilience naturelle", "Adaptation sociétale"),
+                  alpha = 0.7)+
+  # add text labels of institutions to pies
+  geom_text(data = pieMapDf.na, aes(x=lon, y=lat, label = str_wrap(affGrouped, 20)), hjust = 0, nudge_x = 1)+
+  geom_text_repel(data = topFrenchAff %>% na.omit() %>% filter(!(institution %in% c("UNIVERSITY OF LA REUNION", "UNIVERSITE NOUVELLE CALEDONIE"))) %>% mutate(institution = gsub("UNIVERSITE","U.", institution)) %>% arrange(desc(n_articles)) %>% group_by(city) %>% top_n(n=5), aes(x=lon, y=lat, label = str_wrap(str_to_title(institution), 20)),
+                  size=2, force_pull = 0.5, max.overlaps = 20)+
+  # Color scales and legends
+  scale_fill_manual(breaks = branchAES$frenchLabel, values = branchAES$colour, name = "Option liée à l'océan")+
+  geom_scatterpie_legend(pieMapDf$radius, x=-5, y=41, n=3, labeller = function(x) round(exp(x*8), digits = -2))+
+  theme_void()+
+  theme(legend.position = "bottom")
+
+pieMap
+ggsave(here::here("figures/france-analysis-2024/pieChartMap.png"), width = 7, height = 5, units = 'in')
+#ggsave(here::here("figures/france-analysis-2024/pieChartMap.pdf"), width = 7, height = 5, units = 'in')
+
+```
+
+### Connection map between french institutions
+```{r}
+## Calculate connections between institutions
+idAffInt <- allAff %>%
+  distinct(analysis_id, affGrouped) %>%
+  left_join(topFrenchAff[,c("institution","city","lon","lat")], by = c("affGrouped"="institution"))
+
+
+
+```
+
+### Institutions in the solution space -- institutions in relation to topic model
+
+```{r topic model by institution and scatterplot3d}
+topicModDf <- merge(allAff, topFrenchAff, by.x = "affGrouped", by.y = "institution", all.x = FALSE, all.y=TRUE)%>%
+  filter(0.5 <= mean) %>%
+  group_by(affGrouped, analysis_id) %>%
+  distinct() %>%
+  inner_join(franceRefs, by = "analysis_id") %>%
+  mutate(text = paste(title, keywords, collapse = " "))
+topicModDf <- aggregate(text ~ affGrouped, data = topicModDf, FUN = function(x) paste(x, collapse = " "))
+
+## Fit topic model with 4 topics and 2000 iterations on title and keyword text
+# all_stopwords <- unique(c(litsearchr::get_stopwords("English"), revtools::revwords())) 
+# topicModel <- revtools::screen_topics(topicModDf %>% as.data.frame(), remove_words = all_stopwords)
+# topicModel$plot_ready$x$caption <- topicModDf$affGrouped
+# save(topicModel, file = here::here("outputs/france-analysis-2024/franceInstitutionTopicModel.RData"))
+topicModel <- get(load(here::here("outputs/france-analysis-2024/franceInstitutionTopicModel.RData")))
+
+# Description of the keywords in each topic
+topicModel$plot_ready$topic[,c("topic","n","caption")]
+topic_pal <- c("forestgreen", "#35a7d9", "#7670a8", "forestgreen")
+names(topic_pal) <- topicModel$plot_ready$topic$caption
+
+# Plotly scatterplot of topic model of the top 8 institutions per topic
+tmp <- topicModel$plot_ready$x
+tmp$institute <- str_wrap(tmp$caption, width = 25)
+tmp$caption <- NULL
+tmp <- merge(tmp, topicModel$plot_ready$topic[,c("topic","caption")], by = "topic", all.x = TRUE)
+
+tmp$caption <- as.factor(tmp$caption)
+tmp <- merge(tmp, topFrenchAff, by.x = "institute",by.y = "institution", all.x = TRUE, all.y = FALSE)
+tmp <- tmp %>% 
+  group_by(topic) %>%
+  top_n(5)
+
+scatter3dPlot <- plotly::plot_ly(tmp, x=~Axis1, y=~Axis2, z=~Axis3, color =~caption, colors = topic_pal, type="scatter3d", text =~institute,
+                                 #mode = 'text',  
+                                 #text =~caption, hoverinfo="text", 
+                                 size=15) %>%
+ plotly::add_text(textfont = list(size=10), textposition = "topright", showlegend = F) %>%
+  plotly::layout(legend = list(orientation = 'h'))
+
+
+
+scatter3dPlot
+
+
+## Also plot as a bar plot or sankey?
+
+
+
+
+```
+
+
+```{r topic model by article}
+topicModDf2 <- merge(allAff, topFrenchAff, by.x = "affGrouped", by.y = "institution", all.x = FALSE, all.y=TRUE)%>%
+  filter(0.5 <= mean) %>%
+  group_by(affGrouped, analysis_id) %>%
+  inner_join(franceRefs, by = "analysis_id") %>%
+  mutate(text = paste(title, keywords, collapse = " ")) 
+topicModDf2 <- topicModDf2[!duplicated(topicModDf2$analysis_id),]
+
+## Fit topic model with 4 topics and 2000 iterations on title and keyword text
+all_stopwords <- unique(c(litsearchr::get_stopwords("English"), revtools::revwords())) 
+topicModel2 <- revtools::screen_topics(topicModDf2[,c("analysis_id","text")] %>% as.data.frame(), remove_words = all_stopwords)
+#save(topicModel2, file = here::here("outputs/france-analysis-2024/franceArticleTopicModel.RData"))
+topicModel2 <- get(load(here::here("outputs/france-analysis-2024/franceArticleTopicModel.RData")))
+topicModel2$plot_ready$x$analysis_id <- topicModel2$grouped$analysis_id
+
+# Description of the keywords in each topic
+topicModel2$plot_ready$topic[,c("topic","n","caption")]
+topic_pal <- c("forestgreen", "#35a7d9", "#7670a8", "forestgreen")
+names(topic_pal) <- topicModel$plot_ready$topic$caption
+
+# Plot 
+tmp <- merge(allAff, topFrenchAff, by.x = "affGrouped", by.y = "institution", all.x = FALSE, all.y=TRUE)%>%
+  filter(0.5 <= mean) %>%
+  group_by(affGrouped, analysis_id) %>%
+  inner_join(franceRefs, by = "analysis_id") %>%
+  left_join(topicModel2$plot_ready$x, by = "analysis_id") %>%
+  dplyr::select(analysis_id, affGrouped, city, lon, lat, topic, Axis1, Axis2, Axis3, common_words) %>%
+  left_join(topicModel2$plot_ready$topic[,c("topic","caption")]) 
+
+tmp$affGrouped <- str_wrap(tmp$affGrouped, width = 25)
+tmp$topic <- as.factor(tmp$topic)
+
+
+require(ggsankey)
+tmpLong <- tmp[,c("affGrouped","caption", "analysis_id")]
+tmpLong <- na.omit(tmpLong)
+tmpLong$affGrouped
+tmpLong$affGrouped <- as.factor(tmpLong$affGrouped)
+tmpLong$caption <- as.factor(tmpLong$caption)
+tmpLong <- tmpLong %>% group_by(affGrouped, caption) %>%summarise(n=n())
+tmpLong %>%
+  make_long(affGrouped, caption, value = n)
+
+summary(tmpLong)
+tmpLong %>% make_long(affGrouped, caption, weight = analysis_id) %>% head
+tmpLong %>% head
+
+tmpTally <- tmpLong %>%
+  group_by(node) %>%
+  tally()
+tmpLong <- merge(tmpLong, tmpTally, by = "node", all.x=TRUE)
+
+  
+
+
+  
+ggplot(data = tmpLong, x="affGrouped", next_x = NA, aes(node = affGrouped, 
+                                        next_node = caption, 
+                                        fill = factor(affGrouped))) +
+  geom_sankey() +
+  theme_sankey(base_size = 16)
+
+
+
+tmp <- tmp %>% 
+  group_by(topic) %>%
+  top_n(5)
+
+scatter3dPlot <- plotly::plot_ly(tmp, x=~Axis1, y=~Axis2, z=~Axis3, color =~caption, colors = topic_pal, type="scatter3d", text =~institute,
+                                 #mode = 'text',  
+                                 #text =~caption, hoverinfo="text", 
+                                 size=15) %>%
+ plotly::add_text(textfont = list(size=10), textposition = "topright", showlegend = F) %>%
+  plotly::layout(legend = list(orientation = 'h'))
+
+
+
+scatter3dPlot
+
+
+## Also plot as a bar plot or sankey?
+
+
+
+
+```
+
+
+
+```{r topic model by article using ggalluvial}
+require(ggalluvial)
+
+topicModDf2 <- merge(allAff, topFrenchAff, by.x = "affGrouped", by.y = "institution", all.x = FALSE, all.y=TRUE)%>%
+  filter(0.5 <= mean) %>%
+  group_by(affGrouped, analysis_id) %>%
+  inner_join(franceRefs, by = "analysis_id") %>%
+  mutate(text = paste(title, keywords, collapse = " ")) 
+topicModDf2 <- topicModDf2[!duplicated(topicModDf2$analysis_id),]
+
+## Fit topic model with 4 topics and 2000 iterations on title and keyword text
+all_stopwords <- unique(c(litsearchr::get_stopwords("English"), revtools::revwords())) 
+topicModel2 <- revtools::screen_topics(topicModDf2[,c("analysis_id","text")] %>% as.data.frame(), remove_words = all_stopwords)
+#save(topicModel2, file = here::here("outputs/france-analysis-2024/franceArticleTopicModel.RData"))
+topicModel2 <- get(load(here::here("outputs/france-analysis-2024/franceArticleTopicModel.RData")))
+topicModel2$plot_ready$x$analysis_id <- topicModel2$grouped$analysis_id
+
+# Description of the keywords in each topic
+topicModel2$plot_ready$topic[,c("topic","n","caption")]
+topic_pal <- c("forestgreen", "#35a7d9", "#7670a8", "forestgreen")
+names(topic_pal) <- topicModel$plot_ready$topic$caption
+
+# Plot alluvial diagram
+
+tmp <- merge(allAff, topFrenchAff, by.x = "affGrouped", by.y = "institution", all.x = FALSE, all.y=TRUE)%>%
+  filter(0.5 <= mean) %>%
+  group_by(affGrouped, analysis_id) %>%
+  inner_join(franceRefs, by = "analysis_id") %>%
+  left_join(topicModel2$plot_ready$x, by = "analysis_id") %>% 
+  dplyr::select(analysis_id, affGrouped, oro_branch, oro_type, topic) %>% #, Axis1, Axis2, Axis3, common_words
+  left_join(topicModel2$plot_ready$topic[,c("topic","caption")]) %>%
+  mutate(affGrouped = stringr::str_wrap(affGrouped, width = 25),
+         topic = as.factor(topic),
+         oro_branch = factor(oro_branch, levels = branchAES$label, labels = branchAES$frenchLabel),
+         caption = factor(caption,
+                          levels = topicModel2$plot_ready$topic$caption,
+                          labels = c("carbone, marine, eau, production, écosystème",
+                                     "éolien, offshore, énergie, ferme, france",
+                                     "turbine, système, contrôle, énergie marémotrice, optimal",
+                                     "côtier, changement climatique, risque, adaptation, pêche")))
+alluv_instSmall_ggp <- tmp %>%
+  na.omit() %>%
+  filter(!(affGrouped  %in% c("CNRS", "IFREMER", "INRAE","INSTITUT DE RECHERCHE\nPOUR LE DEVELOPPEMENT\n(IRD)"))) %>%
+  group_by(affGrouped, caption, oro_branch) %>%
+  summarise(Freq = n()) %>%
+  group_by(caption) %>%
+  slice_max(Freq, n=3) %>%
+  as.data.frame() %>%
+  
+  ggplot(aes(y = Freq, axis1 = stringr::str_wrap(affGrouped, 10), axis2 = stringr::str_wrap(caption, 25))) +
+  geom_alluvium(width = 1/12, aes(fill = oro_branch)) +
+  geom_stratum(width = 1/5, color = "grey") + #fill = "black", 
+  #geom_label(stat = "stratum", aes(label = after_stat(stratum)), fill="white") +
+  geom_label_repel(stat = "stratum", aes(label = after_stat(stratum)), size=2, max.overlaps = 20, force_pull = 1, force = 1.5) +
+  scale_x_discrete(limits = c("Institut", "Thème"), expand = c(.05, .05)) +
+  scale_fill_manual(breaks = branchAES$frenchLabel, values = branchAES$colour, name = "Option")+
+  ggtitle("a. Infranationale")+
+  coord_flip()+
+  theme_alluvial()+
+  theme(legend.position = "none")
+alluv_instSmall_ggp
+
+ggsave(plot = alluv_instSmall_ggp, filename = here::here("figures/france-analysis-2024/institutionSmallTopicAlluvial.pdf"),
+       width = 7, height = 4, units = "in")
+
+alluv_largeInst_ggp <- tmp %>%
+  na.omit() %>%
+  filter(affGrouped  %in% c("CNRS", "IFREMER", "INRAE","INSTITUT DE RECHERCHE\nPOUR LE DEVELOPPEMENT\n(IRD)")) %>%
+  mutate(affGrouped = ifelse(affGrouped == "INSTITUT DE RECHERCHE\nPOUR LE DEVELOPPEMENT\n(IRD)", 
+                             "IRD", affGrouped)) %>%
+  group_by(affGrouped, caption, oro_branch) %>%
+  summarise(Freq = n()) %>%
+  group_by(caption) %>%
+  as.data.frame() %>%
+  ggplot(aes(y = Freq, axis1 = stringr::str_wrap(affGrouped, 15), axis2 = stringr::str_wrap(caption, 20))) +
+  geom_alluvium(width = 1/12, aes(fill = oro_branch)) +
+  geom_stratum(width = 1/5, color = "grey") + #fill = "black", 
+  #geom_label(stat = "stratum", aes(label = after_stat(stratum)), fill="white") +
+  geom_label_repel(stat = "stratum", aes(label = after_stat(stratum)), size=2, max.overlaps = 20, force_pull = 0.2, force = 1.5) +
+  scale_x_discrete(limits = c("Institut", "Thème"), expand = c(.05, .05)) +
+  scale_fill_manual(breaks = branchAES$frenchLabel, values = branchAES$colour, name = "Option")+
+  coord_flip()+
+  theme_alluvial()+
+  ggtitle("b. Nationale")+
+  theme(legend.position = "right",
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+alluv_largeInst_ggp
+
+alluv_inst_ggp <- egg::ggarrange(plots = list(alluv_instSmall_ggp, alluv_largeInst_ggp),nrow = 1,newpage = FALSE, draw=FALSE)
+
+ggsave(plot = alluv_inst_ggp, filename = here::here("figures/france-analysis-2024/institutionTopicAlluvial.pdf"),
+       width = 10, height = 4, units = "in")
+
+
+```
+
+
+
+
+
+
+
+
+
+## Spotlight on the Most cited French publications (1st auth affil)
+
+Present a multi panel figure of a map of where the studies are located, colour coded by ORO type, maybe altmetrics scores/links to media and policy?
+
+```{r most cited french publications}
+quantile(M$TC)
+top10Cited <- head(M[order(M$TC, decreasing = TRUE),], 10)
+View(top10Cited[,c("TI", "TC")])
+
+res1$TotalCitation # the number of times each manuscript has been cited
+```
+
+## Sentiment analysis on French ORO publications?
+
+By ORO type, are french publications mostly netural, optimistic, critical? What about articles from french news websites?
+
+
+# 3. How is France doing compared to other countries? -- gaps
+
+## Distribution by ORO type reasearch from France (1st auth affil) compared to other top countries
+
+Can I make thickness of line proportional to number?
+
+```{r ORO type distribution by country ranking plot}
+## Load data
+
+# load lookup of analysis id and country affiliation
+# from france_gridding_locations_0.5res.Rmd
+id_aff <- read.csv(here::here("outputs/france-analysis-2024/1stAuthAff_analysis_id.csv")) 
+id_aff$X <- NULL
+
+# EEZ area per country
+load(here::here("data/country_eez_area_df.RData"))
+eez_area_df <- eez_area_df %>%
+  group_by(country_aff) %>%
+  summarise(total_area_km2 = sum(area_km2))
+
+# Get predictions for ORO type for each analysis id and join with 1st auth aff and EEZ area
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+predType <- tbl(dbcon, "pred_oro_type_long")
+affTypeDf <- predType %>%
+  filter(0.5 <= mean) %>% 
+  collect() %>% 
+  left_join(id_aff, by = "analysis_id") %>%
+  left_join(eez_area_df, by = "country_aff") 
+DBI::dbDisconnect(dbcon)
+
+
+
+## Calculations
+
+# Calculate the top 10 ORO publishing countries, and number of articles per ORO type
+affTypeTop10 <- affTypeDf %>%
+  filter(!is.na(iso_code) & !is.na(total_area_km2)) %>%
+  group_by(iso_code, total_area_km2) %>%
+  summarise(n_total = n_distinct(analysis_id)) %>%
+  arrange(desc(n_total)) 
+#affTypeTop10$rank <- 1:nrow(affTypeTop10)
+affTypeTop10 <- rbind(affTypeTop10 %>% head(10), affTypeTop10[affTypeTop10$iso_code == "FRA",])
+affTypeTop10 <- affTypeTop10[!duplicated(affTypeTop10),]
+
+
+affTypeSums <- affTypeDf %>%
+  right_join(affTypeTop10, by = c("iso_code", "total_area_km2")) %>%
+  group_by(iso_code, total_area_km2, n_total, oro_type) %>%
+  summarise(n = sum(0.5 <= mean)) %>%
+  mutate(n_relative = n/total_area_km2) 
+
+
+
+## Plotting
+require(ggbump)
+
+# Factor for formatting
+frenchOROLabels <- typeAES$frenchLabel
+affTypeSums$oro_type_f <- factor(
+  affTypeSums$oro_type, 
+  levels = typeAES$level, labels = typeAES$label
+)
+affTypeSums <- affTypeSums %>%
+  left_join(typeAES[,c("level","order","colour")], by = c("oro_type"="level"))
+
+ 
+
+# Plot
+affTypeSumsTot <- affTypeSums %>%
+  arrange(oro_type, desc(n)) %>%
+  group_by(oro_type) %>%
+  mutate(rank = row_number())
+
+# colour palette
+rankPal <- colorRampPalette(RColorBrewer::brewer.pal(5, "Reds"))(length(unique(affTypeSumsTot$iso_code)))
+names(rankPal) <- affTypeSumsTot$iso_code[affTypeSumsTot$order == 1]
+rankPal[!(names(rankPal) %in% c("USA","CHN","FRA"))] <- DescTools::ColToGray(rankPal[!(names(rankPal) %in% c("USA","CHN","FRA"))])
+
+rankPal <- colorRampPalette(RColorBrewer::brewer.pal(5, "Greys"))(length(unique(affTypeSumsTot$iso_code)))
+names(rankPal) <- affTypeSumsTot$iso_code[affTypeSumsTot$order == 1]
+rankPal[names(rankPal) %in% c("USA","CHN","FRA")] <- c("#33a02c", "#1f78b4", "red")
+
+
+rankTotalN_ggp <- affTypeSumsTot %>%
+  ggplot(aes(x=order, y = rank, color = iso_code)) +
+  #ggtitle("a. Rank by total # of publications") +
+  ggtitle("Classement par nombre total de publications")+
+  geom_bump(size = 2) +
+  #geom_point(aes(size = n)) +
+  geom_bump(data = affTypeSumsTot %>%filter(iso_code == "FRA"), size = 1.5) +
+  #geom_point(data = affTypeSumsTot %>%filter(iso_code == "FRA"), aes(size = n)) +
+  geom_text(data = affTypeSumsTot %>% filter(order == min(affTypeSumsTot$order)), 
+            aes(x = order - 0.2, label = iso_code),
+            size = 4, hjust = 1) +
+  geom_text(data = affTypeSumsTot %>% filter(order == max(affTypeSumsTot$order)),
+            aes(x = order + 0.2, label = iso_code),
+            size = 4, hjust = 0) +
+  scale_y_continuous(trans = "reverse")+
+  scale_x_continuous(name = "Option liée à l'océan", breaks = 1:max(affTypeSumsTot$order), labels = frenchOROLabels)+
+  scale_color_manual(values = rankPal)+
+  coord_cartesian(clip="off")+
+  geom_text(data = data.frame(order = c(2, 4.5, 6.5), 
+                              #label = c("Mitigation","Natural Resilience","Societal adaptation")),
+                              label = c("Atténuation", "Résilience naturelle", "Adaptation sociétale")),
+            aes(x=order, label = label),
+            size = 4, hjust = 0.5, vjust = 0, y=Inf, inherit.aes = FALSE) +
+  geom_vline(data = data.frame(xint = c(3.5, 5.5)), aes(xintercept = xint), col = "black", linewidth = 0.75)+
+  theme_bw()+
+  theme(legend.position = 'none',
+        axis.line.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        panel.border = element_blank(),
+        panel.grid = element_blank(),
+        axis.line.x = element_line(color = "black", linewidth = 0.75),
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+        plot.title = element_text(family = "sans", size = 15, margin=margin(0,0,20,0)),
+        plot.margin = unit(c(0.2, 1, 0.5, 2), "cm"))
+rankTotalN_ggp
+ggsave(here::here("figures/france-analysis-2024/rankTotalBumpPlot.png"), plot = rankTotalN_ggp, width = 7, height = 6, units='in')
+
+# Alternate from ggsankey, but I don't like it for legibility
+# https://r-graph-gallery.com/web-sankey-diagram-with-highlight.html
+# require(ggsankey)
+# require(tidyverse)
+# ggplot(affTypeSumsTot, aes(x = order, node = iso_code, fill = iso_code, value = n, label = iso_code)) +
+#    geom_sankey_bump() +
+#    theme_minimal() +
+#    theme(
+#       legend.position = "bottom",
+#       plot.background = element_rect(fill = "grey99", color = NA)
+#    )
+
+
+
+
+
+affTypeSumsRel <- affTypeSums %>%
+  arrange(oro_type, desc(n_relative)) %>%
+  group_by(oro_type) %>%
+  mutate(rank = row_number())
+
+rankRelativeN_ggp <- affTypeSumsRel %>%
+  ggplot(aes(x=order, y = rank, color = iso_code)) +
+  #ggtitle("b. Rank by # of publications/EEZ area") +
+  ggtitle("b. Classement par nombre de publications/zone ZEE")+
+  geom_bump(size = 1) +
+  geom_point(aes(size = n)) +
+  geom_bump(data = affTypeSumsRel %>%filter(iso_code == "FRA"), size = 1.5) +
+  geom_point(data = affTypeSumsRel %>%filter(iso_code == "FRA"), aes(size = n)) +
+  geom_text(data = affTypeSumsRel %>% filter(order == min(affTypeSums$order)), 
+            aes(x = order - 0.1, label = iso_code),
+            size = 3, hjust = 1) +
+  geom_text(data = affTypeSumsRel %>% filter(order == max(affTypeSums$order)),
+            aes(x = order + 0.1, label = iso_code),
+            size = 3, hjust = 0) +
+  scale_y_continuous(trans = "reverse")+
+  scale_x_continuous(name = "Option liée à l'océan", breaks = 1:max(affTypeSums$order), labels = frenchOROLabels)+
+  coord_cartesian(clip="off")+
+  geom_text(data = data.frame(order = c(2, 4.5, 6.5), 
+                              #label = c("Mitigation","Natural Resilience","Societal adaptation")),
+                              label = c("Atténuation", "Résilience naturelle", "Adaptation sociétale")),
+            aes(x=order, label = label),
+            size = 3, hjust = 0.5, vjust = 0, y=Inf, inherit.aes = FALSE) +
+  geom_vline(data = data.frame(xint = c(3.5, 5.5)), aes(xintercept = xint), col = "black", linewidth = 0.75)+
+  theme_bw()+
+  theme(legend.position = 'none',
+        axis.line.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        panel.border = element_blank(),
+        panel.grid = element_blank(),
+        axis.line.x = element_line(color = "black", linewidth = 0.75),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(family = "sans", size = 15, margin=margin(0,0,20,0)),
+        plot.margin = unit(c(0.2, 1, 0.5, 2), "cm"))
+
+rankggp <- egg::ggarrange(plots = list(rankTotalN_ggp, rankRelativeN_ggp), nrow = 1, newpage = FALSE)
+ggsave(here::here("figures/france-analysis-2024/rankBumpPlot.pdf"), plot = rankggp, width = 12, height = 5, units='in')
+```
+
+```{r using ggalluvial}
+require(ggalluvial)
+
+allRankTotalN_ggp2 <-ggplot(data = affTypeSumsTot,
+                           aes(x=order, y = n, alluvium = iso_code)) +
+  ggtitle("Classement par nombre de publications")+
+  geom_alluvium(aes(fill = iso_code, colour = iso_code),
+                alpha = .75, decreasing = FALSE) +
+  geom_text(data = affTypeSumsTot %>% filter(order == min(affTypeSumsTot$order)), 
+            aes(x = order - 0.3, label = iso_code, y = rev(cumsum(rev(n)))),
+            size = 3, hjust = 1) +
+  geom_text(data = affTypeSumsTot %>% filter(order == max(affTypeSumsTot$order)) %>%
+                    mutate(y = seq(19073, 0, length.out = 11)), 
+            aes(x = order + 0.4, label = iso_code, y = y),
+            size = 3, hjust = 0) +
+  # Label france rank 
+  geom_text(data = affTypeSumsTot %>% filter(iso_code == "FRA"), 
+            aes(x = order, label = paste0(rank,"/11")),
+            y = 19073, nudge_y = -1000, size = 3, hjust = 0, col = "red")+
+  # just france
+  geom_text(data = data.frame(n=655, order = 1, iso_code = "FRA", y=1136), 
+            aes(x = order - 0.3, label = iso_code, y = y, colour = iso_code),
+            size = 3, hjust = 1, fontface='bold') +
+  geom_text(data = data.frame(order = 7, iso_code = "FRA", y=9536), 
+            aes(x = order + 0.4, label = iso_code, y = y, colour = iso_code),
+            size = 3, hjust = 0, fontface='bold') +
+  
+  scale_x_continuous(name = "Option liée à l'océan", breaks = 1:max(affTypeSumsTot$order), labels = frenchOROLabels)+
+  coord_cartesian(clip="off")+
+  
+  geom_text(data = data.frame(order = c(2, 4.5, 6.5), 
+                              #label = c("Mitigation","Natural Resilience","Societal adaptation")),
+                              label = c("Atténuation", "Résilience naturelle", "Adaptation sociétale")),
+            aes(x=order, label = label),
+            size = 4, hjust = 0.5, vjust = 0, y=Inf, inherit.aes = FALSE, nudge_y = 1000) +
+  geom_vline(data = data.frame(xint = c(3.5, 5.5)), aes(xintercept = xint), col = "black", linewidth = 0.75)+
+  scale_fill_brewer(type = "qual", palette = "Set3") +
+  scale_color_brewer(type = "qual", palette = "Set3") +
+  
+  theme_bw()+
+  theme(legend.position = 'none',
+        axis.line.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        panel.border = element_blank(),
+        panel.grid = element_blank(),
+        axis.line.x = element_line(color = "black", linewidth = 0.75),
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+        plot.title = element_text(family = "sans", size = 15, margin=margin(0,0,20,0)),
+        plot.margin = unit(c(0.2, 1, 0.5, 2), "cm"))
+allRankTotalN_ggp2
+
+ggsave(here::here("figures/france-analysis-2024/ggalluvialBumpPlot.pdf"), plot = allRankTotalN_ggp2, width = 7, height = 5, units='in')
+```
+
+
+
+
+

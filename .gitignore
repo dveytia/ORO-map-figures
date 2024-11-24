@@ -12,6 +12,10 @@
 /data/external/ocean_habitats_distribution/*
 /data/external/IPCC-AR6-bibtex-files/oro_uniquerefs.RData
 /data/external/IPCC-AR6-bibtex-files/IPCC_AR6_uniquerefs_matches.RData
+/data/external/france-region/*
+/data/external/france_espaces_maritimes/*
+/outputs/france-analysis-2024/*
+
 
 # History files
 .Rhistory

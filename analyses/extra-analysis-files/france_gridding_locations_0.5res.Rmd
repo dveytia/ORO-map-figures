@@ -1,0 +1,905 @@
+---
+title: "02_gridding_locations"
+author: "Devi Veytia"
+date: "2024-01-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load libraries}
+library(R.utils)
+library(reticulate)
+library(dplyr)
+library(dbplyr)
+```
+
+```{r use spacy virtual environment}
+use_virtualenv("C:\\Users\\deviv\\R-working-folder\\spacy_example\\spaCy_env")
+
+```
+
+```{r install packages inf needed, eval=FALSE}
+# py_install("shapely")
+# py_install("cartopy")
+# py_install("geopandas")
+# py_install("global_land_mask")
+# py_install("pyproj")
+```
+
+```{python import libraries}
+import pandas as pd
+import shapely.vectorized
+from global_land_mask import globe
+import os
+import warnings
+import time
+import numpy as np
+import cartopy.io.shapereader as shpreader
+import cartopy.crs as ccrs
+import geopandas
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+from matplotlib import colormaps
+import math
+from pyproj import Geod
+from shapely import wkt
+import sqlite3
+from fuzzymatcher import fuzzy_left_join
+```
+
+
+# Set up grid to map to
+
+```{python set grid resolution}
+gridRes = 0.5 # the desired resolution of the grid to map to
+
+```
+
+
+```{python generate grid}
+## Generate grid to map to
+def generate_grid_df(degrees):
+    '''
+    Generate a dataframe with a grid of of cells degrees x degrees
+    '''
+    LON = np.linspace(-180+degrees*0.5,180-degrees*0.5,int(360/degrees))
+    LAT = np.linspace(-90+degrees*0.5,90-degrees*0.5,int(180/degrees))
+    lon_df, lat_df = np.meshgrid(LON,LAT)
+
+    return pd.DataFrame({"LAT": lat_df.ravel(), "LON": lon_df.ravel()})
+    
+grid_df = generate_grid_df(gridRes)
+
+grid_df['grid_df_id'] = range(len(grid_df))
+
+print(grid_df.head(3))
+print(grid_df.shape) # (259200, 3)
+```
+
+```{python calculate area of each grid cell}
+
+# Define function to calculate the area of a gridcell given the center lat and lon and the size in degrees
+def area_cell(lat, lon, degrees): 
+    # calculate the area of a gridcell given the center lat and lon and the size in degrees
+    if lon <0:
+        lon+=360
+    R = 6371
+    f0 = math.radians(lat-degrees*0.5)
+    f1 = math.radians(lat+degrees*0.5)
+    l0 = math.radians(lon-degrees*0.5)
+    l1 = math.radians(lon+degrees*0.5)
+
+    return (math.sin(f1)-math.sin(f0)) * (l1 - l0) * R**2
+
+# Calculate area of each grid cell
+grid_df['area_km'] = grid_df.apply(lambda x: area_cell(x['LAT'], x['LON'], gridRes), axis=1)
+
+```
+
+```{python Determine which grid cells are on land}
+
+# Create a list to determine if a cell is on land
+land_masks = []
+n = 5
+land_array = np.empty((grid_df.shape[0], n*n))
+i = 0
+for x in np.linspace(0,gridRes,n):
+    for y in np.linspace(0,gridRes,n):
+        land_array[:,i] = globe.is_land(grid_df.LAT+y-(gridRes/2), grid_df.LON+x-(gridRes/2))
+        i+=1
+        
+land_mask = land_array.sum(axis=1)>0
+
+# Add a column indicating if the grid cell is on land
+grid_df['is_land'] = land_mask
+grid_df.loc[grid_df['LAT']<-60,'is_land'] = False
+
+# Print how many cells are on land -- 3311
+grid_df.is_land.sum() 
+grid_df.head()
+```
+
+
+```{python Export grid to reference file}
+cwd = os.getcwd()
+
+grid_df.to_csv(f'{cwd}/outputs/france-analysis-2024/grid_df_res{gridRes}.csv',index=False)
+```
+
+
+
+
+
+
+
+# Match shapefiles from Natural Earth to gridcell indices
+
+Create a lookup table for each natural earth shape file and grid cell. Read in shapefiles from Natural Earth, and based on the grid, and determine which grid cells correspond to which shape files.
+
+```{python get natural earth shapefiles}
+cwd = os.getcwd()
+shp_df = pd.read_csv(f'{cwd}/data/geoparsing/shp_df_natural-earth-shapes.csv', low_memory=False)
+
+```
+
+
+```{python Match shapefiles to gridcell indices}
+# We are going to store our shapefile-gridcell index matches here
+shp_grid = []
+
+
+# This is the grid we will work with
+yv, xv = np.meshgrid(grid_df.LAT.unique(), grid_df.LON.unique())
+for i, place in shp_df.iterrows(): # Now we go through all the shapes
+    # show which gridcell centers are contained inside the shape
+    # ignore the warning caused by shapely using an old version of numpy
+    with warnings.catch_warnings():
+      warnings.simplefilter("ignore")
+      p = place.geometry #.values[0]
+      
+      try:
+        inplace = shapely.vectorized.contains(p, xv, yv)
+      except: 
+        P = shapely.wkt.loads(p)
+        inplace = shapely.vectorized.contains(P, xv, yv)
+        
+    idx = np.argwhere(inplace)
+    
+    # Get the number of cells contained in the shape
+    number_cells = idx.size/2
+    if number_cells == 0:
+        # If we have no cell centers in the shape, get the shape center and the cell which contains it
+        try:
+          c = place.geometry.centroid
+        except:
+          c = P.centroid
+        lon = c.x//gridRes*gridRes+gridRes*0.5
+        lat = c.y//gridRes*gridRes+gridRes*0.5
+        da_df = grid_df[(grid_df['LON']==lon) & (grid_df['LAT']==lat)]
+        shp_grid.append({"shpfile_id": i, "grid_df_id": da_df.index[0]})
+    else:
+        for point in idx:
+            lon = grid_df.LON.unique()[point[0]]
+            lat = grid_df.LAT.unique()[point[1]]
+            da_df = grid_df[(grid_df['LON']==lon) & (grid_df['LAT']==lat)]
+            shp_grid.append({"shpfile_id": i, "grid_df_id": da_df.index[0]}) 
+
+    del inplace
+    
+    
+
+shp_grid_df = pd.DataFrame.from_dict(shp_grid)
+    
+#shp_grid_df.loc[(shp_grid_df["shpfile_id"]==5572),"grid_df_id"]
+shp_grid_df.head(2)
+shp_grid_df.shape
+```
+
+```{python save shapefile to grid matches}
+cwd = os.getcwd()
+shp_grid_df.to_csv(f'{cwd}/outputs/france-analysis-2024/shp_grid_df_res{gridRes}.csv',index=False)
+```
+
+
+# Match documents to shapefiles
+
+```{python load data}
+
+# document entities 
+places = pd.read_csv(f'{cwd}/outputs/france-analysis-2024/geoparsed-text.csv', low_memory=False)
+
+print(places.shape)
+places.head(2)
+
+# Dataframe of shape files
+shp_df = pd.read_csv(f'{cwd}/data/geoparsing/shp_df_natural-earth-shapes.csv', low_memory=False)
+# Dataframe of shapes to grid cell matches
+shp_grid_df = pd.read_csv(f'{cwd}/outputs/france-analysis-2024/shp_grid_df_res{gridRes}.csv')
+
+# Dataframe of grid
+grid_df = pd.read_csv(f'{cwd}/outputs/france-analysis-2024/grid_df_res{gridRes}.csv')
+
+```
+
+
+```{python Look for geoparsed place_name to shapefile matches}
+
+# only care about matching to actual polygons
+shp_df = shp_df.dropna(subset = "geometry") 
+
+
+
+## First look for match based on geoname_id
+
+# rename shapefile column so they match the places dataframe 
+shp_df['geoname_id'] = shp_df["gn_id"]
+
+# merge by geoname_id -- adds a column for shpfile_id which will be populated if there is a match or else a value of NaN
+places['geoname_id'] = places.geonameid.astype(float)
+matches = places[['analysis_id', 'place_name','geoname_id']].merge(shp_df[['geoname_id','shpfile_id']], how = 'left')
+matches1 = matches.dropna(subset ='shpfile_id') # rows where shpfile_id was matched
+matches1 = matches1[['analysis_id','place_name','shpfile_id']]
+matches2 = matches.loc[matches['shpfile_id'].isnull()] # rows where shpfile_id was NOT matched
+
+
+
+## Second: Where shapefile_id is NaN, try to fill with fuzzy name matching
+matches2 = fuzzy_left_join(matches2[['analysis_id','place_name']], shp_df[['NAME','shpfile_id']], "place_name", 'NAME')
+matches2 = matches2[['analysis_id','place_name','shpfile_id']]
+
+
+
+## Third: Compile all matches found into one data frame
+matches3 = pd.concat([matches1, matches2]) # join all matching results
+matches3 = matches3.dropna(subset = "shpfile_id") # drop any NAs from shpfile id
+matches3 = matches3.drop_duplicates() # drop any duplicates
+
+
+# If there are any matches to shapefiles, join the id to the places to get corresponding shafefile_id
+places_shpID = matches3.merge(places, how="left")
+
+##----------- write place to shape matches to csv ----------------
+places_shpID.to_csv(f'{cwd}/outputs/france-analysis-2024/place2shp_id_matches.csv',index=False)
+
+del matches
+del matches1
+del matches2
+del matches3
+```
+
+```{python alternatively make index of place to shp_id from previous geoparsing}
+matches = pd.read_csv(f'{cwd}/data/geoparsing/geoparsed-text_shp_df_matches3.csv')
+matches = matches[['analysis_id','place', 'shp_id']]
+matches = matches.rename(columns={'place':'place_name', 'shp_id':'shpfile_id'})
+matches = matches.drop_duplicates()
+
+# If there are any matches to shapefiles, join the id to the places to get corresponding shafefile_id
+places_shpID = matches.merge(places, how="left")
+
+del matches
+
+```
+
+
+```{python match to grid cells}
+
+# Initialize empty dataframe for matches
+shp_df_matches = pd.DataFrame() # start with empty data frame
+
+
+
+## PART 1
+## If there are shapefile IDs matched, match to corresponding grid cells using the polygons in the shape file
+
+# Set dummy dataframe to play with -- comment out these lines when running for real
+#places_shpID = places.merge(matches3, how="left") # comment out
+#places_shpID["shpfile_id"] = [0,1] # comment out
+
+places_shpID = places_shpID.dropna(subset = "shpfile_id")
+
+
+# If there are shpfile_ids identified, group by ID and assign grid cells
+if len(places_shpID) != 0:
+
+  for place, group in places_shpID.groupby("shpfile_id"):
+    shp_id = group.shpfile_id.values[0].astype(int)
+    grid_df_ids = shp_grid_df.loc[(shp_grid_df["shpfile_id"]==shp_id),"grid_df_id"]
+    # but there is no match for shp_id 5572 in shp_grid_df even in there is in the shp_df
+    # shp_df.loc[shp_df["shpfile_id"]==5572, "geometry"]
+    
+    # For each document with this place, 
+    # we add a row for each grid cell index matching the place
+    for did in group.analysis_id.unique():
+       shp_df_matches = pd.concat([
+         shp_df_matches,
+         pd.DataFrame.from_dict({
+           "grid_df_id": grid_df_ids,
+           "analysis_id": [did] * len(grid_df_ids),
+           "shp_id": [shp_id] * len(grid_df_ids),
+           "place": group.place_name.values[0]
+           })])
+
+
+
+
+## PART 2
+# if there is no shapefile id, then use the longitude and latitude as the center of the grid cell
+# we set shp_id to None, round the coordinates, and take the gridcell which has these coordinates
+places_NoshpID = places.merge(matches2, how="left")
+places_NoshpID = places_NoshpID[places_NoshpID["shpfile_id"].isnull()] # filter to empty shapefile ids
+
+for place, group in places_NoshpID.groupby("place_name"):
+  shp_id = None
+  lon = group.lon.values[0]//gridRes*gridRes+gridRes*0.5
+  lat = group.lat.values[0]//gridRes*gridRes+gridRes*0.5
+  grid_df_ids = grid_df[(grid_df['LON']==lon) & (grid_df['LAT']==lat)].index
+  
+  # For each document with this place, 
+  # we add a row for each grid cell index matching the place
+  for did in group.analysis_id.unique():
+      shp_df_matches = pd.concat([
+        shp_df_matches,
+        pd.DataFrame.from_dict({
+          "grid_df_id": grid_df_ids,
+          "analysis_id": [did] * len(grid_df_ids),
+          "shp_id": [shp_id] * len(grid_df_ids),
+          "place": group.place_name.values[0]
+          })])    
+
+
+print(shp_df_matches.head(2))
+print(shp_df_matches.shape)
+print(shp_df_matches.describe())
+```
+
+
+
+# Calculated weighted grid cell sum
+
+````{python Calculate weighted grid cell sum}
+## For each unique document and place, calculate the 1/the number of grid cells occupied by that place to get the grid cell weight
+shp_df_weight = shp_df_matches.groupby(['analysis_id','shp_id']).apply(lambda x: 1/len(x)).reset_index() # calculate 1/number of grid cells per place
+shp_df_weight = shp_df_weight.set_axis(['analysis_id','shp_id','cell_weight'], axis=1) # rename columns
+shp_df_matches = shp_df_matches.merge(shp_df_weight, how='left') # Merge back into the corresponding grid cells
+
+
+print(shp_df_matches.shape)
+shp_df_matches.head(2)
+```
+
+
+```{python write shape df to grid cell matches to csv}
+
+shp_df_matches.to_csv(f'{cwd}/outputs/france-analysis-2024/geoparsed-text_shp_df_matches_res{gridRes}_v3.csv',index=False)
+
+```
+
+```{python for plotting sum the grid cell weights in each cell}
+
+## For each grid cell, sum the number of documents 
+shp_df_sum = shp_df_matches.groupby(['grid_df_id']).apply(lambda x: len(x)).reset_index()
+shp_df_sum = shp_df_sum.set_axis(['grid_df_id','n_articles'], axis=1)
+
+## For each grid cell, sum the weighted number of documents to get the weighted sum
+shp_df_weightedSum = shp_df_matches.groupby(['grid_df_id'])['cell_weight'].sum().reset_index()
+shp_df_weightedSum = shp_df_weightedSum.set_axis(['grid_df_id','n_articles_weighted'], axis=1)
+
+
+## Merge all together with the grid cell locations 
+# Format the grid so the id column is identiical to allow for a merge
+grid_df2 = grid_df
+grid_df2['grid_df_id'] = grid_df.index
+
+# Merge
+shp_df_sum_grid = grid_df2.merge(shp_df_sum, how = "left")
+shp_df_sum_grid = shp_df_sum_grid.merge(shp_df_weightedSum, how = "left")
+
+# Summarise
+shp_df_sum_grid['n_articles'] = shp_df_sum_grid['n_articles'].fillna(0) # set NAs to 0
+shp_df_sum_grid['n_articles_weighted'] = shp_df_sum_grid['n_articles_weighted'].fillna(0) # set NAs to 0
+print(shp_df_sum_grid.shape)
+print(shp_df_sum_grid.describe())
+print(shp_df_sum_grid.head())
+
+```
+
+```{python write summed grid cell weights to csv}
+shp_df_sum_grid.to_csv(f'{cwd}/outputs/france-analysis-2024/geoparsed-text_grid-sums_res{gridRes}_v3.csv',index=False)
+```
+
+
+# Quick map visualization
+
+```{python quick map of weighted sums}
+## Plot of all articles using the weighted sum
+    
+# Read in the data    
+shp_df_sum_grid = pd.read_csv(f'{cwd}/outputs/france-analysis-2024/geoparsed-text_grid-sums_res{gridRes}_v3.csv')
+gridlons = shp_df_sum_grid.LON.unique()
+gridlats = shp_df_sum_grid.LAT.unique()
+shape = (len(gridlats), len(gridlons))
+n = np.array(shp_df_sum_grid.n_articles_weighted).reshape(shape)
+
+
+# set up a map
+fig=plt.figure()
+ax = plt.axes(projection=ccrs.Robinson())
+
+# Can use the regular grid lons and lats with the shading ='nearest' option
+im = plt.pcolormesh(gridlons, gridlats, n, shading = 'nearest',
+              cmap=colormaps['magma_r'], norm=mpl.colors.LogNorm(), transform=ccrs.PlateCarree()) 
+
+ax.coastlines()
+
+## Colourbar
+# create an axes on the right side of ax. The width of cax will be 5%
+# of ax and the padding between cax and ax will be fixed at 0.05 inch.
+cax = fig.add_axes([ax.get_position().x1+0.01,ax.get_position().y0,0.02,ax.get_position().height])
+cbar = plt.colorbar(im, cax=cax) 
+cbar.ax.get_yaxis().labelpad = 15
+cbar.set_label('Weighted # of articles', rotation=270)
+
+# Save
+plt.savefig(f'{cwd}/figures/france-analysis-2024/geoparsed-text-map_v3.pdf',bbox_inches="tight") # Save plot, change file path and name
+#plt.show()
+
+
+```
+
+
+
+
+
+
+
+
+
+
+# Articles published in France
+
+
+```{python read in other objects for geoparsing and place matching}
+grid_df = pd.read_csv(f'{cwd}/outputs/france-analysis-2024/grid_df_res{gridRes}.csv',low_memory = True)
+
+```
+
+```{python read in France EEZ shapefile}
+franceEEZ = geopandas.read_file("C:\\Users\\deviv\R-working-folder\\ORO-map-figures\\data\\external\\france_espaces_maritimes\\3_zone_economique_exclusive\\SHAPE\\EspMar_FR_ZEE_WGS84.shp")
+
+fig = plt.figure(figsize=[12,8])
+ax = fig.add_axes([0, 0, 1, 1])
+franceEEZ.plot(ax=ax)
+plt.title("France EEZ")
+plt.show()   
+
+```
+
+
+NEED TO ADD CELLS WHERE COUNTRY IS FRANCE
+```{python read in France shapefile}
+france = geopandas.read_file("C:\\Users\\deviv\\R-working-folder\\ORO-map-figures\\data\\external\\france-region\\georef-france-region-millesime.shp")
+
+fig = plt.figure(figsize=[12,8])
+ax = fig.add_axes([0, 0, 1, 1])
+france.plot(ax=ax)
+plt.title("France")
+plt.show()   
+
+```
+
+```{python identify grid cells inside the eez}
+
+eez_grid = [] # empty list to fill
+
+# This is the grid we will work with
+yv, xv = np.meshgrid(grid_df.LAT.unique(), grid_df.LON.unique())
+for i, place in franceEEZ.iterrows(): # Now we go through all the shapes
+    # show which gridcell centers are contained inside the shape
+    # ignore the warning caused by shapely using an old version of numpy
+    with warnings.catch_warnings():
+      warnings.simplefilter("ignore")
+      p = place.geometry #.values[0]
+      inplace = shapely.vectorized.contains(p, xv, yv)
+        
+    idx = np.argwhere(inplace)
+    
+    # Get the number of cells contained in the shape
+    number_cells = idx.size/2
+    if number_cells == 0:
+        continue
+    else:
+        for point in idx:
+            lon = grid_df.LON.unique()[point[0]]
+            lat = grid_df.LAT.unique()[point[1]]
+            da_df = grid_df[(grid_df['LON']==lon) & (grid_df['LAT']==lat)]
+            eez_grid.append({"eez_inspireId": place['inspireId'], "grid_df_id": da_df.index[0]}) 
+
+    del inplace
+    
+    
+
+eez_grid_df = pd.DataFrame.from_dict(eez_grid)
+eez_grid_df = pd.merge(grid_df, eez_grid_df, how='left', on='grid_df_id')
+eez_grid_df['is_FranceEEZ'] = False
+eez_grid_df.loc[eez_grid_df[['eez_inspireId']].any(1), 'is_FranceEEZ'] = True
+    
+#shp_grid_df.loc[(shp_grid_df["shpfile_id"]==5572),"grid_df_id"]
+eez_grid_df.head(2)
+eez_grid_df.describe()
+eez_grid_df.shape
+eez_grid_df['is_FranceEEZ'].value_counts()
+
+
+eez_grid_df.to_csv(f'{cwd}/outputs/france-analysis-2024/grid_inside_eez_res{gridRes}.csv')
+
+```
+
+
+```{python identify grid cells inside france land}
+
+france_grid = [] # empty list to fill
+
+# This is the grid we will work with
+yv, xv = np.meshgrid(grid_df.LAT.unique(), grid_df.LON.unique())
+for i, place in france.iterrows(): # Now we go through all the shapes
+    # show which gridcell centers are contained inside the shape
+    # ignore the warning caused by shapely using an old version of numpy
+    with warnings.catch_warnings():
+      warnings.simplefilter("ignore")
+      p = place.geometry #.values[0]
+      inplace = shapely.vectorized.contains(p, xv, yv)
+        
+    idx = np.argwhere(inplace)
+    
+    # Get the number of cells contained in the shape
+    number_cells = idx.size/2
+    if number_cells == 0:
+        continue
+    else:
+        for point in idx:
+            lon = grid_df.LON.unique()[point[0]]
+            lat = grid_df.LAT.unique()[point[1]]
+            da_df = grid_df[(grid_df['LON']==lon) & (grid_df['LAT']==lat)]
+            france_grid.append({"france_reg_name": place['reg_name'], "grid_df_id": da_df.index[0]}) 
+
+    del inplace
+    
+    
+
+france_grid_df = pd.DataFrame.from_dict(france_grid)
+france_grid_df = pd.merge(grid_df, france_grid_df, how='left', on='grid_df_id')
+france_grid_df['is_france'] = False
+france_grid_df.loc[france_grid_df[['france_reg_name']].any(1), 'is_france'] = True
+    
+#shp_grid_df.loc[(shp_grid_df["shpfile_id"]==5572),"grid_df_id"]
+france_grid_df.head(2)
+france_grid_df.describe()
+france_grid_df.shape
+france_grid_df['is_france'].value_counts()
+
+
+france_grid_df.to_csv(f'{cwd}/outputs/france-analysis-2024/grid_inside_france_res{gridRes}.csv')
+
+```
+
+```{python join eez and france grid}
+france_grid_df = pd.read_csv(f'{cwd}/outputs/france-analysis-2024/grid_inside_france_res{gridRes}.csv', low_memory = True)
+eez_grid_df = pd.read_csv(f'{cwd}/outputs/france-analysis-2024/grid_inside_eez_res{gridRes}.csv', low_memory = True)
+
+allFrance_grid_df = pd.merge(france_grid_df[['LAT', 'LON', 'grid_df_id', 'france_reg_name']],eez_grid_df[['grid_df_id','area_km', 'eez_inspireId']], how = 'inner', on = 'grid_df_id')
+
+allFrance_grid_df['is_france'] = False
+allFrance_grid_df.loc[allFrance_grid_df[['france_reg_name','eez_inspireId']].any(1), 'is_france'] = True
+
+allFrance_grid_df.shape
+list(allFrance_grid_df)
+
+del france_grid_df, eez_grid_df
+
+```
+
+
+
+```{python plot to check that all the grid points inside the eez were identified}
+#pointsinside = geopandas.points_from_xy(x=allFrance_grid_df.loc[allFrance_grid_df[['eez_inspireId']].any(1), 'LON'], y=allFrance_grid_df.loc[allFrance_grid_df[['eez_inspireId']].any(1), 'LAT'])
+
+franceEEZ = geopandas.read_file("C:\\Users\\deviv\R-working-folder\\ORO-map-figures\\data\\external\\france_espaces_maritimes\\3_zone_economique_exclusive\\SHAPE\\EspMar_FR_ZEE_WGS84.shp")
+france = geopandas.read_file("C:\\Users\\deviv\\R-working-folder\\ORO-map-figures\\data\\external\\france-region\\georef-france-region-millesime.shp")
+
+
+pointsinside = geopandas.points_from_xy(x=allFrance_grid_df.loc[allFrance_grid_df['is_france'], 'LON'], y=allFrance_grid_df.loc[allFrance_grid_df['is_france'], 'LAT'])
+gridinside = geopandas.GeoSeries(pointsinside, crs= franceEEZ.crs)
+
+
+fig, ax = plt.subplots(figsize=(15, 15))
+franceEEZ.plot(ax=ax, alpha=0.7, color="pink", edgecolor='red', linewidth=1)
+france.plot(ax=ax, alpha=0.7, color="blue", edgecolor='blue', linewidth=1)
+#grid.plot(ax=ax, markersize=150, color="blue")
+gridinside.plot(ax=ax, markersize=0.001, color="yellow")
+plt.show()
+
+
+
+```
+
+```{python calculate new cell weights and sums based on only the france and eez}
+shp_df_matches = pd.read_csv(f'{cwd}/outputs/france-analysis-2024/geoparsed-text_shp_df_matches_res{gridRes}_v3.csv')
+
+
+#shp_df_matches_fr = pd.merge(eez_grid_df[eez_grid_df['eez_inspireId'].notna()], shp_df_matches, how='inner', on='grid_df_id')
+
+shp_df_matches_fr = pd.merge(allFrance_grid_df.loc[allFrance_grid_df['is_france']], shp_df_matches, how='inner', on='grid_df_id')
+
+shp_df_matches_fr.shape
+list(shp_df_matches_fr)
+print(shp_df_matches_fr.describe())
+del shp_df_matches
+
+
+## For each unique document and place, calculate the 1/the number of grid cells occupied by that place to get the grid cell weight
+shp_df_weight = shp_df_matches_fr.groupby(['analysis_id','shp_id']).apply(lambda x: 1/len(x)).reset_index() # calculate 1/number of grid cells per place
+shp_df_weight = shp_df_weight.set_axis(['analysis_id','shp_id','cell_weight'], axis=1) # rename columns
+shp_df_matches_fr = shp_df_matches_fr.merge(shp_df_weight, how='left') # Merge back into the corresponding grid cells
+
+
+print(shp_df_matches_fr.shape)
+shp_df_matches_fr.head(2)
+
+
+## Sum the weights for each grid cell
+
+## For each grid cell, sum the number of documents 
+shp_df_sum = shp_df_matches_fr.groupby(['grid_df_id']).apply(lambda x: len(x)).reset_index()
+shp_df_sum = shp_df_sum.set_axis(['grid_df_id','n_articles'], axis=1)
+
+## For each grid cell, sum the weighted number of documents to get the weighted sum
+shp_df_weightedSum = shp_df_matches_fr.groupby(['grid_df_id'])['cell_weight'].sum().reset_index()
+shp_df_weightedSum = shp_df_weightedSum.set_axis(['grid_df_id','n_articles_weighted'], axis=1)
+
+
+
+
+## Merge all together with the grid cell locations 
+# Format the grid so the id column is identiical to allow for a merge
+grid_df2 = grid_df
+grid_df2['grid_df_id'] = grid_df.index
+
+# Merge
+shp_df_sum_grid_fr = grid_df2.merge(shp_df_sum, how = "left")
+shp_df_sum_grid_fr = shp_df_sum_grid_fr.merge(shp_df_weightedSum, how = "left")
+
+# Summarise
+shp_df_sum_grid_fr['n_articles'] = shp_df_sum_grid_fr['n_articles'].fillna(0) # set NAs to 0
+shp_df_sum_grid_fr['n_articles_weighted'] = shp_df_sum_grid_fr['n_articles_weighted'].fillna(0) # set NAs to 0
+print(shp_df_sum_grid_fr.shape)
+print(shp_df_sum_grid_fr.describe())
+print(shp_df_sum_grid_fr.head())
+
+
+shp_df_sum_grid_fr.to_csv(f'{cwd}/outputs/france-analysis-2024/geoparsed-text_grid-sums_France_res{gridRes}_v3.csv',index=False)
+
+```
+
+
+
+```{python quick map of weighted sums}
+## Plot of all articles using the weighted sum
+    
+# Read in the data    
+shp_df_matches_fr = pd.read_csv(f'{cwd}/outputs/france-analysis-2024/geoparsed-text_grid-sums_France_res{gridRes}_v3.csv')
+gridlons = shp_df_sum_grid_fr.LON.unique()
+gridlats = shp_df_sum_grid_fr.LAT.unique()
+shape = (len(gridlats), len(gridlons))
+n = np.array(shp_df_sum_grid_fr.n_articles_weighted).reshape(shape)
+
+
+# set up a map
+fig=plt.figure()
+ax = plt.axes(projection=ccrs.Robinson())
+
+# Can use the regular grid lons and lats with the shading ='nearest' option
+im = plt.pcolormesh(gridlons, gridlats, n, shading = 'nearest',
+              cmap=colormaps['magma_r'], norm=mpl.colors.LogNorm(), transform=ccrs.PlateCarree()) 
+
+ax.coastlines()
+
+## Colourbar
+# create an axes on the right side of ax. The width of cax will be 5%
+# of ax and the padding between cax and ax will be fixed at 0.05 inch.
+cax = fig.add_axes([ax.get_position().x1+0.01,ax.get_position().y0,0.02,ax.get_position().height])
+cbar = plt.colorbar(im, cax=cax) 
+cbar.ax.get_yaxis().labelpad = 15
+cbar.set_label('Weighted # of articles', rotation=270)
+
+# Save
+plt.savefig(f'{cwd}/figures/france-analysis-2024/geoparsed-text-map_france_v3.pdf',bbox_inches="tight") # Save plot, change file path and name
+#plt.show()
+
+
+```
+
+
+
+```{python}
+shp_df_sum_grid = pd.read_csv(f'{cwd}/outputs/france-analysis-2024/geoparsed-text_grid-sums_res{gridRes}_v3.csv')
+
+# NB if I just wanted to plot only the cells in france or EEZ, use object shp_df_sum_grid_fr, but honestly I think it looks better this way
+
+import textwrap
+import math
+
+panela = ['France métropolitaine']
+panelb = ['Terres australes et antarctiques françaises', 'La Réunion - Mayotte - îles Eparses']
+panelc = ['Antilles françaises']
+paneld = ['Guyane']
+panele = ['Polynésie française']
+panelf = ['Nouvelle-Calédonie']
+allPanels = [panela, panelb, panelc, paneld,panele,panelf]
+
+
+font = {'size': 5}
+plt.rc('font', **font)
+
+i,j=0,0
+PLOTS_PER_ROW = 2
+fig, ax = plt.subplots(math.ceil(len(allPanels)/PLOTS_PER_ROW),PLOTS_PER_ROW, figsize=(100, 400))
+
+for p in range(len(allPanels)):
+  
+  #ax[i][j].set_title(allPanels[p])
+  ax[i][j].set_title("\n".join(textwrap.wrap(''.join(map(str, allPanels[p])), 50)), size=8,pad=2)
+  
+  selection = (franceEEZ.territory.isin(allPanels[p]))
+  lonmin, latmin, lonmax, latmax = franceEEZ[selection].total_bounds
+
+  gridlons = shp_df_sum_grid.LON.unique()
+  gridlons = [x for x in gridlons if x > lonmin and x < lonmax]
+  gridlats = shp_df_sum_grid.LAT.unique()
+  gridlats = [x for x in gridlats if x > latmin and x < latmax]
+  shape = (len(gridlats), len(gridlons))
+
+  n = np.array(shp_df_sum_grid.loc[(shp_df_sum_grid['LON'].isin(gridlons)) & (shp_df_sum_grid['LAT'].isin(gridlats)), "n_articles"]).reshape(shape)
+  n[n < np.nanpercentile(n, 0.05)] = np.nan
+  
+  #ax[i][j] = plt.axes(projection=ccrs.Robinson())
+  ax[i][j].axis([lonmin, lonmax, latmin, latmax])
+  im = ax[i][j].pcolormesh(gridlons, gridlats, n, shading = 'nearest',
+              cmap=colormaps['magma_r']) # ,norm=mpl.colors.LogNorm()
+  france.plot(ax=ax[i][j], facecolor="none", 
+              edgecolor='green', lw=0.7)
+  franceEEZ.plot(ax=ax[i][j], facecolor="none", 
+              edgecolor='blue', lw=0.7)
+  
+
+  ## Colourbar
+  cbar = fig.colorbar(im, ax = ax[i][j]) 
+  ticklabs = cbar.ax.get_yticklabels()
+  cbar.ax.set_yticklabels(ticklabs, fontsize=8)
+ 
+  j+=1
+  if j%PLOTS_PER_ROW==0:
+      i+=1
+      j=0
+plt.tight_layout()
+
+plt.savefig(f'{cwd}/figures/france-analysis-2024/geoparsed-text-map_franceZoom_v3.pdf',bbox_inches="tight")
+
+```
+
+
+
+# Where are french authors publishing?
+
+```{r get analysis_ids of french authors}
+require(countrycode)
+## Article metadata
+# Connect database
+sqliteDir <- here::here("data/sqlite-databases")
+sqliteFiles <- dir(sqliteDir)
+sqliteVersions <- as.numeric(gsub(".sqlite","",substring(sqliteFiles, regexpr("_v", sqliteFiles) + 2)))
+latestVersion <- sqliteFiles[which.max(sqliteVersions)]
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+uniquerefs <- tbl(dbcon, "uniquerefs")
+aff <- uniquerefs %>% select(analysis_id, affiliation) %>% collect()
+DBI::dbDisconnect(dbcon)
+
+source(here::here("R", "functions_to_format.R"))
+countries_ls <- read.csv(file = here::here("data", "external", "list_of_countries", "sql-pays.csv"), sep = ";") 
+aff_format <- extract_1stA_affiliation(data = aff, countries_ls = countries_ls)
+aff_format2 <- aff_format$oroAff_1stA |> 
+      mutate(country_aff = stringr::str_replace_all(country_aff, c("United Kingdoms"  = "United Kingdom",
+                                                          "Falkland Island"  = "United Kingdom",
+                                                          "Faroe Islands"    = "Denmark",
+                                                          "Greenland"        = "Denmark",
+                                                          "French Polynesia" = "France",
+                                                          "Guadeloupe"       = "France",
+                                                          "Monaco"           = "France",
+                                                          "New Caledonia"    = "France",
+                                                          "Reunion"          = "France",
+                                                          "Guam"             = "United States")),
+             country_aff = countrycode::countrycode(sourcevar   = country_aff,
+                                       origin      = "country.name",
+                                       destination = "country.name"),
+             iso_code = countrycode::countrycode(sourcevar   = country_aff,
+                                    origin      = "country.name",
+                                    destination = "iso3c"))
+
+write.csv(aff_format2, here::here("outputs/france-analysis-2024/1stAuthAff_analysis_id.csv"))
+
+rm(aff_format, aff_format2,countries_ls,aff)
+```
+
+```{python}
+shp_df_matches = pd.read_csv(f'{cwd}/outputs/france-analysis-2024/geoparsed-text_shp_df_matches_res{gridRes}_v3.csv')
+aff = pd.read_csv(f'{cwd}/outputs/france-analysis-2024/1stAuthAff_analysis_id.csv')
+
+aff = aff.loc[aff['country_aff']=='France']
+aff.shape
+aff.head()
+list(shp_df_matches)
+
+franceAff_shpDfMatches = pd.merge(aff, shp_df_matches, how = 'left', on='analysis_id')
+
+
+## sum the number of articles per cell
+## For each grid cell, sum the number of documents 
+shp_df_sum = franceAff_shpDfMatches.groupby(['grid_df_id']).apply(lambda x: len(x)).reset_index()
+shp_df_sum = shp_df_sum.set_axis(['grid_df_id','n_articles'], axis=1)
+
+## For each grid cell, sum the weighted number of documents to get the weighted sum
+shp_df_weightedSum = franceAff_shpDfMatches.groupby(['grid_df_id'])['cell_weight'].sum().reset_index()
+shp_df_weightedSum = shp_df_weightedSum.set_axis(['grid_df_id','n_articles_weighted'], axis=1)
+
+
+## Merge all together with the grid cell locations 
+# Format the grid so the id column is identiical to allow for a merge
+grid_df2 = grid_df
+grid_df2['grid_df_id'] = grid_df.index
+
+# Merge
+franceAff_shp_df_sum_grid = grid_df2.merge(shp_df_sum, how = "left")
+franceAff_shp_df_sum_grid = franceAff_shp_df_sum_grid.merge(shp_df_weightedSum, how = "left")
+
+# Summarise
+franceAff_shp_df_sum_grid['n_articles'] = franceAff_shp_df_sum_grid['n_articles'].fillna(0) # set NAs to 0
+franceAff_shp_df_sum_grid['n_articles_weighted'] = franceAff_shp_df_sum_grid['n_articles_weighted'].fillna(0) # set NAs to 0
+
+
+
+## Plot
+font = {'size': 10}
+plt.rc('font', **font)
+gridlons = franceAff_shp_df_sum_grid.LON.unique()
+gridlats = franceAff_shp_df_sum_grid.LAT.unique()
+shape = (len(gridlats), len(gridlons))
+n = np.array(franceAff_shp_df_sum_grid.n_articles.weighted).reshape(shape)
+# set up a map
+fig=plt.figure()
+ax = plt.axes(projection=ccrs.Robinson())
+im = plt.pcolormesh(gridlons, gridlats, n, shading = 'nearest',
+              cmap=colormaps['magma_r'], norm=mpl.colors.LogNorm(), transform=ccrs.PlateCarree()) 
+
+ax.coastlines()
+# Colourbar
+cax = fig.add_axes([ax.get_position().x1+0.01,ax.get_position().y0,0.02,ax.get_position().height])
+cbar = plt.colorbar(im, cax=cax) 
+cbar.ax.get_yaxis().labelpad = 15
+cbar.set_label('# of articles weighted', rotation=270)
+plt.show()
+
+# Save
+plt.savefig(f'{cwd}/figures/france-analysis-2024/france1stAuth_geoparsed-text-map_v3.pdf',bbox_inches="tight") # Save plot, change file path and name
+#plt.show()
+
+```
+
+
+
+
+
+
+
+
