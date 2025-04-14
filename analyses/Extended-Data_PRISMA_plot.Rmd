@@ -33,6 +33,41 @@ latestVersion <- sqliteFiles[which.max(sqliteVersions)]
 dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
 ```
 
+```{r summarise screened subset}
+library(tidyverse)
+seen_screen <- tbl(dbcon, "seen_screen")
+
+manual_subset_summary <- seen_screen %>% 
+  group_by(sample_screen, include_screen) %>%
+  summarise(
+    n = n_distinct(analysis_id)
+  ) %>%
+  tidyr::pivot_wider(names_from = include_screen, values_from = n) %>%
+  collect()%>% 
+  column_to_rownames(var = "sample_screen")
+
+manual_subset_summary[is.na(manual_subset_summary)] = 0
+manual_subset_summary["test list","0"] = 0
+
+marginSums(as.matrix(manual_subset_summary),  c(1,2))
+#                        0   1
+# random              1656 427
+# relevance sort       139 189
+# supplemental coding    0 254
+# test list              0  86
+marginSums(as.matrix(manual_subset_summary),  c(2))
+#    0    1 
+# 1795  956
+
+marginSums(as.matrix(manual_subset_summary),  c(1))
+# random      relevance sort supplemental coding           test list 
+#   2083                 328                 254                  86 
+
+seen_coding <- tbl(dbcon, "seen_coding")
+
+
+```
+
 
 ```{r summarise corpus}
 

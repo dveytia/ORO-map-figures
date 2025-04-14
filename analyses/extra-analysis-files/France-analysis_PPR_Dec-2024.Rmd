@@ -426,7 +426,7 @@ fit.mit.ada.nb.ggp <- cowplot::plot_grid(fit.mit.nb.ggp+theme(legend.position = 
   
 ggsave(here::here("figures/france-analysis-2024/researchNeedVsEffortNegativeBinomialGlmFrance.png"),
          plot = fit.mit.ada.nb.ggp,
-         width = 9, height = 3, units = "in",dpi = 600)
+         width = 11, height = 4, units = "in",dpi = 600)
 ```
 
 From file Figure2_v2.R
@@ -579,7 +579,7 @@ countries_ls <- read.csv(file = here::here("data", "external", "list_of_countrie
       scale_color_manual(values = c("SIDS" = "#0fbcd6",
                                  "Land-locked" = "#b36705",
                                  "Coastal" = "#3f47e8"),
-                         labels = c("Côtière",
+                         labels = c("États côtiers",
                                     "Sans débouché maritime",
                                     "petits États insulaires\nen développement"),
                       name = NULL)+
@@ -618,8 +618,8 @@ countries_ls <- read.csv(file = here::here("data", "external", "list_of_countrie
         scale_fill_manual(name = NULL, 
                           values = c("Adaptation"  = "#4c4680",
                                      "Mitigation" = "#197da8"),
-                          labels = c("Adaptation" = "Au dessus (Adaptation)",
-                                     "Mitigation" = "En dessous (Atténuation)")) +
+                          labels = c("Adaptation" = "Au dessus\n(Adaptation)",
+                                     "Mitigation" = "En dessous\n(Atténuation)")) +
         theme(legend.direction = "horizontal",
               legend.text     = element_text(size = 16, face  = "bold"),
               legend.background = element_blank()))
@@ -631,14 +631,14 @@ countries_ls <- read.csv(file = here::here("data", "external", "list_of_countrie
       cowplot::draw_plot(plot_donuts_ls[[1]], x = 0.50, y = 0.45, width = 0.4, height = 0.4) +
       cowplot::draw_plot(plot_donuts_ls[[2]], x = 0.70, y = 0.45, width = 0.4, height = 0.4) +
       cowplot::draw_plot(plot_donuts_ls[[3]], x = 0.60, y = 0.05, width = 0.4, height = 0.4) +
-      cowplot::draw_text(text = c("Côtière", "Sans débouché\nmaritime", "petits États insulaires\nen développement"),
+      cowplot::draw_text(text = c("États côtiers", "Sans débouché\nmaritime", "petits États insulaires\nen développement"),
                          fontface = rep("bold", 3),
                          color = c("#3f47e8", "#b36705", "#0fbcd6"),
                          x = c(0.70, 0.90, 0.80), 
                          y = c(0.47-0.01, 0.47-0.02, 0.06-0.02), size = 18) +
       # y = c(0.52, 0.52, 0.12), size = 16) +
       cowplot::draw_text(text = "% au-dessus de la ligne 1:1", x = 0.8, y = 0.95, size = 19, fontface = "bold") +
-      cowplot::draw_plot(legend, x = 0.65, y = 0.82, width = 0.3, height = 0.1) ; plot_final
+      cowplot::draw_plot(legend, x = 0.67, y = 0.82, width = 0.3, height = 0.1) ; plot_final
     
     # ggplot2::ggsave(plot = plot_final, here::here("figures", "main", "donuts_test.jpeg"), width = 15, height = 5, device = "jpeg")
     # ggplot2::ggsave(plot = plot_final, here::here("figures", "main", "figure2_panelC_donuts4.jpeg"), width = 13, height = 7, device = "jpeg")
