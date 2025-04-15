@@ -78,7 +78,10 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                                    destination = "iso3c"))
     
     # --- Shape file of countrie's EEZ
-    eez_shp <- sf::st_read(here::here("data", "external", "eez_shp", "eez_v12.shp")) |>  # shape file of countrie's EEZ
+    eez_shp_path = here::here("data", "external", "eez_shp", "eez_v12.shp")
+    eez_shp_path = here::here("data", "external","eez_rast","MarineRegions_EEZ_v12_20231025", "eez_v12.shp")
+    
+    eez_shp <- sf::st_read(eez_shp_path) |>  # shape file of countrie's EEZ
       dplyr::select(MRGID, POL_TYPE, TERRITORY1, SOVEREIGN1, ISO_SOV1) |> 
       dplyr::rename(Country = SOVEREIGN1) |> 
       dplyr::mutate(Country = countrycode(sourcevar   = ISO_SOV1,
@@ -232,21 +235,37 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     eez_shp_data_mrgid_papers <- eez_shp |>
       left_join(adaptation_geop_paper_territory, by = "MRGID") |> #c("ISO_SOV1" = "iso_code")
       sf::st_transform(crs = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs") |> 
-      rename(layer = Count_ORO)
+      rename(layer = Count_ORO_ada)
     
-    data_2_map_mrgid_papers <- format_data2map(data = eez_shp_data_mrgid_papers,
-                                               PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+    # Two versions of formatting function -- if rgdal is installed, first version is run,
+    # if not, use modified version
+   
+    # Try format_data2map first, fallback to format_data2map_noRgdal if it fails
     
-    map <- univariate_map(data_map          = data_2_map_mrgid_papers,
-                          eez               = NULL,
-                          color_scale       = viridis::turbo(10, direction = 1),
-                          midpoint          = NULL,
-                          second.var        = NULL,
-                          # vals_colors_scale = NULL,
-                          title_color       = "# adap papers (GeoP)",
-                          title_size        = NULL,
-                          show.legend       = TRUE,
-                          name              = "main/final_version/adpatation_papers")
+    data_2_map_mrgid_papers <- try_format_data2map(
+      input_args= list(
+        data = eez_shp_data_mrgid_papers,
+        PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+      )
+    )
+    
+    map <- try_univariate_map(
+      input_args = list(
+        data_map          = data_2_map_mrgid_papers,
+        eez               = NULL,
+        color_scale       = viridis::turbo(10, direction = 1),
+        midpoint          = NULL,
+        second.var        = NULL,
+        # vals_colors_scale = NULL,
+        title_color       = "# adap papers (GeoP)",
+        title_size        = NULL,
+        show.legend       = TRUE,
+        name              = "main/final_version/adpatation_papers"
+      )
+    )
+    
+    
+    
     
     # -----
     
@@ -323,12 +342,12 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
     # --- Create the bivariate color scale
     bivariate_color_scale <- color_bivariate_map(nquantiles  = 10, 
-                                                 upperleft   = "#0096EB", # rgb(130,0,80, maxColorValue = 255), 
-                                                 upperright  = "#FFE60F", # rgb(255,230,15, maxColorValue = 255),
-                                                 bottomleft  = "#e1edf7",
-                                                 bottomright = "#820050", # rgb(0,150,235, maxColorValue = 255)  
+                                                 upperleft   = "#05A3FC", # rgb(130,0,80, maxColorValue = 255), 
+                                                 upperright  = "#9D9F9F", # rgb(255,230,15, maxColorValue = 255),
+                                                 bottomleft  = "#9D9F9F",
+                                                 bottomright = "#F60497", # rgb(0,150,235, maxColorValue = 255)  
                                                  ylab        = "CO2 emission (cum)",
-                                                 xlab        = "n_weighted_papers") 
+                                                 xlab        = "n_weighted_papers")
     
     # --- Adapt it to the data
     GHGemi_mitPubs_country_for_scale_stats <- GHGemi_mitPubs_country |> 
@@ -371,8 +390,11 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                                               data_to_bind = data_bivar_n_article_CO2em,
                                               PROJ         = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
     
-    data_2_map <- format_data2map(data = world_shp_data,
-                                  PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+    data_2_map <- try_format_data2map(input_args = list(
+      data = world_shp_data,
+      PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+      )
+    )
     
 
     # --- Format the shapefile of the eez countries polygon and bind data
@@ -398,9 +420,9 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                           eez        = eez_shp_data, 
                           data_world = NULL,
                           color      = bivariate_color_scale,
-                          xlab       = "CO2eq. emissions",
+                          xlab       = "CO2 emissions (1850-2022)",
                           ylab       = "# mit. paper (GeoP)",
-                          name       = "main/final_version/bivar_map_GHGemi_mitPubs_COUNT_Geop")
+                          name       = "main/final_version/bivar_map_GHGemi_mitPubs_COUNT_Geop_newScale")
       
       
   ## ---- DEVI, here is the model section for emissions and mitigation papers
@@ -533,11 +555,26 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     # - Filter cell in area_rast with a value in surges_rast
     area_rast <- terra::mask(area_rast, surges_rast)
     raster::plot(area_rast)
+    raster::plot(surges_rast)
     
     # - Shapefile and summarize across eez and find the corresponding country
     sf::sf_use_s2(FALSE)
-    vulne_shp <- sf::st_as_sf(stars::st_as_stars(surges_rast)) # vulne_mean_rast1
-    area_shp <- sf::st_as_sf(stars::st_as_stars(area_rast)) 
+    if("stars" %in% .packages()){
+      vulne_shp <- sf::st_as_sf(stars::st_as_stars(surges_rast)) # vulne_mean_rast1
+      area_shp <- sf::st_as_sf(stars::st_as_stars(area_rast))
+    }else{
+      r <- terra::rast(surges_rast)
+      vulne_poly <- terra::as.polygons(r)
+      vulne_shp <- sf::st_as_sf(vulne_poly)
+      
+      r <- terra::rast(area_rast)
+      area_poly <- terra::as.polygons(r)
+      area_shp <- sf::st_as_sf(area_poly)
+      rm(r, vulne_poly, area_poly)
+    }
+    
+    
+     
     
     # - Join with eez data
     vulne_area_shp <- vulne_shp |> # vulne_shp
@@ -700,10 +737,10 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
     # --- Create the bivariate color scale
     bivariate_color_scale <- color_bivariate_map(nquantiles  = 10, 
-                                                 upperleft   = "#0096EB", # rgb(130,0,80, maxColorValue = 255), 
-                                                 upperright  = "#FFE60F", # rgb(255,230,15, maxColorValue = 255),
-                                                 bottomleft  = "#e1edf7",
-                                                 bottomright = "#820050", # rgb(0,150,235, maxColorValue = 255)  
+                                                 upperleft   = "#05A3FC", # rgb(130,0,80, maxColorValue = 255), 
+                                                 upperright  = "#9D9F9F", # rgb(255,230,15, maxColorValue = 255),
+                                                 bottomleft  = "#9D9F9F",
+                                                 bottomright = "#F60497", # rgb(0,150,235, maxColorValue = 255)  
                                                  ylab        = "CO2 emission (cum)",
                                                  xlab        = "n_weighted_papers")
     

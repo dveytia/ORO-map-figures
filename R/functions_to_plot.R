@@ -177,6 +177,195 @@ univariate_map <- function(data_map, eez = NULL, color_scale, second.var, midpoi
 }
 
 
+#' Univariate Map modified
+#' Run in case first version produces error: 
+#' Error in if !is.nullcolor_scale & color_scale != "trends" : the condition has length > 1
+#'
+#' @param data_map a list of objects obtained using the function format_data2map()
+#' @param color_scale the color scale to use e.g., viridis::viridis()for colorblind friendly colorscales
+#' @param legend a caracter vector corresponding to the title of the color scale
+#' @param show.legend TRUE/FALSE to show legend in the final plot 
+#' @param name default NULL. If not null, a caracter vector corresponding to the name under which the figure is to be saved.
+#'
+#'
+#' @examples
+univariate_map_modified <- function(data_map, eez = NULL, color_scale, second.var, midpoint, title_color, title_size, show.legend, name = NULL){
+  
+  ### Produce the map
+  map <- ggplot2::ggplot() +
+    
+    ## DBEM output grid
+    ggplot2::geom_sf(data    = data_map$data,
+                     mapping = ggplot2::aes(fill     = layer,
+                                            geometry = geometry),
+                     color   = "grey10",
+                     size    = 0.1,
+                     show.legend = show.legend) +
+    
+    
+    # Add graticules
+    # ggplot2::geom_sf(data     = data_map$graticules,
+    #                  linetype = "dotted",
+    #                  color    = "grey70",
+    #                  size     = 0.4) +
+    
+    ## Add borders grid
+    # ggplot2::geom_sf(data   = data_map$borders,
+    #                  colour = "grey10",
+  #                  fill   = "transparent",
+  #                  size   = 0.1) +
+  
+  ggplot2::geom_sf(data   = data_map$box, 
+                   colour = "black", 
+                   fill   = NA, 
+                   size   = 0.1) +
+    
+    
+    ggplot2::theme_void() +
+    
+    ## Add latitude and longitude labels
+    ggplot2::geom_text(data = data_map$lat_text, mapping = ggplot2::aes(x = X.prj2-1*10e5, y = Y.prj,          label = lbl), color = "grey20", size = 1.5) +
+    ggplot2::geom_text(data = data_map$lon_text, mapping = ggplot2::aes(x = X.prj,         y = Y.prj-0.5*10e5, label = lbl), color = "black",  size = 1.5) 
+  
+  # ggplot2::labs(fill = legend)
+  
+  if(!("trends" %in% color_scale)){
+    
+    map <- map +
+      
+      ggplot2::guides(size = ggplot2::guide_legend(title = title_size, title.position = "right", title.hjust = 0.5, ncol = 1, override.aes = list(fill = "transparent")),
+                      fill = ggplot2::guide_colourbar(title = title_color, title.position = "right", barwidth = 0.7))
+    
+  }
+  
+  if("trends" %in% color_scale){
+    map <- map 
+    # ggplot2::guides(size = ggplot2::guide_legend(title = title_color, title.position = "right", title.hjust = 0.5, ncol = 1, override.aes = list(fill = "transparent")))
+    #                 fill = ggplot2::guide_coloursteps(title = title_color, title.position = "right", barwidth = 0.7)) 
+  }
+  
+  ## Theme
+  map <- map +
+    ggplot2::theme(panel.grid.major.x = ggplot2::element_line(color = NA),
+                   panel.background   = ggplot2::element_blank(),
+                   axis.text          = ggplot2::element_blank(),
+                   axis.ticks         = ggplot2::element_blank(), 
+                   axis.title         = ggplot2::element_blank(),
+                   plot.margin        = ggplot2::unit(c(0,0,0,0), "cm"),
+                   plot.title         = ggplot2::element_text(size  = 12, 
+                                                              face  = "bold", 
+                                                              hjust = 0.5, 
+                                                              vjust = -0.5),
+                   legend.title       = ggplot2::element_text(size  = 12, 
+                                                              face  = "bold", 
+                                                              hjust = 0.5, 
+                                                              vjust = 0.5, angle = 90),
+                   legend.title.align = 0.5, 
+                   legend.direction   = "vertical",
+                   legend.position     = "right",
+                   legend.justification = "center",
+                   legend.key           = element_rect(color = "white"),
+                   legend.text        = ggplot2::element_text(size = 12))
+  
+  
+  if(!is.null(midpoint)){
+    map <- map + 
+      ggplot2::scale_fill_gradient2(low  = color_scale[1], 
+                                    high = color_scale[3],
+                                    mid  = color_scale[2],
+                                    midpoint = midpoint,
+                                    na.value = "grey80")
+  }
+  
+  
+  if(!("trends" %in% color_scale)){
+    map <- map + 
+      ggplot2::scale_fill_gradientn(colors   = color_scale,
+                                    # values   = vals_colors_scale,
+                                    na.value = "grey80") 
+  }
+  
+  
+  if("trends" %in% color_scale){
+    map <- map +
+      ggplot2::scale_fill_manual(name = "Slope",
+                                 values   = c(viridis::mako(length(unique(data_2_map_panelB$data$layer))-2, direction = 1), "#e6df85"),
+                                 na.value = "grey80")
+  }
+  
+  
+  if(!is.null(eez)){
+    
+    map <- map + 
+      
+      # ggnewscale::new_scale_fill() +
+      
+      ggplot2::geom_sf(data    = eez,
+                       mapping = ggplot2::aes(fill     = layer,
+                                              geometry = geometry),
+                       color   = "grey10",
+                       size    = 0.1,
+                       show.legend = FALSE) 
+    
+    if(!("trends" %in% color_scale)){
+      map <- map + 
+        ggplot2::scale_fill_gradientn(colors   = color_scale,
+                                      # values   = vals_colors_scale,
+                                      na.value = "grey80") 
+    }
+    
+    
+    if("trends" %in% color_scale){
+      map <- map + 
+        ggplot2::scale_fill_manual(name = "Slope",
+                                   values   = c(viridis::mako(length(unique(data_2_map_panelB$data$layer))-2, direction = 1), "#e6df85"),
+                                   na.value = "grey80") +
+        ggplot2::theme(legend.title = ggplot2::element_text(size  = 12, 
+                                                            face  = "bold",
+                                                            hjust = 0,
+                                                            angle = 0))
+    }
+    
+    # ggplot2::scale_fill_gradientn(colors   = color_scale,
+    #                               # values   = vals_colors_scale,
+    #                               na.value = "grey80")
+    
+  }
+  
+  if(!is.null(second.var)){
+    map <- map +
+      stat_sf_coordinates(data        = data_map$data |> filter(! group_land %in% c("Island", "AMUNRC")),
+                          mapping     = aes(size = get(second.var)),
+                          colour      = "darkblue",
+                          # fill        = "grey90",
+                          # size        = 1,
+                          show.legend = TRUE) +
+      scale_size(range = c(0,3))
+  }
+  
+  ### Save map
+  if(! is.null(name)) {
+    
+    ggplot2::ggsave(here::here("figures", paste0(name, ".pdf")), width = 7, height = 4.5, device = "pdf")
+    
+  }
+  
+  return(map)
+  
+  
+}
+
+
+#' try_univariate_map
+#' A wrapper for the two univariate_map functions
+try_univariate_map <- function(input_args){
+  tryCatch({
+    do.call(univariate_map, input_args)
+  }, error = function(e) {
+    message("univariate_map() failed, trying alternative...")
+    do.call(univariate_map_modified, input_args)
+  })
+}
 
 #' Biplot For Figure 2 Panel C
 #'
