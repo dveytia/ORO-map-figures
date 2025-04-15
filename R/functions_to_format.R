@@ -375,6 +375,72 @@ format_data2map <- function(data, PROJ){
 }
 
 
+#' Format Data To Map -- version not requiring rgdal
+#'
+#' @param data an sf object with the data to map
+#' @param PROJ the PROJECTION to which data is formatted
+#'
+#'
+format_data2map_noRgdal <- function(data, PROJ){
+  
+  ### Load graticules and other stuffs
+  load(here::here("data", "data_map.RData"))
+  # load(here::here("data", "geo_data_1.RData"))
+  
+  
+  ### Modify projection
+  NE_box_2 <- sf::st_sfc(sf::st_polygon(list(cbind(c(rep(180,1801), rep(-180,1801), 180), 
+                                                   c(rev(seq(-90, 90, by = 0.1)), seq(-90, 90, by = 0.1), 90)))),
+                         crs = sf::st_crs(geo_data))
+  
+  grid           <- sf::st_transform(geo_data, PROJ)
+  borders        <- sf::st_transform(geo_borders, PROJ)
+  box_rob        <- sf::st_transform(NE_box_2, PROJ)
+  NE_graticules  <- sf::st_as_sf(NE_graticules)
+  graticules_rob <- sf::st_transform(NE_graticules, PROJ)
+  
+  
+  ## project long-lat coordinates for graticule label data frames (two extra columns with projected XY are created)
+  prj.coord <- sf_transform_xy(data.frame(x=lbl.Y$lon, y=lbl.Y$lat), target_crs=PROJ, source_crs = "EPSG:4326")
+  lbl.Y.prj <- cbind(prj.coord, lbl.Y)
+  names(lbl.Y.prj)[1:2] <- c("X.prj", "Y.prj")
+  
+  ## position label 
+  lbl.Y.prj$X.prj  <- (-(lbl.Y.prj$X.prj))
+  lbl.Y.prj$X.prj2 <- lbl.Y.prj$X.prj#-1.10e6
+  
+  ## X
+  prj.coord <- sf_transform_xy(data.frame(x=lbl.X$lon, y=lbl.X$lat), target_crs=PROJ, source_crs = "EPSG:4326")
+  lbl.X.prj <- cbind(prj.coord, lbl.X)
+  names(lbl.X.prj)[1:2] <- c("X.prj", "Y.prj")
+  lbl.X.prj <- subset(lbl.X.prj, Y.prj < 0)
+  
+  
+  ### Format all data in list
+  data_map <- list("data"       = data, 
+                   "borders"    = borders, 
+                   "graticules" = graticules_rob,
+                   "box"        = box_rob,
+                   "lat_text"   = lbl.Y.prj,
+                   "lon_text"   = lbl.X.prj)
+  
+  return(data_map)
+  
+}
+
+
+
+#' try_format_data2map
+#' A wrapper for the two format_data2map functions
+try_format_data2map <- function(input_args){
+  tryCatch({
+    do.call(format_data2map, input_args)
+  }, error = function(e) {
+    message("format_data2map() failed, trying format_data2map_noRgdal()...")
+    do.call(format_data2map_noRgdal, input_args)
+  })
+}
+
 #' Bivariate Color Scale 
 #'
 #' @param nquantiles the number of quantile to split the data
