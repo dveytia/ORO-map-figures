@@ -1,4 +1,6 @@
 ## Large files
+.Rprofile
+panelAtmp.RData
 *.sqlite 
 /data/geoparsing/.ipynb_checkpoints/
 #/data/geoparsing/*.csv
