@@ -189,7 +189,7 @@ univariate_map <- function(data_map, eez = NULL, color_scale, second.var, midpoi
 #'
 #'
 #' @examples
-univariate_map_modified <- function(data_map, eez = NULL, color_scale, second.var, midpoint, title_color, title_size, show.legend, name = NULL){
+univariate_map_modified <- function(data_map, eez = NULL, color_scale, second.var,svarColour="white", pointSizeRange = c(0,3), midpoint, title_color, title_size, show.legend, legTitleSize=12, legTextSize=10,name = NULL){
   
   ### Produce the map
   map <- ggplot2::ggplot() +
@@ -256,7 +256,7 @@ univariate_map_modified <- function(data_map, eez = NULL, color_scale, second.va
                                                               face  = "bold", 
                                                               hjust = 0.5, 
                                                               vjust = -0.5),
-                   legend.title       = ggplot2::element_text(size  = 12, 
+                   legend.title       = ggplot2::element_text(size  = legTitleSize, 
                                                               face  = "bold", 
                                                               hjust = 0.5, 
                                                               vjust = 0.5, angle = 90),
@@ -265,7 +265,7 @@ univariate_map_modified <- function(data_map, eez = NULL, color_scale, second.va
                    legend.position     = "right",
                    legend.justification = "center",
                    legend.key           = element_rect(color = "white"),
-                   legend.text        = ggplot2::element_text(size = 12))
+                   legend.text        = ggplot2::element_text(size = legTextSize))
   
   
   if(!is.null(midpoint)){
@@ -320,10 +320,11 @@ univariate_map_modified <- function(data_map, eez = NULL, color_scale, second.va
         ggplot2::scale_fill_manual(name = "Slope",
                                    values   = c(viridis::mako(length(unique(data_2_map_panelB$data$layer))-2, direction = 1), "#e6df85"),
                                    na.value = "grey80") +
-        ggplot2::theme(legend.title = ggplot2::element_text(size  = 12, 
+        ggplot2::theme(legend.title = ggplot2::element_text(size  = legTitleSize, 
                                                             face  = "bold",
                                                             hjust = 0,
-                                                            angle = 0))
+                                                            angle = 0),
+                       legend.text = ggplot2::element_text(size  = legTextSize))
     }
     
     # ggplot2::scale_fill_gradientn(colors   = color_scale,
@@ -336,11 +337,14 @@ univariate_map_modified <- function(data_map, eez = NULL, color_scale, second.va
     map <- map +
       stat_sf_coordinates(data        = data_map$data |> filter(! group_land %in% c("Island", "AMUNRC")),
                           mapping     = aes(size = get(second.var)),
-                          colour      = "darkblue",
+                          geom = "point",
+                          shape = 21,
+                          fill      = svarColour,
+                          colour = "black",
                           # fill        = "grey90",
                           # size        = 1,
                           show.legend = TRUE) +
-      scale_size(range = c(0,3))
+      scale_size(range = pointSizeRange)
   }
   
   ### Save map
