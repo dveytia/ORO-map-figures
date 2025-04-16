@@ -1,0 +1,1190 @@
+rm(list = ls(), envir = .GlobalEnv) # clean the environment
+
+### ----- LOAD LIBRARIES -----
+library(dplyr)
+library(dbplyr)
+library(R.utils)
+library(RSQLite)
+library(ggplot2)
+library(tidyr)
+library(stringr)
+library(viridis)
+library(rgdal)
+library(countrycode)
+library(broom)
+library(raster)
+
+### ----- LOAD FUNCTIONS -----
+source(here::here("R", "functions_to_format.R")) # all functions needed to format data
+source(here::here("R", "functions_to_plot.R")) # all functions needed to plot data
+
+
+### ----- CONNECTION TO THE LATEST VERSION OF THE SQL DATABASE -----
+sqliteDir <- here::here("data/sqlite-databases")
+sqliteFiles <- dir(sqliteDir)
+sqliteVersions <- as.numeric(gsub(".sqlite","",substring(sqliteFiles, regexpr("_v", sqliteFiles) + 2)))
+latestVersion <- sqliteFiles[which.max(sqliteVersions)]
+dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersion), create=FALSE)
+
+### ----- PANEL A -----
+
+  ## ---- LOAD DATA
+
+    # --- Cleaned geoparsed data (see .Rmd script called 0_data-processing-cleaning.Rmd)
+    geoparsed_data_clean <- get(load(here::here("data", "geoparsing", "tmp_clean.RData")))
+    
+    # --- Other data
+    shp_df_matches <- tbl(dbcon, "geoparsed-text_shp_df_matches") 
+    shp_id_match <- tbl(dbcon, "shp_df_natural-earth-shapes") |> dplyr::select(shpfile_id, sovereignt, sov_a3, admin, adm0_a3) 
+    grid_df <- tbl(dbcon, "grid_df_res2.5") 
+    pred_oro_any_mitigation <- tbl(dbcon, "pred_oro_any_mitigation")
+    pred_blue_carbon <- tbl(dbcon, "pred_blue_carbon")
+    uniquerefs <- tbl(dbcon, "uniquerefs") # metadata on the unique references
+    pred_oro_branch <- tbl(dbcon, "pred_oro_branch") # predictions for ORO branch
+    pred_relevance <- tbl(dbcon, "pred_relevance") # which articles are relevant to OROs
+    
+    # --- GHG emissions data per country (cumulative emissions)
+    GHGemi_country <- read.csv(file = here::here("data", "external", "ghg-emissions", "owid-co2-data.csv")) |>  
+      filter(year == 2020) |>
+      dplyr::select(country, cumulative_co2_including_luc, cumulative_co2, iso_code) |>
+      mutate(country = stringr::str_replace_all(country, c("Micronesia \\(country\\)" = "Micronesia (Federated States of)"))) |> 
+      filter(iso_code != "") |> 
+      mutate(country = countrycode(sourcevar   = country,
+                                   origin      = "country.name",
+                                   destination = "country.name"),
+             cumulative_co2_including_luc = case_when(is.na(cumulative_co2_including_luc) == FALSE ~ cumulative_co2_including_luc,
+                                                      is.na(cumulative_co2_including_luc) == TRUE ~ cumulative_co2)) |> 
+      # Filter rows returning NA because not identified as a country (reason behing the warning message)
+      filter(!is.na(cumulative_co2_including_luc)) |> 
+      rename(iso_NA2 = iso_code)
+    
+    # --- List of countries
+    countries_ls <- read.csv(file = here::here("data", "external", "list_of_countries", "sql-pays.csv"), sep = ";") |>  # Countries names
+      dplyr::mutate(country = countrycode(sourcevar   = name_en,
+                                          origin      = "country.name",
+                                          destination = "country.name"),
+                    iso_code = countrycode(sourcevar   = country,
+                                           origin      = "country.name",
+                                           destination = "iso3c"))  
+    
+    # --- Shapefile of the world
+    world_shp <- sf::read_sf(here::here("data", "external", "world_shp")) |>  # shape file of the world
+      mutate(NA2_DESCRI = countrycode(sourcevar   = NA2_DESCRI,
+                                      origin      = "country.name",
+                                      destination = "country.name",
+                                      nomatch     = NULL),
+             iso_NA2 = countrycode(sourcevar   = NA2_DESCRI,
+                                   origin      = "country.name",
+                                   destination = "iso3c"))
+    
+    # --- Shape file of countrie's EEZ
+    eez_shp_path = here::here("data", "external", "eez_shp", "eez_v12.shp")
+    eez_shp_path = here::here("data", "external","eez_rast","MarineRegions_EEZ_v12_20231025", "eez_v12.shp")
+    
+    eez_shp <- sf::st_read(eez_shp_path) |>  # shape file of countrie's EEZ
+      dplyr::select(MRGID, POL_TYPE, TERRITORY1, SOVEREIGN1, ISO_SOV1) |> 
+      dplyr::rename(Country = SOVEREIGN1) |> 
+      dplyr::mutate(Country = countrycode(sourcevar   = ISO_SOV1,
+                                          origin      = "iso3c",
+                                          destination = "country.name"),
+                    iso_code = countrycode(sourcevar   = Country,
+                                           origin      = "country.name",
+                                           destination = "iso3c"),
+                    TERRITORY1 = countrycode(sourcevar   = TERRITORY1,
+                                             origin      = "iso3c",
+                                             destination = "country.name",
+                                             nomatch     = NULL), 
+                    iso_NA2 = countrycode(sourcevar   = TERRITORY1,
+                                          origin      = "country.name",
+                                          destination = "iso3c")) |>
+      mutate(ISO_SOV1 = case_when(TERRITORY1 == "Cook Islands" ~ "COK",
+                                  TERRITORY1 == "Niue" ~ "NIU",
+                                  TERRITORY1 == "Sint-Maarten" ~ "SXM",
+                                  TRUE ~ ISO_SOV1)) 
+    
+    # --- Country list and their respective territories
+    countries_territories_df <- eez_shp |>
+      sf::st_drop_geometry() |> 
+      dplyr::select(MRGID, TERRITORY1, Country, iso_code, iso_NA2) |>
+      distinct() |>
+      dplyr::mutate(iso_NA2 = case_when(TERRITORY1 == "Comores" ~ "COM",
+                                        TERRITORY1 == "Federated State of Micronesia" ~ "FSM",
+                                        TERRITORY1 == "Bassas da India" ~ "FRA",
+                                        iso_code == "KIR" ~ "KIR",
+                                        Country == "Netherlands" & TERRITORY1 != "Netherlands" ~ "ANT",
+                                        is.na(iso_NA2) == TRUE ~ iso_code,
+                                        TRUE ~ iso_NA2))
+    
+### ----- PANEL A -----    
+    
+  ## ---- FORMAT DATA: Mitigation data
+    
+    # --- Select only mitigation data (OK)
+    mitigation_grid_df <- geoparsed_data_clean |>
+      left_join(pred_oro_branch, by = "analysis_id", copy = TRUE) |> 
+      left_join(pred_relevance, by = "analysis_id", copy = TRUE) |> 
+      filter(0.5 <= relevance_mean) |> 
+      mutate(mitigation = ifelse(0.5 <= `oro_branch.Mitigation - mean_prediction`, 1 ,0)) |>  
+      filter(mitigation == 1) |> 
+      dplyr::select(analysis_id, mitigation, shp_id, grid_df_id, TERRITORY1, country_id) |> 
+      mutate(country_id = case_when(TERRITORY1 == "Greenland" ~ "Denmark",
+                                    country_id == "Svalbard & Jan Mayen" ~ "Norway",
+                                    TRUE ~ country_id)) |> 
+      distinct(analysis_id, TERRITORY1, country_id)
+    
+    
+    # --- Group data by country and territory
+    
+      # --- Find unmatching patterns
+      length(unique(mitigation_grid_df$TERRITORY1))
+      length(unique(countries_territories_df$TERRITORY1))
+      sum(unique(mitigation_grid_df$TERRITORY1) %in% unique(countries_territories_df$TERRITORY1))
+      
+      unique(mitigation_grid_df$TERRITORY1[!mitigation_grid_df$TERRITORY1 %in% countries_territories_df$TERRITORY1])
+      
+      
+      # - Correct unmatching patterns and group data
+      mitigation_geop_paper_country_territory <- mitigation_grid_df |> 
+        mutate(TERRITORY1 = case_when(TERRITORY1 == "Bosnia & Herzegovina" ~ "Bosnia and Herzegovina",
+                                      TERRITORY1 == "Svalbard & Jan Mayen" ~ "Svalbard",
+                                      TERRITORY1 == "Myanmar (Burma)" ~ "Myanmar",
+                                      # TERRITORY1 == "North Macedonia" ~ "Ivory Coast",
+                                      TERRITORY1 == "Somalia" ~ "Federal Republic of Somalia",
+                                      TRUE ~ TERRITORY1)) |> 
+        group_by(TERRITORY1, country_id) |> 
+        summarise(Count_ORO_mit = n()) |> 
+        right_join(countries_territories_df, by = "TERRITORY1") |> 
+        mutate(Count_ORO_mit = case_when(is.na(Count_ORO_mit) == TRUE ~ 0,
+                                         TRUE ~ Count_ORO_mit)) |> 
+        ungroup()
+      
+      # - Checks -----
+      
+        # Number of papers (OK)
+        length(unique(mitigation_grid_df$analysis_id)) # 2948 unique papers but 4861 rows since papers are geoparsed in different countries
+        tmp <- mitigation_geop_paper_country_territory |> 
+          dplyr::select(Country, TERRITORY1, Count_ORO_mit) |> 
+          distinct(); sum(tmp$Count_ORO_mit)
+          
+        4861 - sum(tmp$Count_ORO_mit)
+        length(unique(mitigation_grid_df$analysis_id[mitigation_grid_df$country_id %in% c("Antarctica", "Laos", "North Macedonia")])) # must be 18
+    
+      # ---- 
+
+    
+  ## ---- FORMAT DATA: Adaptation data
+    
+    # --- Select only adaptation data
+    adaptation_grid_df <- geoparsed_data_clean |>
+      left_join(pred_oro_branch, by = "analysis_id", copy = TRUE) |> 
+      left_join(pred_relevance, by = "analysis_id", copy = TRUE) |> 
+      filter(0.5 <= relevance_mean) |> 
+      mutate(adaptation = ifelse(0.5 <= `oro_branch.Nature - mean_prediction` |
+                                   0.5 <= `oro_branch.Societal - mean_prediction`,
+                                 1,0))%>%
+      filter(adaptation == 1) %>%
+      dplyr::select(analysis_id, adaptation, shp_id, grid_df_id, TERRITORY1, country_id) |> 
+      mutate(country_id = case_when(TERRITORY1 == "Greenland" ~ "Greenland",
+                                    country_id == "Svalbard & Jan Mayen" ~ "Norway",
+                                    TRUE ~ country_id)) |> 
+      distinct(analysis_id, TERRITORY1, country_id)
+    
+    # --- Group data by country and territory
+    
+      # - To find unmatching patterns
+      length(unique(adaptation_grid_df$TERRITORY1))
+      length(unique(countries_territories_df$TERRITORY1))
+      sum(unique(adaptation_grid_df$TERRITORY1) %in% unique(countries_territories_df$TERRITORY1))
+      
+      unique(adaptation_grid_df$TERRITORY1[!adaptation_grid_df$TERRITORY1 %in% countries_territories_df$TERRITORY1])
+      
+      # - Correct unmatching patterns and group data
+      adaptation_geop_paper_territory <- adaptation_grid_df |> 
+        mutate(TERRITORY1 = case_when(TERRITORY1 == "Bosnia & Herzegovina" ~ "Bosnia and Herzegovina",
+                                      TERRITORY1 == "Svalbard & Jan Mayen" ~ "Svalbard",
+                                      TERRITORY1 == "Myanmar (Burma)" ~ "Myanmar",
+                                      TERRITORY1 == "Côte d’Ivoire" ~ "Ivory Coast",
+                                      # TERRITORY1 %in% c("Alaska", "Jarvis Island", "Howland and Baker Islands", "Hawaii") ~ "United States",
+                                      # TERRITORY1 == "Curaçao" ~ "Netherlands Antilles",
+                                      # TERRITORY1 == "Azores" ~ "Portugal",
+                                      TRUE ~ TERRITORY1)) |> 
+        group_by(TERRITORY1, country_id) |>
+        summarise(Count_ORO_ada = n()) |> 
+        right_join(countries_territories_df, by = "TERRITORY1") |>
+        mutate(Count_ORO_ada = case_when(is.na(Count_ORO_ada) == TRUE ~ 0,
+                                         TRUE ~ Count_ORO_ada)) |> 
+        ungroup() |> 
+        dplyr::select(-country_id)
+      
+      # - Checks -----
+      
+        # Number of papers
+        length(unique(adaptation_grid_df$analysis_id)) # 2144 unique papers but 2899 rows since papers are geoparsed in different countries
+        tmp <- adaptation_geop_paper_territory |> 
+          dplyr::select(Country, TERRITORY1, Count_ORO_ada) |> 
+          distinct() # distinct to avoid duplicates with MRGID (e.g. USA)
+        
+        sum(tmp$Count_ORO_ada)
+        
+        2899 - sum(tmp$Count_ORO_ada)
+        length(unique(adaptation_grid_df$analysis_id[adaptation_grid_df$country_id %in% c("Antarctica", "Bolivia")])) # must be 2 
+      
+      # ---- 
+      
+    # --- Check map -----
+    eez_shp_data_mrgid_papers <- eez_shp |>
+      left_join(adaptation_geop_paper_territory, by = "MRGID") |> #c("ISO_SOV1" = "iso_code")
+      sf::st_transform(crs = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs") |> 
+      rename(layer = Count_ORO_ada)
+    
+    # Two versions of formatting function -- if rgdal is installed, first version is run,
+    # if not, use modified version
+   
+    # Try format_data2map first, fallback to format_data2map_noRgdal if it fails
+    
+    data_2_map_mrgid_papers <- try_format_data2map(
+      input_args= list(
+        data = eez_shp_data_mrgid_papers,
+        PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+      )
+    )
+    
+    map <- try_univariate_map(
+      input_args = list(
+        data_map          = data_2_map_mrgid_papers,
+        eez               = NULL,
+        color_scale       = viridis::turbo(10, direction = 1),
+        midpoint          = NULL,
+        second.var        = NULL,
+        # vals_colors_scale = NULL,
+        title_color       = "# adap papers (GeoP)",
+        title_size        = NULL,
+        show.legend       = TRUE,
+        name              = "main/final_version/adpatation_papers"
+      )
+    )
+    
+    
+    
+    
+    # -----
+    
+  ## ---- Join adaptation and mitigation data to get the proportion of mitigation and adaptation papers per countries
+  adap_miti_geoP_paper_mrgid <- adaptation_geop_paper_territory |> 
+      dplyr::select(Count_ORO_ada, MRGID) |> 
+      full_join(mitigation_geop_paper_country_territory, by = "MRGID") |> 
+      mutate(Count_ORO_adap_miti = Count_ORO_ada + Count_ORO_mit,
+             perc_mit = Count_ORO_mit/Count_ORO_adap_miti,
+             perc_ada = Count_ORO_ada/Count_ORO_adap_miti) 
+    
+    # - Checks -----
+    length(unique(adaptation_geop_paper_territory$MRGID))
+    length(unique(adaptation_geop_paper_territory$MRGID))
+    sum(unique(adaptation_geop_paper_territory$MRGID) %in% unique(adaptation_geop_paper_territory$MRGID))
+    sum(unique(adaptation_geop_paper_territory$MRGID) %in% unique(adaptation_geop_paper_territory$MRGID))
+    
+    unique(adaptation_geop_paper_territory$MRGID[!adaptation_geop_paper_territory$MRGID %in% adaptation_geop_paper_territory$MRGID])
+    
+      # Number of papers
+      tmp <- adap_miti_geoP_paper_mrgid |> 
+        dplyr::select(Country, TERRITORY1, Count_ORO_ada, Count_ORO_mit, Count_ORO_adap_miti) |> 
+        distinct() 
+      
+      sum(tmp$Count_ORO_ada) # must be 2897
+      sum(tmp$Count_ORO_mit) # must be 4843
+      sum(tmp$Count_ORO_adap_miti) # 7740
+
+    # ---- 
+    
+    
+  ## ---- Format emissions data
+  GHGemi_mrgid <- GHGemi_country |> 
+    left_join(countries_territories_df |> dplyr::select(-Country, -TERRITORY1, -MRGID), by = "iso_NA2") |> 
+    mutate(iso_code = case_when(is.na(iso_code) == TRUE ~ iso_NA2,
+                                TRUE ~ iso_code)) |> 
+    distinct() 
+  
+    # --- All territitories emissions are the same as national emissions.
+    GHGemi_country <- GHGemi_mrgid |> 
+      group_by(iso_code) |> 
+      summarise(cumulative_co2_including_luc = sum(cumulative_co2_including_luc, na.rm = TRUE)) |> 
+      left_join(countries_territories_df, by = "iso_code") |> 
+      filter(!is.na(MRGID))
+    
+    
+  ## ---- FORMAT DATA: Bivariate color scale
+    
+    # --- Join mitigation ORO data with GHG emissions data
+    GHGemi_mitPubs_country <- adap_miti_geoP_paper_mrgid |> 
+      dplyr::select(Country, TERRITORY1, iso_code, Count_ORO_mit, Count_ORO_adap_miti) |>
+      distinct() |>  # distinct to avoid duplicates with MRGID (e.g. USA)
+      group_by(Country, iso_code) |> 
+      summarise(Count_ORO_mit = sum(Count_ORO_mit, na.rm = TRUE),
+                Count_ORO_adap_miti = sum(Count_ORO_adap_miti, na.rm = TRUE)) |> 
+      mutate(perc_mit = Count_ORO_mit/Count_ORO_adap_miti) |> 
+      ungroup() |> 
+      left_join(countries_territories_df |> dplyr::select(-TERRITORY1, -Country), by = "iso_code") |>
+      filter(!is.na(MRGID)) |>
+      left_join(GHGemi_country |>  dplyr::select(MRGID, cumulative_co2_including_luc), by = "MRGID")
+    
+    
+    # - Checks -----
+      # Number of papers
+      tmp <- GHGemi_mitPubs_country |> 
+        dplyr::select(Country, Count_ORO_mit, Count_ORO_adap_miti) |> 
+        distinct() 
+      
+      sum(tmp$Count_ORO_mit) # must be 4843
+      sum(tmp$Count_ORO_adap_miti) # 7740
+      
+    # ---- 
+        
+    
+    # --- Create the bivariate color scale
+    bivariate_color_scale <- color_bivariate_map(nquantiles  = 10, 
+                                                 upperleft   = "#05A3FC", # rgb(130,0,80, maxColorValue = 255), 
+                                                 upperright  = "#9D9F9F", # rgb(255,230,15, maxColorValue = 255),
+                                                 bottomleft  = "#9D9F9F",
+                                                 bottomright = "#F60497", # rgb(0,150,235, maxColorValue = 255)  
+                                                 ylab        = "CO2 emission (cum)",
+                                                 xlab        = "n_weighted_papers")
+    
+    # --- Adapt it to the data
+    GHGemi_mitPubs_country_for_scale_stats <- GHGemi_mitPubs_country |> 
+      dplyr::select(Country, iso_code, Count_ORO_mit, perc_mit, Count_ORO_mit, Count_ORO_adap_miti, cumulative_co2_including_luc) |>
+      filter(Count_ORO_adap_miti != 0) |> 
+      filter(is.na(cumulative_co2_including_luc) != TRUE) |> 
+      distinct() 
+    
+    sum(GHGemi_mitPubs_country_for_scale_stats$Count_ORO_mit) # must be 4838 (instead of 4843) because remove of western sahara that don't have emissions data
+    sum(GHGemi_mitPubs_country_for_scale_stats$Count_ORO_adap_miti) # 7735
+    
+      # --- Save the data for Devi
+      save(GHGemi_mitPubs_country_for_scale_stats, file = here::here("data", "GHGemi_mitPubs_country_for_scale_stats.RData"))
+
+
+    
+    data_bivar_n_article_CO2em <- format_data_bivariate_map(data        = GHGemi_mitPubs_country_for_scale_stats,
+                                                            data.y      = "Count_ORO_mit", # "perc_mit"
+                                                            data.x      = "cumulative_co2_including_luc",
+                                                            color_table = bivariate_color_scale,
+                                                            nquantiles  = 10,
+                                                            probs.quant.x = seq(0, 1, 0.1),
+                                                            probs.quant.y = seq(0, 1, 0.1)) |> 
+      left_join(countries_territories_df |> dplyr::select(-TERRITORY1, -Country), by = "iso_code") |>
+      filter(!is.na(MRGID)) 
+    
+    # - Checks -----
+    # Number of papers
+    tmp <- data_bivar_n_article_CO2em |> 
+      dplyr::select(Country, Count_ORO_mit, Count_ORO_adap_miti) |> 
+      distinct() 
+    
+    sum(tmp$Count_ORO_mit) # must be 4838
+    sum(tmp$Count_ORO_adap_miti) # 7735
+    
+    # ---- 
+    
+    # --- Format the shapefile of the world countries polygon and bind data
+    world_shp_data <- format_shp_of_the_world(world_shp    = world_shp,
+                                              data_to_bind = data_bivar_n_article_CO2em,
+                                              PROJ         = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+    
+    data_2_map <- try_format_data2map(input_args = list(
+      data = world_shp_data,
+      PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+      )
+    )
+    
+
+    # --- Format the shapefile of the eez countries polygon and bind data
+    eez_shp_data <- eez_shp |>
+      left_join(data_bivar_n_article_CO2em, by = "MRGID") |>
+      filter(!is.na(MRGID)) |> 
+      sf::st_transform(crs = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+    
+      # - Checks -----
+      # Number of papers
+      tmp <- eez_shp_data |> 
+        sf::st_drop_geometry() |> 
+        dplyr::select(Country.x, Count_ORO_mit, Count_ORO_adap_miti) |> 
+        distinct() 
+      
+      sum(tmp$Count_ORO_mit, na.rm = TRUE) # must be 4838
+      sum(tmp$Count_ORO_adap_miti, na.rm = TRUE) # 7735
+      
+      # ---- 
+    
+  ## ---- PLOT DATA
+  panelA <- bivariate_map(data_map   = data_2_map,
+                          eez        = eez_shp_data, 
+                          data_world = NULL,
+                          color      = bivariate_color_scale,
+                          xlab       = "CO2 emissions (1850-2022)",
+                          ylab       = "# mit. paper (GeoP)",
+                          name       = "main/final_version/bivar_map_GHGemi_mitPubs_COUNT_Geop_newScale")
+      
+      
+  ## ---- DEVI, here is the model section for emissions and mitigation papers
+  ## ---- You can load this data file
+  load(here::here("data", "GHGemi_mitPubs_country_for_scale_stats.RData"))
+  
+  ## ---- Test for correlation between co2 emissions and mitigation publications (by geoparsing)
+  
+    # --- Scale values by dividing by their sd and mean center
+    y.count <- scale(GHGemi_mitPubs_country_for_scale_stats$Count_ORO_mit, center = TRUE, scale = TRUE)
+    y.perc <- scale(GHGemi_mitPubs_country_for_scale_stats$perc_mit, center = TRUE, scale = TRUE)
+    x <- scale(GHGemi_mitPubs_country_for_scale_stats$cumulative_co2_including_luc, center = TRUE, scale = TRUE)
+    
+
+    # --- Test for normality
+    shapiro.test(x) # what is the p value? if >0.05, normal
+    shapiro.test(y.count) # same -- report p value
+    shapiro.test(y.perc) # same -- report p value
+    
+    # --- Test for linear relationship
+    plot(y.count, x)
+    plot(y.perc, x)
+    
+    
+    # --- calculate Spearman's correlation coefficienct (not Pearson's coefficient due to the non-normality of the data
+    mit_cor.count <- cor.test(x, y.count, method = "spearman") ; mit_cor.count
+    mit_cor.perc <- cor.test(x, y.perc, method = "spearman") ; mit_cor.perc
+    
+    
+  ## ---- GLM
+    
+    # --- Model with all countries
+    y.mit.perc <- GHGemi_mitPubs_country_for_scale_stats$perc_mit
+    count_total.mit <- GHGemi_mitPubs_country_for_scale_stats$Count_ORO_adap_miti
+    x.mit <- GHGemi_mitPubs_country_for_scale_stats$cumulative_co2_including_luc 
+    x.mit.scaled <- scales::rescale(x.mit, to = c(0, 1)) # Scale X data between 0 and 1 to compare it with adaptation
+
+    #fit.mit <- glm(y.mit.perc ~ x.mit.scaled, family = binomial, weights = rep(10, length(x.mit.scaled))) ; summary(fit.mit)
+    fit.mit <- glm(y.mit.perc ~ x.mit.scaled, family = binomial, weights = count_total.mit) ; summary(fit.mit)
+    
+    exp(fit.mit$coefficients[2])
+    
+    # --- Model without USA
+    data.without.USA <- GHGemi_mitPubs_country_for_scale_stats |> 
+      filter(Country != "United States")
+    
+    y.mit.perc.USA <- data.without.USA$perc_mit
+    x.mit.USA <- data.without.USA$cumulative_co2_including_luc 
+    count_total.mit.USA <- data.without.USA$Count_ORO_adap_miti
+    x.mit.scaled.USA <- scales::rescale(x.mit.USA, to = c(0, 1))
+    fit.mit.USA <- glm(y.mit.perc.USA ~ x.mit.scaled.USA, family = binomial, weights = count_total.mit.USA) ; summary(fit.mit.USA)
+    exp(fit.mit.USA$coefficients[2])
+    
+    ## Plot predictions with raw data
+    pred.x <- seq(0,1, length.out = 100)
+    pred.fit.mit <- data.frame(x.mit.scaled = pred.x)
+    pred.fit.mit <- predict(fit.mit, se.fit = TRUE, newdata = data.frame(x.mit.scaled = pred.x),
+                            type = "link")
+    pred.fit.mit <- as.data.frame(pred.fit.mit)
+    
+    pred.fit.mit.USA <- predict(fit.mit.USA, se.fit = TRUE, newdata = data.frame(x.mit.scaled.USA = pred.x),
+                            type = "link")
+    pred.fit.mit.USA <- as.data.frame(pred.fit.mit.USA)
+
+    pred.fit.all <- rbind(pred.fit.mit %>% mutate(Model = paste("All")),
+                          pred.fit.mit.USA %>% mutate(Model = paste("- USA")))
+    pred.fit.all$pred.x <- c(pred.x,pred.x)
+    
+    pval <- c(with(summary(fit.mit), coefficients[2,"Pr(>|z|)"]),
+              with(summary(fit.mit.USA), coefficients[2,"Pr(>|z|)"]))
+    pval <- ifelse(pval==0, "2e-16", signif(pval, 2))
+    
+    fit.mit.ggp <- ggplot() +
+      geom_point(data = GHGemi_mitPubs_country_for_scale_stats,
+                 mapping = aes(x = scales::rescale(cumulative_co2_including_luc, to = c(0, 1)),
+                               y = log(perc_mit/(1-perc_mit)),
+                               size = Count_ORO_adap_miti)) +
+      geom_text(data = GHGemi_mitPubs_country_for_scale_stats|> 
+                   filter(iso_code == "USA"),
+                 x=1,
+                 mapping = aes(y = log(perc_mit/(1-perc_mit)),
+                               label = iso_code),
+                nudge_y = -0.2,
+                 col = "red") +
+      geom_line(data = pred.fit.all, aes(x=pred.x, y=fit, col = Model))+
+      geom_ribbon(data = pred.fit.all, aes(x=pred.x, ymin=fit-se.fit, ymax = fit+se.fit, fill = Model),
+                  alpha = 0.5)+
+      geom_text(data = data.frame(x = 0.75, 
+                                  y = pred.fit.mit$fit[which.min(abs(pred.x-0.85))]),
+                aes(x=x, y=y), label = paste("OR =", signif(exp(fit.mit$coefficients[2]), 2),
+                                             "\nR2 = ", signif(with(summary(fit.mit), 1 - deviance/null.deviance),2),
+                                             "\np =", pval[1]),
+                nudge_y = -0.4,
+                size = 3)+
+      geom_text(data = data.frame(x = 0.75, 
+                                  y = pred.fit.mit.USA$fit[which.min(abs(pred.x-0.85))]),
+                aes(x=x, y=y), label = paste("OR =", signif(exp(fit.mit.USA$coefficients[2]), 2),
+                                             "\nR2 = ", signif(with(summary(fit.mit.USA), 1 - deviance/null.deviance),2),
+                                             "\np =", pval[2]),
+                nudge_y = +0.4,
+                size = 3)+
+    
+      labs(y = "log(p/(1-p))", x = "Cumulative CO2 emissions (scaled)",
+           size = "N articles")+
+      theme_bw()
+    
+    fit.mit.ggp
+    
+    # ggsave(here::here("figures/supplemental/emissionsVsMitigationBinomialGlm_UsaOutlierRemoval.pdf"),
+    #        width = 6, height = 4, units = "in")
+    
+    
+    
+### -----  
+  
+  
+  
+### ----- PANEL B ----- 
+  
+  ## ---- LOAD DATA (vulnerability)
+  surges_rast <- raster::raster(here::here("data", "external", "climate-hazard-maps", "Coastal_surges_1974-2014_R.tif")) 
+  area_rast <- raster::area(surges_rast)
+  
+  ## ---- LOAD DATA (population in low elevation coastal zones): https://sedac.ciesin.columbia.edu/data/set/lecz-urban-rural-population-estimates-v1/data-download
+  pop_lecz <- readxl::read_excel(here::here("data", "external", "population_lecz", "10mlecz-grumpv1.xls"), sheet = "country_lecz")
+  
+
+  ## ---- FORMAT DATA: Vulneralibility data
+  
+    # - Filter cell in area_rast with a value in surges_rast
+    area_rast <- terra::mask(area_rast, surges_rast)
+    raster::plot(area_rast)
+    raster::plot(surges_rast)
+    
+    # - Shapefile and summarize across eez and find the corresponding country
+    sf::sf_use_s2(FALSE)
+    if("stars" %in% .packages()){
+      vulne_shp <- sf::st_as_sf(stars::st_as_stars(surges_rast)) # vulne_mean_rast1
+      area_shp <- sf::st_as_sf(stars::st_as_stars(area_rast))
+    }else{
+      r <- terra::rast(surges_rast)
+      vulne_poly <- terra::as.polygons(r)
+      vulne_shp <- sf::st_as_sf(vulne_poly)
+      
+      r <- terra::rast(area_rast)
+      area_poly <- terra::as.polygons(r)
+      area_shp <- sf::st_as_sf(area_poly)
+      rm(r, vulne_poly, area_poly)
+    }
+    
+    
+     
+    
+    # - Join with area data
+    vulne_area_shp <- vulne_shp |> # vulne_shp
+      mutate(area   = area_shp$layer) |>
+      rename(surges = Coastal_surges_1974.2014_R) 
+    
+    
+    # Join with eez
+    vulne_shp_country <- eez_shp |> 
+      sf::st_join(vulne_area_shp) 
+    
+    # - Compute the weighted mean by mrgid (weighted by cells area)
+    vulne_mean_weighted_mrgid_df <- vulne_shp_country |> # vulne_country_df
+      sf::st_drop_geometry() |> 
+      group_by(MRGID, TERRITORY1, Country, iso_code, iso_NA2) |>
+      summarise(storm_surges_weighted = weighted.mean(surges, area, na.rm = TRUE)) |> 
+      ungroup() |> 
+      filter(!is.na(storm_surges_weighted)) |> 
+      dplyr::select(MRGID, storm_surges_weighted) |> 
+      right_join(countries_territories_df, by = "MRGID")
+    
+    # - Check map -----
+    eez_shp_data_mrgid <- eez_shp |>
+      left_join(vulne_mean_weighted_mrgid_df, by = "MRGID") |> #c("ISO_SOV1" = "iso_code")
+      filter(!is.na(storm_surges_weighted)) |> 
+      dplyr::rename(layer = storm_surges_weighted) |> 
+      sf::st_transform(crs = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+    
+    data_2_map_mrgid <- try_format_data2map(
+      list(data = eez_shp_data_mrgid,
+           PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+      )
+      )
+    
+    tmp <- data_2_map_mrgid$data |>  sf::st_drop_geometry()
+    
+    map <- try_univariate_map(
+      list(
+        data_map          = data_2_map_mrgid,
+        eez               = NULL,
+        color_scale       = viridis::turbo(10, direction = 1),
+        midpoint          = NULL,
+        second.var        = NULL,
+        # vals_colors_scale = NULL,
+        title_color       = "Exposure (weighted)",
+        title_size        = NULL,
+        show.legend       = TRUE,
+        name              = "main/final_version/mrgid_exposure_weighted_by_cell_area2"
+      )
+    )
+    # -----
+  
+  ## ---- FORMAT DATA: population data
+  
+    # --- Population in LECZ at the territory scale
+    pop_mrgid <- pop_lecz |>
+      dplyr::select(CONTINENT, ISO3V10, Country, ProjectRegion, G00PT_lecz, G00PT_ctry, Landlocked) |>
+      dplyr::filter(Landlocked == 0) |> 
+      dplyr::mutate(G00PT_lecz = dplyr::case_when(G00PT_lecz == -9999 ~ 0,
+                                                  TRUE ~ G00PT_lecz),
+                    G00PT_ctry = dplyr::case_when(G00PT_ctry == -9999 ~ 0,
+                                                  TRUE ~ G00PT_ctry),
+                    Country  = case_when(Country == "Morocco (includes Western Sahara)" ~ "Morocco",
+                                         Country == "Hong Kong" ~ "China",
+                                         Country == "Macao" ~ "China",
+                                         Country == "Serbia and Montenegro" ~ "Montenegro",
+                                         Country == "Aruba" ~ "Netherland Antilles",
+                                         TRUE ~ Country),
+                    iso_NA2 = countrycode(sourcevar   = Country,
+                                          origin      = "country.name",
+                                          destination = "iso3c"), 
+                    iso_NA2 = case_when(Country == "Netherland Antilles" ~ "ANT",
+                                        TRUE ~ iso_NA2)) |>
+      dplyr::select(-ISO3V10) |> 
+      group_by(Country, iso_NA2) |> 
+      summarise(G00PT_lecz = sum(G00PT_lecz, na.rm = TRUE),
+                G00PT_ctry = sum(G00PT_ctry, na.rm = TRUE),
+                Landlocked = max(Landlocked)) |> 
+      rename(population = G00PT_lecz, pop_total = G00PT_ctry) |> 
+      ungroup() |> 
+      dplyr::select(-Country) |> 
+      dplyr::right_join(countries_territories_df, by = "iso_NA2") |> 
+      mutate(population = case_when(is.na(population) == TRUE ~ 0,
+                                    TRUE ~ population),
+             pop_total = case_when(is.na(pop_total) == TRUE ~ 0,
+                                   TRUE ~ pop_total),
+             perc_in_lecz = (population/pop_total)*100) |> 
+      mutate(perc_in_lecz = case_when(is.nan(perc_in_lecz) == TRUE ~ 0,
+                                      TRUE ~ perc_in_lecz))
+    
+    
+    # --- Check map -----
+    eez_shp_data_mrgid_pop <- eez_shp |>
+      left_join(pop_mrgid, by = "MRGID") |> #c("ISO_SOV1" = "iso_code")
+      sf::st_transform(crs = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+    
+    data_2_map_mrgid_pop <- try_format_data2map(
+      list(
+        data = eez_shp_data_mrgid_pop,
+        PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+      )
+    )
+    
+    # - For the total population in LECZ
+    data_2_map_mrgid_popTOT <- data_2_map_mrgid_pop
+    data_2_map_mrgid_popTOT$data <- data_2_map_mrgid_popTOT$data |>  
+      rename(layer = population)  
+    
+    
+    tmp <- data_2_map_mrgid_popTOT$data |>  sf::st_drop_geometry()
+    
+    map <- try_univariate_map(
+      list(
+        data_map          = data_2_map_mrgid_popTOT,
+        eez               = NULL,
+        color_scale       = viridis::turbo(10, direction = 1),
+        midpoint          = NULL,
+        second.var        = NULL,
+        # vals_colors_scale = NULL,
+        title_color       = "Population in LECZ",
+        title_size        = NULL,
+        show.legend       = TRUE,
+        name              = "main/final_version/mrgid_population_in_LECZ3"
+      )
+    )
+    
+    # - For the total population in LECZ
+    data_2_map_mrgid_popPERC <- data_2_map_mrgid_pop
+    data_2_map_mrgid_popPERC$data <- data_2_map_mrgid_popPERC$data |>  rename(layer = perc_in_lecz)
+    
+    tmp2 <- data_2_map_mrgid_popPERC$data |>  sf::st_drop_geometry()
+    
+    map <- try_univariate_map(
+      list(
+        data_map          = data_2_map_mrgid_popPERC,
+        eez               = NULL,
+        color_scale       = viridis::turbo(10, direction = 1),
+        midpoint          = NULL,
+        second.var        = NULL,
+        # vals_colors_scale = NULL,
+        title_color       = "% of pop in LECZ",
+        title_size        = NULL,
+        show.legend       = TRUE,
+        name              = "main/final_version/mrgid_population_in_LECZ_perc"
+      )
+    )
+    # ----- 
+  
+    
+  ## ---- FORMAR DATA: bind EXPOSURE and POPULATION data together
+  exposure_mrgid <- pop_mrgid |> 
+    dplyr::select(-iso_NA2, -TERRITORY1, -Country, -iso_code) |> 
+    dplyr::full_join(vulne_mean_weighted_mrgid_df |>  dplyr::select(-Country), by = "MRGID") |> 
+    dplyr::mutate(exposure_perc = storm_surges_weighted*perc_in_lecz) |> 
+    ungroup()
+    
+    # --- Check map -----
+    eez_shp_data_mrgid_expo <- eez_shp |>
+      left_join(exposure_mrgid, by = "MRGID") |> #c("ISO_SOV1" = "iso_code")
+      sf::st_transform(crs = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs") |> 
+      rename(layer = exposure_perc)
+    
+    data_2_map_mrgid_expo <- try_format_data2map(
+      list(
+        data = eez_shp_data_mrgid_expo,
+        PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+      )
+    )
+    
+    map <- try_univariate_map(
+      list(
+        data_map          = data_2_map_mrgid_expo,
+        eez               = NULL,
+        color_scale       = viridis::turbo(10, direction = 1),
+        midpoint          = NULL,
+        second.var        = NULL,
+        # vals_colors_scale = NULL,
+        title_color       = "Exposure * % pop in LECZ",
+        title_size        = NULL,
+        show.legend       = TRUE,
+        name              = "main/final_version/exposure_TIMES_perc_pop"
+      )
+    )
+    
+    # -----
+    
+    
+  ## ---- FORMAT DATA: Bivariate color scale
+    
+    # --- Create the bivariate color scale
+    bivariate_color_scale <- color_bivariate_map(nquantiles  = 10, 
+                                                 upperleft   = "#05A3FC", # rgb(130,0,80, maxColorValue = 255), 
+                                                 upperright  = "#9D9F9F", # rgb(255,230,15, maxColorValue = 255),
+                                                 bottomleft  = "#9D9F9F",
+                                                 bottomright = "#F60497", # rgb(0,150,235, maxColorValue = 255)  
+                                                 ylab        = "CO2 emission (cum)",
+                                                 xlab        = "n_weighted_papers")
+    
+    
+    expo_adaPubs_mrgid <- adap_miti_geoP_paper_mrgid |> 
+      dplyr::select(-TERRITORY1, -Country, -iso_code, -iso_NA2, -country_id) |> 
+      full_join(exposure_mrgid, by = "MRGID") |> 
+      filter(!is.na(exposure_perc)) |>
+      ungroup()
+    
+
+    # - Checks -----
+    # Number of papers
+    tmp <- adap_miti_geoP_paper_mrgid |> 
+      dplyr::select(TERRITORY1, Count_ORO_ada, Count_ORO_adap_miti) |> 
+      distinct() ; sum(tmp$Count_ORO_ada) # must be must be 2897
+    
+    tmp2 <- expo_adaPubs_mrgid |> 
+      dplyr::select(TERRITORY1,  Count_ORO_ada, Count_ORO_adap_miti) |> 
+      distinct() ; sum(tmp2$Count_ORO_ada) 
+    # Equal 2867 (instead of 2867) because 30 papers remove with the filter(!is.na(exposure_perc)).
+    
+    # Check of the 30 papers
+    where_na <- adap_miti_geoP_paper_mrgid |> 
+      dplyr::select(-TERRITORY1, -Country, -iso_code, -iso_NA2, -country_id, -perc_mit) |> 
+      full_join(exposure_mrgid, by = "MRGID") |> 
+      filter(is.na(exposure_perc)) |>
+      ungroup() |>  
+      dplyr::select(TERRITORY1,  Count_ORO_ada, Count_ORO_adap_miti) |> 
+      distinct() |> 
+      filter(! TERRITORY1 %in% expo_adaPubs_mrgid$TERRITORY1); sum(where_na$Count_ORO_ada)
+    
+    # ---- 
+    
+    # --- Adapt it to the data
+    expo_adaPubs_mrgid_for_scale_stats <- expo_adaPubs_mrgid |>
+      filter(Count_ORO_adap_miti != 0)
+    
+      # Save data for Devi
+      save(expo_adaPubs_mrgid_for_scale_stats, file = here::here("data", "expo_adaPubs_mrgid_for_scale_stats.RData"))
+
+    
+    data_bivar_n_article_expo_mrgid <- format_data_bivariate_map(data        = expo_adaPubs_mrgid_for_scale_stats,
+                                                                 data.y      = "Count_ORO_ada", # "perc_ada"
+                                                                 data.x      = "exposure_perc", # "vulnerability",
+                                                                 color_table = bivariate_color_scale,
+                                                                 nquantiles  = 10) 
+    
+    # --- Format the shapefile of the world countries polygon and bind data
+    world_shp_data_mrgid <- format_shp_of_the_world(world_shp    = world_shp,
+                                                    data_to_bind = data_bivar_n_article_expo_mrgid,
+                                                    PROJ         = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+    
+    data_2_map_mrgid <- try_format_data2map(
+      list(
+        data = world_shp_data_mrgid,
+        PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+      )
+    )
+    
+    eez_shp_mrgid <- eez_shp |>
+      left_join(data_bivar_n_article_expo_mrgid, by = "MRGID") |>
+      sf::st_transform(crs = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs") |> 
+      rename(Country.x = TERRITORY1.x)
+    
+    # - Checks -----
+    # Number of papers
+    tmp <- eez_shp_mrgid |> 
+      sf::st_drop_geometry() |> 
+      dplyr::select(Country.x, Count_ORO_ada, Count_ORO_adap_miti) |> 
+      distinct() 
+    
+    sum(tmp$Count_ORO_ada, na.rm = T) # must be 2867
+    # ---- 
+    
+  ## ---- MAP DATA
+  panelB <- bivariate_map(data_map   = data_2_map_mrgid,
+                          eez        = eez_shp_mrgid, 
+                          data_world = NULL,
+                          color      = bivariate_color_scale,
+                          xlab       = "Coastal risk",
+                          ylab       = "# ada. paper (GeoP)",
+                          name       = "main/final_version/AdaPaperGeop_COUNT_expo_territory_Geop_newscale") 
+  
+  ## ---- DEVI, here is the model section for risk and adaptation papers
+  ## ---- You can load this data file
+  load(here::here("data", "expo_adaPubs_mrgid_for_scale_stats.RData"))
+  
+  ## ---- Test for correlation between CC exposure and adaptation publications (by geoparsing)
+  
+    # --- Scale values by dividing by their sd and mean center
+    x.ada <- scale(expo_adaPubs_mrgid_for_scale_stats$exposure_perc, center = TRUE, scale = TRUE)
+    y.count.ada <- scale(expo_adaPubs_mrgid_for_scale_stats$Count_ORO_ada, center = TRUE, scale = TRUE)
+    y.perc.ada <- scale(expo_adaPubs_mrgid_for_scale_stats$perc_ada, center = TRUE, scale = TRUE)
+
+    
+    # --- Test for linear relationship
+    plot(y.count.ada, x.ada)
+    plot(y.perc.ada, x.ada)
+    
+    
+    # --- calculate Spearman's correlation coefficienct (not Pearson's coefficient due to the non-normality of the data
+    ada_cor.count <- cor.test(x.ada, y.count.ada, method = "spearman") ; ada_cor.count
+    ada_cor.perc <- cor.test(x.ada, y.perc.ada, method = "spearman") ; ada_cor.perc
+    
+  
+  ## ---- GLM
+    
+    # --- Scale x data between 0 and 1 to compare it with mitigation
+    y.ada.count <- expo_adaPubs_mrgid_for_scale_stats$Count_ORO_ada
+    y.ada.perc <- expo_adaPubs_mrgid_for_scale_stats$perc_ada
+    count_total <- expo_adaPubs_mrgid_for_scale_stats$Count_ORO_adap_miti
+    x.ada <- expo_adaPubs_mrgid_for_scale_stats$exposure_perc
+    x.ada.scaled <- scales::rescale(x.ada, to = c(0, 1))
+    
+    # IMPORTANT (MAYBE): some y values = INF or -INF when the perc_mit value = 0 or 1.
+    ggplot(data = data_bivar_n_article_expo_mrgid) +
+      geom_point(mapping = aes(x = scales::rescale(exposure_perc, to = c(0, 1)),
+                               y = log(perc_ada/(perc_mit)),
+                               size = Count_ORO_adap_miti)) +
+      scale_y_continuous(limits=c(-100,100)) +
+      theme_bw()
+    
+    
+  ## ---- BINOMIAL GLM
+  
+    # --- Model
+    # fit.ada <- glm(y.ada.perc ~ x.ada.scaled, family = binomial, weights = rep(10, length(x.ada.scaled))) ; summary(fit.ada)
+    # exp(fit.ada$coefficients[2])
+    
+    fit.ada <- glm(y.ada.perc ~ x.ada.scaled, family = binomial, weights = count_total) ; summary(fit.ada)
+    exp(fit.ada$coefficients[2])
+    with(summary(fit.ada), 1 - deviance/null.deviance) # pseudo r2
+
+    
+    ## Plot predictions with raw data
+    pred.x <- seq(0,1, length.out = 100)
+    pred.fit.ada <- data.frame(x.ada.scaled = pred.x)
+    pred.fit.ada <- predict(fit.ada, se.fit = TRUE, newdata = data.frame(x.ada.scaled = pred.x),
+                            type = "link")
+    pred.fit.ada <- as.data.frame(pred.fit.ada)
+    pred.fit.ada$pred.x <- pred.x
+    
+    pval <- with(summary(fit.ada), coefficients[2,"Pr(>|z|)"])
+    pval <- ifelse(pval==0, "2e-16", signif(pval, 2))
+    fit.ada.ggp <- ggplot() +
+      geom_point(data = expo_adaPubs_mrgid_for_scale_stats,
+                 mapping = aes(x = scales::rescale(exposure_perc, to = c(0, 1)),
+                               y = log(perc_ada/(1-perc_ada)),
+                               size = Count_ORO_adap_miti)) +
+      geom_line(data = pred.fit.ada, aes(x=pred.x, y=fit))+
+      geom_ribbon(data = pred.fit.ada, aes(x=pred.x, ymin=fit-se.fit, ymax = fit+se.fit),
+                  alpha = 0.5)+
+      geom_text(data = data.frame(x = 0.75, y = pred.fit.ada$fit[which.min(abs(pred.fit.ada$pred.x-0.75))]),
+                aes(x=x, y=y), label = paste("OR =", signif(exp(fit.ada$coefficients[2]), 2),
+                                             "\nR2 = ", signif(with(summary(fit.ada), 1 - deviance/null.deviance),2),
+                                             "\np =", pval),
+                nudge_y = -0.8)+
+      labs(y = "log(p/(1-p))", x = "Risk (scaled)",
+           size = "N articles")+
+      theme_bw()
+    
+    fit.ada.ggp
+    
+    
+    
+  ## Combine mitigation and adaptation model fit plots together and save  ---
+  fit.mit.ada.ggp <- cowplot::plot_grid(fit.mit.ggp, fit.ada.ggp, nrow = 2, labels = c("a.","b."))
+    
+  ggsave(here::here("figures/supplemental/researchNeedVsEffortBinomialGlm.pdf"),
+           plot = fit.mit.ada.ggp,
+           width = 6, height = 7, units = "in")
+  
+  # compare these model results to spearman's rank correlation
+  mit_cor.count # 0.4889157, p-value = 3.122e-09
+  ada_cor.count # 0.1407662, p-value = 0.05598
+  
+   
+  mit_cor.perc # 0.1776855, p-value = 0.04232
+  ada_cor.perc # 0.0867767, p-value = 0.2402
+  
+    
+
+  ## ---- POISSON GLM
+  # Useful resources:
+  # https://stats.oarc.ucla.edu/r/dae/negative-binomial-regression/ - negative binomial 
+  # https://stats.oarc.ucla.edu/r/dae/zip/ -- zero inflated poisson
+
+  
+  ## Mitigation
+  y.mit.count <- GHGemi_mitPubs_country_for_scale_stats$perc_mit*GHGemi_mitPubs_country_for_scale_stats$Count_ORO_adap_miti
+  fit.mit.pois <- glm(y.mit.count ~ x.mit.scaled, family = poisson) 
+  summary(fit.mit.pois)
+  exp(fit.mit.pois$coefficients[2]) # 35.60043, p <2e-16 ***
+  with(summary(fit.mit.pois), 1 - deviance/null.deviance) # pseudo r2 = 0.4397814
+  performance::check_overdispersion(fit.mit.pois) # model overdispersed dispersion ratio =    78.407
+  # Fit negative binomial
+  fit.mit.nb <- MASS::glm.nb(y.mit.count ~ x.mit.scaled)
+  summary(fit.mit.nb)
+  with(summary(fit.mit.nb), 1 - deviance/null.deviance) # pseudo r2 = 0.2762038
+  # Fit zero-inflated poisson -- inflation model not significant except intercept
+  # Also there's no real logic for what the separate process might be for the 0s vs the count data, so don't use
+  fit.mit.zpois <- pscl::zeroinfl(y.mit.count ~ x.mit.scaled)
+  summary(fit.mit.zpois)
+  
+  ## Adaptation
+  fit.ada.pois <- glm(y.ada.count ~ x.ada.scaled, family = poisson) ; summary(fit.ada.pois)
+  exp(fit.ada.pois$coefficients[2]) #2.846833, p <2e-16 ***
+  with(summary(fit.ada.pois), 1 - deviance/null.deviance) # pseudo r2 = 0.00975
+  performance::check_overdispersion(fit.ada.pois) # Overdispersed, dispersion ratio =    89.977
+  # Fit negative binomial
+  fit.ada.nb <- MASS::glm.nb(y.ada.count ~ x.ada.scaled)
+  summary(fit.ada.nb)
+  exp(fit.ada.nb$coefficients[2]) #5.173034, p 0.0841 ***
+  with(summary(fit.ada.nb), 1 - deviance/null.deviance) # pseudo r2 = 0.01032746
+  performance::check_overdispersion(fit.ada.nb)
+  # Fit quasipoisson -- still over-dispersed so stay with the negative binomial.
+  # Also I think the assumptions behind he negative binomial (where values with low mean are weighted less, then level off asymptoically are more appropriate than having weight increase with mean)
+  # Ver Hoef, Jay M. and Boveng, Peter L., "QUASI-POISSON VS. NEGATIVE BINOMIAL REGRESSION: HOW SHOULD WE MODEL OVERDISPERSED COUNT DATA?" (2007). Publications, Agencies and Staff of the U.S. Department of Commerce. 142. https://digitalcommons.unl.edu/usdeptcommercepub/142 
+  fit.ada.qpois <- glm(y.ada.count ~ x.ada.scaled, family = quasipoisson) ; 
+  summary(fit.ada.qpois)
+  exp(fit.ada.qpois$coefficients[2]) #1.0462, p 0.354 
+  with(summary(fit.ada.qpois), 1 - deviance/null.deviance) # 0.009754521
+  performance::check_overdispersion(fit.ada.qpois) # still overdispersed
+  
+  
+  
+  ## Plot negative binomial predictions with raw data - link scale
+  
+  # Make predictions
+  pred.x <- seq(0,1, length.out = 100)
+  pred.fit.mit.nb <- predict(fit.mit.nb, se.fit = TRUE, newdata = data.frame(x.mit.scaled = pred.x),
+                          type = "link") %>%
+    as.data.frame()%>%
+    mutate(pred.x = pred.x)
+  
+  pred.fit.ada.nb <- predict(fit.ada.nb, se.fit = TRUE, newdata = data.frame(x.ada.scaled = pred.x),
+                               type = "link") %>%
+    as.data.frame()%>%
+    mutate(pred.x = pred.x)
+  
+  # plot mitigation
+  pval <- with(summary(fit.mit.nb), coefficients[2,"Pr(>|z|)"])
+  pval <- ifelse(pval==0, "2e-16", signif(pval, 2))
+  mit.ggp.dat <- GHGemi_mitPubs_country_for_scale_stats %>%
+    mutate(x = scales::rescale(cumulative_co2_including_luc, to = c(0, 1)),
+           y = log(perc_mit*Count_ORO_adap_miti),
+           size = Count_ORO_adap_miti,
+           out_x = rstatix::is_extreme(x),
+           out_y = rstatix::is_extreme(y)) %>%
+    mutate(out_x = ifelse(quantile(x, 0.5) <= x, out_x, FALSE)) 
+
+  fit.mit.nb.ggp <- ggplot() +
+    geom_point(data = mit.ggp.dat,
+               mapping = aes(x = x,
+                             y = y,
+                             size = size)) +
+    ggrepel::geom_label_repel(data = mit.ggp.dat[mit.ggp.dat$out_x,], 
+              aes(x=x, y=y, label = str_wrap(Country, 15)), 
+              col = "red", nudge_y = -1, size=2)+
+    geom_line(data = pred.fit.mit.nb, aes(x=pred.x, y=fit))+
+    geom_ribbon(data = pred.fit.mit.nb, aes(x=pred.x, ymin=fit-se.fit, ymax = fit+se.fit),
+                alpha = 0.5)+
+    geom_text(data = data.frame(x = 0.75, 
+                                y = pred.fit.mit.nb$fit[which.min(abs(pred.x-0.85))]),
+              aes(x=x, y=y), label = paste("B =", signif(fit.mit.nb$coefficients[2], 2),
+                                           "\nR sq. = ", signif(with(summary(fit.mit.nb), 1 - deviance/null.deviance),2),
+                                           "\np = ", pval),
+              nudge_y = -4)+
+    labs(y = "log(N mitigation articles)", x = "Cumulative CO2 emissions (scaled)", size = "Total\nN articles")+
+    theme_bw()
+  
+  fit.mit.nb.ggp
+  
+  # Plot adaptation
+  ada.ggp.dat <- expo_adaPubs_mrgid_for_scale_stats %>%
+    mutate(x = scales::rescale(exposure_perc, to = c(0, 1)),
+           y = log(perc_ada*Count_ORO_adap_miti),
+           size = Count_ORO_adap_miti,
+           out_x = rstatix::is_extreme(x),
+           out_y = rstatix::is_extreme(y)) %>%
+    mutate(out_x = ifelse(quantile(x, 0.5) <= x, out_x, FALSE)) 
+  
+  
+  fit.ada.nb.ggp <- ggplot() +
+    geom_point(data = ada.ggp.dat,
+               mapping = aes(x = x,
+                             y = y,
+                             size = size)) +
+    ggrepel::geom_label_repel(data = ada.ggp.dat[ada.ggp.dat$out_x,], 
+                             aes(x=x, y=y, label = str_wrap(`TERRITORY1`, 15)), 
+                             col = "red", nudge_y = -1, size=2)+
+    geom_line(data = pred.fit.ada.nb, aes(x=pred.x, y=fit))+
+    geom_ribbon(data = pred.fit.ada.nb, aes(x=pred.x, ymin=fit-se.fit, ymax = fit+se.fit),
+                alpha = 0.5)+
+    geom_text(data = data.frame(x = 0.75, 
+                                y = pred.fit.ada.nb$fit[which.min(abs(pred.x-0.85))]),
+              aes(x=x, y=y), label = paste("B =", signif(fit.ada.nb$coefficients[2], 2),
+                                           "\nR sq. = ", signif(with(summary(fit.ada.nb), 1 - deviance/null.deviance),2),
+                                           "\np = ", signif(with(summary(fit.ada.nb), coefficients[2,"Pr(>|z|)"]), 2)),
+              nudge_y = -2)+
+    labs(y = "log(N adaptation articles)", x = "Risk (scaled)", size = "Total\nN articles")+
+    theme_bw()
+  
+  fit.ada.nb.ggp
+  
+  # Combine mitigation and adaptation model fit plots together and save  ---
+  fit.mit.ada.nb.ggp <- cowplot::plot_grid(fit.mit.nb.ggp, fit.ada.nb.ggp, nrow = 2, labels = c("a.","b."))
+  
+  ggsave(here::here("figures/supplemental/researchNeedVsEffortNegativeBinomialGlm.pdf"),
+         plot = fit.mit.ada.nb.ggp,
+         width = 6, height = 7, units = "in")
+  
+  
+  
+  
+  ## Plot negative binomial predictions with raw data - response scale - more difficult to interpret
+  
+  # Make predictions
+  pred.x <- seq(0,1, length.out = 100)
+  pred.fit.mit.nb <- predict(fit.mit.nb, se.fit = TRUE, newdata = data.frame(x.mit.scaled = pred.x),
+                             type = "response") %>%
+    as.data.frame()%>%
+    mutate(pred.x = pred.x)
+  
+  pred.fit.ada.nb <- predict(fit.ada.nb, se.fit = TRUE, newdata = data.frame(x.ada.scaled = pred.x),
+                             type = "response") %>%
+    as.data.frame()%>%
+    mutate(pred.x = pred.x)
+  
+  # plot mitigation
+  pval <- with(summary(fit.mit.nb), coefficients[2,"Pr(>|z|)"])
+  pval <- ifelse(pval==0, "2e-16", signif(pval, 2))
+  mit.ggp.dat <- GHGemi_mitPubs_country_for_scale_stats %>%
+    mutate(x = scales::rescale(cumulative_co2_including_luc, to = c(0, 1)),
+           y = perc_mit*Count_ORO_adap_miti,
+           size = Count_ORO_adap_miti,
+           out_x = rstatix::is_extreme(x),
+           out_y = rstatix::is_extreme(y)) %>%
+    mutate(out_x = ifelse(quantile(x, 0.5) <= x, out_x, FALSE)) 
+  
+  fit.mit.nb.ggp <- ggplot() +
+    geom_point(data = mit.ggp.dat,
+               mapping = aes(x = x,
+                             y = y,
+                             size = size)) +
+    ggrepel::geom_label_repel(data = mit.ggp.dat[mit.ggp.dat$out_x,], 
+                              aes(x=x, y=y, label = str_wrap(Country, 15)), 
+                              col = "red", nudge_y = -1, size=2)+
+    geom_line(data = pred.fit.mit.nb, aes(x=pred.x, y=fit))+
+    geom_ribbon(data = pred.fit.mit.nb, aes(x=pred.x, ymin=fit-se.fit, ymax = fit+se.fit),
+                alpha = 0.5)+
+    geom_text(data = data.frame(x = 0.75, 
+                                y = pred.fit.mit.nb$fit[which.min(abs(pred.x-0.85))]),
+              aes(x=x, y=y), label = paste("B =", signif(exp(fit.mit.nb$coefficients[2]), 2),
+                                           "\nR sq. = ", signif(with(summary(fit.mit.nb), 1 - deviance/null.deviance),2),
+                                           "\np = ", pval),
+              nudge_y = -4)+
+    labs(y = "log(N mitigation articles)", x = "Cumulative CO2 emissions (scaled)", size = "Total\nN articles")+
+    theme_bw()
+  
+  fit.mit.nb.ggp
+  
+  # Plot adaptation
+  ada.ggp.dat <- expo_adaPubs_mrgid_for_scale_stats %>%
+    mutate(x = scales::rescale(exposure_perc, to = c(0, 1)),
+           y = perc_ada*Count_ORO_adap_miti,
+           size = Count_ORO_adap_miti,
+           out_x = rstatix::is_extreme(x),
+           out_y = rstatix::is_extreme(y)) %>%
+    mutate(out_x = ifelse(quantile(x, 0.5) <= x, out_x, FALSE)) 
+  
+  
+  fit.ada.nb.ggp <- ggplot() +
+    geom_point(data = ada.ggp.dat,
+               mapping = aes(x = x,
+                             y = y,
+                             size = size)) +
+    ggrepel::geom_label_repel(data = ada.ggp.dat[ada.ggp.dat$out_x,], 
+                              aes(x=x, y=y, label = str_wrap(`TERRITORY1`, 15)), 
+                              col = "red", nudge_y = -1, size=2)+
+    geom_line(data = pred.fit.ada.nb, aes(x=pred.x, y=fit))+
+    geom_ribbon(data = pred.fit.ada.nb, aes(x=pred.x, ymin=fit-se.fit, ymax = fit+se.fit),
+                alpha = 0.5)+
+    geom_text(data = data.frame(x = 0.75, 
+                                y = pred.fit.ada.nb$fit[which.min(abs(pred.x-0.85))]),
+              aes(x=x, y=y), label = paste("B =", signif(exp(fit.ada.nb$coefficients[2]), 2),
+                                           "\nR sq. = ", signif(with(summary(fit.ada.nb), 1 - deviance/null.deviance),2),
+                                           "\np = ", signif(with(summary(fit.ada.nb), coefficients[2,"Pr(>|z|)"]), 2)),
+              nudge_y = -2)+
+    labs(y = "log(N adaptation articles)", x = "Risk (scaled)", size = "Total\nN articles")+
+    theme_bw()
+  
+  fit.ada.nb.ggp
+  
+  
+  
+  
+  
+### -----
+  
+  
+### ----- Arrange the figure -----
+
+figure5 <- cowplot::ggdraw() +  
+  cowplot::draw_plot(panelA, x = 0.0, y = 0.56, width = 1.0, height = 0.5) +
+  cowplot::draw_plot(panelB, x = 0.0, y = 0.20, width = 1.0, height = 0.5) +
+  cowplot::draw_plot_label(label = c("(a)", "(b)"),
+                           size = 15,
+                           x = c(0, 0),
+                           y = c(0.97, 0.60)) 
+
+ggplot2::ggsave(plot = figure5, here::here("figures", "main", "maps_bivar_MitiEmi_AdaExpo_COUNT_vf_newscale.pdf"), width = 15, height = 15, device = "pdf")
+ggplot2::ggsave(plot = figure5, here::here("figures", "main", "maps_bivar_MitiEmi_AdaExpo_COUNT_vf_newscale.png"), width = 15, height = 15, device = "png",dpi = 600)
+
+
+### -----
+    
