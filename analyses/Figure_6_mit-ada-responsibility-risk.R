@@ -359,7 +359,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     sum(GHGemi_mitPubs_country_for_scale_stats$Count_ORO_mit) # must be 4838 (instead of 4843) because remove of western sahara that don't have emissions data
     sum(GHGemi_mitPubs_country_for_scale_stats$Count_ORO_adap_miti) # 7735
     
-      # --- Save the data for Devi
+      # --- Save the data for modelling
       save(GHGemi_mitPubs_country_for_scale_stats, file = here::here("data", "GHGemi_mitPubs_country_for_scale_stats.RData"))
 
 
@@ -425,7 +425,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                           name       = "main/final_version/bivar_map_GHGemi_mitPubs_COUNT_Geop_newScale")
       
       
-  ## ---- DEVI, here is the model section for emissions and mitigation papers
+  ## ---- MODELLING emissions and mitigation papers
   ## ---- You can load this data file
   load(here::here("data", "GHGemi_mitPubs_country_for_scale_stats.RData"))
   
@@ -808,7 +808,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     expo_adaPubs_mrgid_for_scale_stats <- expo_adaPubs_mrgid |>
       filter(Count_ORO_adap_miti != 0)
     
-      # Save data for Devi
+      # Save data for MODELLING
       save(expo_adaPubs_mrgid_for_scale_stats, file = here::here("data", "expo_adaPubs_mrgid_for_scale_stats.RData"))
 
     
@@ -854,7 +854,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                           ylab       = "# ada. paper (GeoP)",
                           name       = "main/final_version/AdaPaperGeop_COUNT_expo_territory_Geop_newscale") 
   
-  ## ---- DEVI, here is the model section for risk and adaptation papers
+  ## ---- MODELLING risk and adaptation papers
   ## ---- You can load this data file
   load(here::here("data", "expo_adaPubs_mrgid_for_scale_stats.RData"))
   

@@ -144,7 +144,7 @@ ratio_ORO_totPub <- oceanClimate_byCountry |>
   mutate(Count_ORO = ifelse(is.na(Count_ORO), 0 , Count_ORO),
          layer     = (Count_ORO/Record.Count)*100) 
 
-# Save for Devi
+# Save for MODELLING
 # save(ratio_ORO_totPub, file = here::here("data", "ratio_ORO_totPub.RData"))
 
 # --- Format the shapefile of the world countries polygon and bind data
@@ -365,7 +365,7 @@ ORO_per_country_year <- data_1stA_country$oroAff_1stA |>
   dplyr::summarise(Count_ORO = n()) 
 
 
-## ---- DEVI, YOU CAN PUT THE CODE TO MODEL #OROpub ~ f(year) HERE
+## ---- MODELLING OROpub ~ f(year) for each country
 ## ---- You can use the dataframe called ORO_per_country_year
 ORO_per_country_year_trends_df <- ORO_per_country_year %>%
   mutate(year_num = as.numeric(year),
