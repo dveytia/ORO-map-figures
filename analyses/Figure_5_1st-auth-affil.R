@@ -92,7 +92,7 @@ country_grp <- read.csv(file = here::here("data", "external", "special_country_g
                                 TRUE ~ group_land))
 
 # --- Shape file of countrie's EEZ
-eez_shp_path = here::here("data", "external", "eez_shp", "eez_v12.shp")
+# eez_shp_path = here::here("data", "external", "eez_shp", "eez_v12.shp")
 eez_shp_path = here::here("data", "external","eez_rast","MarineRegions_EEZ_v12_20231025", "eez_v12.shp")
 
 eez_shp <- sf::st_read(eez_shp_path) |>  
@@ -564,8 +564,8 @@ panelB <- try_univariate_map(
 ## ---- LOAD DATA
 pred_oro_branch <- tbl(dbcon, "pred_oro_branch") # predictions for ORO branch
 
-# --- Cleaned geoparsed data (see .Rmd script called 0_data-processing-cleaning.Rmd)
-geoparsed_data_clean <- get(load(here::here("data", "geoparsing", "tmp_clean.RData")))
+# # --- Cleaned geoparsed data (see .Rmd script called 0_data-processing-cleaning.Rmd)
+# geoparsed_data_clean <- get(load(here::here("data", "geoparsing", "tmp_clean.RData")))
 
 ## ---- FORMAT DATA 
 
@@ -589,21 +589,21 @@ data_1stA_country_MA <- extract_1stA_affiliation(data         = mitAdaptPubs,
 tmp <- data_1stA_country_MA$oroAff_1stA |> sample_n(size = 50)
 lapply(data_1stA_country_MA, dim)
 
-# --- Select relevant geoparsed data and ratio
-geop_ratio_mitig_adapt <-  mitAdaptPubs |>
-  inner_join(geoparsed_data_clean, by = "analysis_id", copy = TRUE) |> 
-  dplyr::select(analysis_id, country_id, adaptation, mitigation) |> 
-  distinct() |> 
-  mutate(iso_code = countrycode(sourcevar   = country_id,
-                                origin      = "country.name",
-                                destination = "iso3c")) |> 
-  group_by(country_id, iso_code) |> 
-  summarise(adaptation = sum(adaptation, na.rm = TRUE),
-            mitigation = sum(mitigation, na.rm = TRUE)) |> 
-  mutate(ratio   = mitigation/adaptation,
-         mit_ada = mitigation + adaptation,
-         layer   = (mitigation/mit_ada)*100) |>  # % mitigation
-  rename(Country = country_id)
+# # --- Select relevant geoparsed data and ratio
+# geop_ratio_mitig_adapt <-  mitAdaptPubs |>
+#   inner_join(geoparsed_data_clean, by = "analysis_id", copy = TRUE) |> 
+#   dplyr::select(analysis_id, country_id, adaptation, mitigation) |> 
+#   distinct() |> 
+#   mutate(iso_code = countrycode(sourcevar   = country_id,
+#                                 origin      = "country.name",
+#                                 destination = "iso3c")) |> 
+#   group_by(country_id, iso_code) |> 
+#   summarise(adaptation = sum(adaptation, na.rm = TRUE),
+#             mitigation = sum(mitigation, na.rm = TRUE)) |> 
+#   mutate(ratio   = mitigation/adaptation,
+#          mit_ada = mitigation + adaptation,
+#          layer   = (mitigation/mit_ada)*100) |>  # % mitigation
+#   rename(Country = country_id)
 
 # --- Ratio # of mitigation publications over # of adaptation publications
 ratio_mitig_adapt <- data_1stA_country_MA$oroAff_1stA |> 
@@ -623,10 +623,10 @@ ratio_mitig_adapt <- data_1stA_country_MA$oroAff_1stA |>
 
 # --- Format the shapefile of the world countries polygon and bind data
 world_shp_boundaries_MA <- format_shp_of_the_world(world_shp    = world_shp,
-                                                   data_to_bind = geop_ratio_mitig_adapt, # ratio_mitig_adapt
+                                                   data_to_bind = ratio_mitig_adapt, # ratio_mitig_adapt
                                                    PROJ         = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs") |> 
   # replace_na(list(adaptation = 0, mitigation = 0, mit_ada = 0, ratio = 0)) |> 
-  left_join(country_grp |>  dplyr::select(-country), by = "iso_code") |> 
+  left_join(country_grp |>  dplyr::select(-Country), by = "iso_code") |> 
   mutate(group_land = case_when(group_land %in% c("Land-locked", "SIDS", "Coastal") ~ group_land,
                                 !is.na(group_land) & NA2_DESCRI != country ~ "Island",
                                 is.na(group_land)  & NA2_DESCRI != country ~ "Island",
@@ -636,7 +636,7 @@ world_shp_boundaries_MA <- format_shp_of_the_world(world_shp    = world_shp,
 # a couple other small differences...
 
 # --- Format the shapefile of the eez countries polygon and bind data
-eez_shp_islands_MA <- full_join(eez_shp |>  dplyr::select(-Country), geop_ratio_mitig_adapt, by = "iso_code") |> # ratio_mitig_adapt
+eez_shp_islands_MA <- full_join(eez_shp |>  dplyr::select(-Country), ratio_mitig_adapt, by = "iso_code") |> # ratio_mitig_adapt
   # left_join(country_grp |>  select(-Country), by = "iso_code") |> 
   mutate(country = str_replace_all(Country, c("Côte d’Ivoire" = "Ivory Coast",
                                               "Congo - Brazzaville" = "Republic of the Congo",
@@ -676,7 +676,7 @@ panelC <- try_univariate_map(
     show.legend       = TRUE,
     legTitleSize = 20,
     legTextSize = 14,
-    name              = "main/map_ratio_mit_adap_geoparsing"
+    name              = "main/map_ratio_mit_adap"
   )
 )
 
