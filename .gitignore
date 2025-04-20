@@ -1,6 +1,8 @@
 ## Large files
 .Rprofile
-fig6panels.RData
+*.RData # don't save all temp RData files
+/*.RData
+/*.rds
 *.sqlite 
 /data/geoparsing/.ipynb_checkpoints/
 #/data/geoparsing/*.csv
