@@ -627,6 +627,41 @@ ggsave(timeseriesMethodCombined,
 ```
 
 
+```{r update for Laurent mCDR conference in Belgium 2025}
+
+# Reproduce area plot but without deep ocean storage
+timeseriesMethod2025_ggp <- ggplot(mCDR_type_year_tab %>%
+                                     filter(
+                                       mCDR_method != "Deep sea storage"
+                                     ),
+                               aes(x = year_date, y = n_articles, fill = mCDR_method)) +
+  geom_area(colour = "black", size = .2) +
+  scale_fill_brewer(palette = "Dark2")+
+  guides(fill = guide_legend(nrow = 2))+
+  #scale_fill_manual(values = myPal) +
+  scale_x_date()+
+  labs(x="Year", y ="N articles", fill = "CDR method")+
+  theme_bw()+
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(size=13),
+    axis.text.y = element_text(size=13),
+    legend.text = element_text(size=13),
+    axis.title.x = element_text(size=15),
+    axis.title.y = element_text(size=15),
+    legend.title = element_text(size=15)
+  )
+
+timeseriesMethod2025_ggp
+
+ggsave(timeseriesMethod2025_ggp,
+  filename = here::here("figures/mCDR_research_in_france_March2024/timeseriesMethod2025.png"),
+       width = 8.5, height = 4, dpi = 600)
+```
+
+
+
+
 # Total number of publications ~ size of the EEZ for each country
 
 

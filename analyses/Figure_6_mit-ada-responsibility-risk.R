@@ -19,6 +19,8 @@ source(here::here("R", "functions_to_format.R")) # all functions needed to forma
 source(here::here("R", "functions_to_plot.R")) # all functions needed to plot data
 
 
+runCheck <- FALSE # do you want to run additional code for checking?
+
 ### ----- CONNECTION TO THE LATEST VERSION OF THE SQL DATABASE -----
 sqliteDir <- here::here("data/sqlite-databases")
 sqliteFiles <- dir(sqliteDir)
@@ -78,7 +80,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                                    destination = "iso3c"))
     
     # --- Shape file of countrie's EEZ
-    eez_shp_path = here::here("data", "external", "eez_shp", "eez_v12.shp")
+    # eez_shp_path = here::here("data", "external", "eez_shp", "eez_v12.shp")
     eez_shp_path = here::here("data", "external","eez_rast","MarineRegions_EEZ_v12_20231025", "eez_v12.shp")
     
     eez_shp <- sf::st_read(eez_shp_path) |>  # shape file of countrie's EEZ
@@ -135,12 +137,15 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
     # --- Group data by country and territory
     
+    if(runCheck){
       # --- Find unmatching patterns
       length(unique(mitigation_grid_df$TERRITORY1))
       length(unique(countries_territories_df$TERRITORY1))
       sum(unique(mitigation_grid_df$TERRITORY1) %in% unique(countries_territories_df$TERRITORY1))
       
       unique(mitigation_grid_df$TERRITORY1[!mitigation_grid_df$TERRITORY1 %in% countries_territories_df$TERRITORY1])
+    }
+      
       
       
       # - Correct unmatching patterns and group data
@@ -159,16 +164,18 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
         ungroup()
       
       # - Checks -----
-      
+      if(runCheck){
         # Number of papers (OK)
         length(unique(mitigation_grid_df$analysis_id)) # 2948 unique papers but 4861 rows since papers are geoparsed in different countries
         tmp <- mitigation_geop_paper_country_territory |> 
           dplyr::select(Country, TERRITORY1, Count_ORO_mit) |> 
           distinct(); sum(tmp$Count_ORO_mit)
-          
+        
         4861 - sum(tmp$Count_ORO_mit)
         length(unique(mitigation_grid_df$analysis_id[mitigation_grid_df$country_id %in% c("Antarctica", "Laos", "North Macedonia")])) # must be 18
-    
+        
+      }
+        
       # ---- 
 
     
@@ -191,12 +198,15 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
     # --- Group data by country and territory
     
-      # - To find unmatching patterns
-      length(unique(adaptation_grid_df$TERRITORY1))
-      length(unique(countries_territories_df$TERRITORY1))
-      sum(unique(adaptation_grid_df$TERRITORY1) %in% unique(countries_territories_df$TERRITORY1))
+      if(runCheck){
+        # - To find unmatching patterns
+        length(unique(adaptation_grid_df$TERRITORY1))
+        length(unique(countries_territories_df$TERRITORY1))
+        sum(unique(adaptation_grid_df$TERRITORY1) %in% unique(countries_territories_df$TERRITORY1))
+        
+        unique(adaptation_grid_df$TERRITORY1[!adaptation_grid_df$TERRITORY1 %in% countries_territories_df$TERRITORY1])
+      }
       
-      unique(adaptation_grid_df$TERRITORY1[!adaptation_grid_df$TERRITORY1 %in% countries_territories_df$TERRITORY1])
       
       # - Correct unmatching patterns and group data
       adaptation_geop_paper_territory <- adaptation_grid_df |> 
@@ -217,7 +227,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
         dplyr::select(-country_id)
       
       # - Checks -----
-      
+      if(runCheck){
         # Number of papers
         length(unique(adaptation_grid_df$analysis_id)) # 2144 unique papers but 2899 rows since papers are geoparsed in different countries
         tmp <- adaptation_geop_paper_territory |> 
@@ -228,42 +238,44 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
         
         2899 - sum(tmp$Count_ORO_ada)
         length(unique(adaptation_grid_df$analysis_id[adaptation_grid_df$country_id %in% c("Antarctica", "Bolivia")])) # must be 2 
-      
-      # ---- 
-      
-    # --- Check map -----
-    eez_shp_data_mrgid_papers <- eez_shp |>
-      left_join(adaptation_geop_paper_territory, by = "MRGID") |> #c("ISO_SOV1" = "iso_code")
-      sf::st_transform(crs = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs") |> 
-      rename(layer = Count_ORO_ada)
-    
-    # Two versions of formatting function -- if rgdal is installed, first version is run,
-    # if not, use modified version
-   
-    # Try format_data2map first, fallback to format_data2map_noRgdal if it fails
-    
-    data_2_map_mrgid_papers <- try_format_data2map(
-      input_args= list(
-        data = eez_shp_data_mrgid_papers,
-        PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
-      )
-    )
-    
-    map <- try_univariate_map(
-      input_args = list(
-        data_map          = data_2_map_mrgid_papers,
-        eez               = NULL,
-        color_scale       = viridis::turbo(10, direction = 1),
-        midpoint          = NULL,
-        second.var        = NULL,
-        # vals_colors_scale = NULL,
-        title_color       = "# adap papers (GeoP)",
-        title_size        = NULL,
-        show.legend       = TRUE,
-        name              = "main/final_version/adpatation_papers"
-      )
-    )
-    
+        
+        # ---- 
+        
+        # --- Check map -----
+        eez_shp_data_mrgid_papers <- eez_shp |>
+          left_join(adaptation_geop_paper_territory, by = "MRGID") |> #c("ISO_SOV1" = "iso_code")
+          sf::st_transform(crs = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs") |> 
+          rename(layer = Count_ORO_ada)
+        
+        # Two versions of formatting function -- if rgdal is installed, first version is run,
+        # if not, use modified version
+        
+        # Try format_data2map first, fallback to format_data2map_noRgdal if it fails
+        
+        data_2_map_mrgid_papers <- try_format_data2map(
+          input_args= list(
+            data = eez_shp_data_mrgid_papers,
+            PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+          )
+        )
+        
+        map <- try_univariate_map(
+          input_args = list(
+            data_map          = data_2_map_mrgid_papers,
+            eez               = NULL,
+            color_scale       = viridis::turbo(10, direction = 1),
+            midpoint          = NULL,
+            second.var        = NULL,
+            # vals_colors_scale = NULL,
+            title_color       = "# adap papers (GeoP)",
+            title_size        = NULL,
+            show.legend       = TRUE,
+            name              = "main/final_version/adpatation_papers"
+          )
+        )
+        
+      } # end running check
+        
     
     
     
@@ -278,21 +290,24 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
              perc_ada = Count_ORO_ada/Count_ORO_adap_miti) 
     
     # - Checks -----
-    length(unique(adaptation_geop_paper_territory$MRGID))
-    length(unique(adaptation_geop_paper_territory$MRGID))
-    sum(unique(adaptation_geop_paper_territory$MRGID) %in% unique(adaptation_geop_paper_territory$MRGID))
-    sum(unique(adaptation_geop_paper_territory$MRGID) %in% unique(adaptation_geop_paper_territory$MRGID))
+      if(runCheck){
+        length(unique(adaptation_geop_paper_territory$MRGID))
+        length(unique(adaptation_geop_paper_territory$MRGID))
+        sum(unique(adaptation_geop_paper_territory$MRGID) %in% unique(adaptation_geop_paper_territory$MRGID))
+        sum(unique(adaptation_geop_paper_territory$MRGID) %in% unique(adaptation_geop_paper_territory$MRGID))
+        
+        unique(adaptation_geop_paper_territory$MRGID[!adaptation_geop_paper_territory$MRGID %in% adaptation_geop_paper_territory$MRGID])
+        
+        # Number of papers
+        tmp <- adap_miti_geoP_paper_mrgid |> 
+          dplyr::select(Country, TERRITORY1, Count_ORO_ada, Count_ORO_mit, Count_ORO_adap_miti) |> 
+          distinct() 
+        
+        sum(tmp$Count_ORO_ada) # must be 2897
+        sum(tmp$Count_ORO_mit) # must be 4843
+        sum(tmp$Count_ORO_adap_miti) # 7740
+      }
     
-    unique(adaptation_geop_paper_territory$MRGID[!adaptation_geop_paper_territory$MRGID %in% adaptation_geop_paper_territory$MRGID])
-    
-      # Number of papers
-      tmp <- adap_miti_geoP_paper_mrgid |> 
-        dplyr::select(Country, TERRITORY1, Count_ORO_ada, Count_ORO_mit, Count_ORO_adap_miti) |> 
-        distinct() 
-      
-      sum(tmp$Count_ORO_ada) # must be 2897
-      sum(tmp$Count_ORO_mit) # must be 4843
-      sum(tmp$Count_ORO_adap_miti) # 7740
 
     # ---- 
     
@@ -329,6 +344,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
     
     # - Checks -----
+    if(runCheck){
       # Number of papers
       tmp <- GHGemi_mitPubs_country |> 
         dplyr::select(Country, Count_ORO_mit, Count_ORO_adap_miti) |> 
@@ -336,18 +352,27 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       
       sum(tmp$Count_ORO_mit) # must be 4843
       sum(tmp$Count_ORO_adap_miti) # 7740
+    }
+      
       
     # ---- 
         
     
     # --- Create the bivariate color scale
     bivariate_color_scale <- color_bivariate_map(nquantiles  = 10, 
-                                                 upperleft   = "#05A3FC", # rgb(130,0,80, maxColorValue = 255), 
+                                                 upperleft   = "#F60497", # rgb(130,0,80, maxColorValue = 255), 
                                                  upperright  = "#9D9F9F", # rgb(255,230,15, maxColorValue = 255),
                                                  bottomleft  = "#9D9F9F",
-                                                 bottomright = "#F60497", # rgb(0,150,235, maxColorValue = 255)  
+                                                 bottomright = "#05A3FC", # rgb(0,150,235, maxColorValue = 255)  
                                                  ylab        = "CO2 emission (cum)",
                                                  xlab        = "n_weighted_papers")
+    # bivariate_color_scale <- color_bivariate_map(nquantiles  = 10, 
+    #                                              upperleft   = "#05A3FC", # rgb(130,0,80, maxColorValue = 255), 
+    #                                              upperright  = "#9D9F9F", # rgb(255,230,15, maxColorValue = 255),
+    #                                              bottomleft  = "#9D9F9F",
+    #                                              bottomright = "#F60497", # rgb(0,150,235, maxColorValue = 255)  
+    #                                              ylab        = "CO2 emission (cum)",
+    #                                              xlab        = "n_weighted_papers")
     
     # --- Adapt it to the data
     GHGemi_mitPubs_country_for_scale_stats <- GHGemi_mitPubs_country |> 
@@ -356,11 +381,14 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       filter(is.na(cumulative_co2_including_luc) != TRUE) |> 
       distinct() 
     
-    sum(GHGemi_mitPubs_country_for_scale_stats$Count_ORO_mit) # must be 4838 (instead of 4843) because remove of western sahara that don't have emissions data
-    sum(GHGemi_mitPubs_country_for_scale_stats$Count_ORO_adap_miti) # 7735
+    if(runCheck){
+      sum(GHGemi_mitPubs_country_for_scale_stats$Count_ORO_mit) # must be 4838 (instead of 4843) because remove of western sahara that don't have emissions data
+      sum(GHGemi_mitPubs_country_for_scale_stats$Count_ORO_adap_miti) # 7735
+    }
     
-      # --- Save the data for modelling
-      save(GHGemi_mitPubs_country_for_scale_stats, file = here::here("data", "GHGemi_mitPubs_country_for_scale_stats.RData"))
+    
+      # # --- Save the data for modelling
+      # save(GHGemi_mitPubs_country_for_scale_stats, file = here::here("data", "GHGemi_mitPubs_country_for_scale_stats.RData"))
 
 
     
@@ -375,13 +403,16 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       filter(!is.na(MRGID)) 
     
     # - Checks -----
-    # Number of papers
-    tmp <- data_bivar_n_article_CO2em |> 
-      dplyr::select(Country, Count_ORO_mit, Count_ORO_adap_miti) |> 
-      distinct() 
+    if(runCheck){
+      # Number of papers
+      tmp <- data_bivar_n_article_CO2em |> 
+        dplyr::select(Country, Count_ORO_mit, Count_ORO_adap_miti) |> 
+        distinct() 
+      
+      sum(tmp$Count_ORO_mit) # must be 4838
+      sum(tmp$Count_ORO_adap_miti) # 7735
+    }
     
-    sum(tmp$Count_ORO_mit) # must be 4838
-    sum(tmp$Count_ORO_adap_miti) # 7735
     
     # ---- 
     
@@ -404,6 +435,7 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       sf::st_transform(crs = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
     
       # - Checks -----
+    if(runCheck){
       # Number of papers
       tmp <- eez_shp_data |> 
         sf::st_drop_geometry() |> 
@@ -412,6 +444,8 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       
       sum(tmp$Count_ORO_mit, na.rm = TRUE) # must be 4838
       sum(tmp$Count_ORO_adap_miti, na.rm = TRUE) # 7735
+    }
+      
       
       # ---- 
     
@@ -424,7 +458,8 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                           ylab       = "# mit. paper (GeoP)",
                           name       = "main/final_version/bivar_map_GHGemi_mitPubs_COUNT_Geop_newScale")
       
-      
+  save(panelA, data_bivar_n_article_CO2em, file="fig6panelA_revscale.RData")
+  
   ## ---- MODELLING emissions and mitigation papers
   ## ---- You can load this data file
   load(here::here("data", "GHGemi_mitPubs_country_for_scale_stats.RData"))
@@ -554,77 +589,73 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   
     # - Filter cell in area_rast with a value in surges_rast
     area_rast <- terra::mask(area_rast, surges_rast)
-    raster::plot(area_rast)
-    raster::plot(surges_rast)
+    if(runCheck){
+      raster::plot(area_rast)
+      raster::plot(surges_rast)
+    }
     
     # - Shapefile and summarize across eez and find the corresponding country
     sf::sf_use_s2(FALSE)
-    if("stars" %in% .packages()){
-      vulne_shp <- sf::st_as_sf(stars::st_as_stars(surges_rast)) # vulne_mean_rast1
-      area_shp <- sf::st_as_sf(stars::st_as_stars(area_rast))
-    }else{
-      r <- terra::rast(surges_rast)
-      vulne_poly <- terra::as.polygons(r)
-      vulne_shp <- sf::st_as_sf(vulne_poly)
-      
-      r <- terra::rast(area_rast)
-      area_poly <- terra::as.polygons(r)
-      area_shp <- sf::st_as_sf(area_poly)
-      rm(r, vulne_poly, area_poly)
-    }
-    
-    
-     
-    
+    vulne_shp <- sf::st_as_sf(stars::st_as_stars(surges_rast)) # vulne_mean_rast1
+    area_shp <- sf::st_as_sf(stars::st_as_stars(area_rast))
+
     # - Join with area data
     vulne_area_shp <- vulne_shp |> # vulne_shp
       mutate(area   = area_shp$layer) |>
       rename(surges = Coastal_surges_1974.2014_R) 
     
-    
-    # Join with eez
-    vulne_shp_country <- eez_shp |> 
-      sf::st_join(vulne_area_shp) 
-    
-    # - Compute the weighted mean by mrgid (weighted by cells area)
-    vulne_mean_weighted_mrgid_df <- vulne_shp_country |> # vulne_country_df
-      sf::st_drop_geometry() |> 
-      group_by(MRGID, TERRITORY1, Country, iso_code, iso_NA2) |>
-      summarise(storm_surges_weighted = weighted.mean(surges, area, na.rm = TRUE)) |> 
-      ungroup() |> 
-      filter(!is.na(storm_surges_weighted)) |> 
-      dplyr::select(MRGID, storm_surges_weighted) |> 
-      right_join(countries_territories_df, by = "MRGID")
+    # This takes a while to run, so load files if possible
+    load("vulne_data.RData")
+    if(!exists("vulne_shp_country")){
+      # Join with eez
+      vulne_shp_country <- eez_shp |> 
+        sf::st_join(vulne_area_shp) 
+    }
+    if(!exists("vulne_mean_weighted_mrgid_df")){
+      # - Compute the weighted mean by mrgid (weighted by cells area)
+      vulne_mean_weighted_mrgid_df <- vulne_shp_country |> # vulne_country_df
+        sf::st_drop_geometry() |> 
+        group_by(MRGID, TERRITORY1, Country, iso_code, iso_NA2) |>
+        summarise(storm_surges_weighted = weighted.mean(surges, area, na.rm = TRUE)) |> 
+        ungroup() |> 
+        filter(!is.na(storm_surges_weighted)) |> 
+        dplyr::select(MRGID, storm_surges_weighted) |> 
+        right_join(countries_territories_df, by = "MRGID")
+    }
+    # save(vulne_shp_country, vulne_mean_weighted_mrgid_df,file="vulne_data.RData")
     
     # - Check map -----
-    eez_shp_data_mrgid <- eez_shp |>
-      left_join(vulne_mean_weighted_mrgid_df, by = "MRGID") |> #c("ISO_SOV1" = "iso_code")
-      filter(!is.na(storm_surges_weighted)) |> 
-      dplyr::rename(layer = storm_surges_weighted) |> 
-      sf::st_transform(crs = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
-    
-    data_2_map_mrgid <- try_format_data2map(
-      list(data = eez_shp_data_mrgid,
-           PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+    if(runCheck){
+      eez_shp_data_mrgid <- eez_shp |>
+        left_join(vulne_mean_weighted_mrgid_df, by = "MRGID") |> #c("ISO_SOV1" = "iso_code")
+        filter(!is.na(storm_surges_weighted)) |> 
+        dplyr::rename(layer = storm_surges_weighted) |> 
+        sf::st_transform(crs = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+      
+      data_2_map_mrgid <- try_format_data2map(
+        list(data = eez_shp_data_mrgid,
+             PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+        )
       )
+      
+      tmp <- data_2_map_mrgid$data |>  sf::st_drop_geometry()
+      
+      map <- try_univariate_map(
+        list(
+          data_map          = data_2_map_mrgid,
+          eez               = NULL,
+          color_scale       = viridis::turbo(10, direction = 1),
+          midpoint          = NULL,
+          second.var        = NULL,
+          # vals_colors_scale = NULL,
+          title_color       = "Exposure (weighted)",
+          title_size        = NULL,
+          show.legend       = TRUE,
+          name              = "main/final_version/mrgid_exposure_weighted_by_cell_area2"
+        )
       )
+    }
     
-    tmp <- data_2_map_mrgid$data |>  sf::st_drop_geometry()
-    
-    map <- try_univariate_map(
-      list(
-        data_map          = data_2_map_mrgid,
-        eez               = NULL,
-        color_scale       = viridis::turbo(10, direction = 1),
-        midpoint          = NULL,
-        second.var        = NULL,
-        # vals_colors_scale = NULL,
-        title_color       = "Exposure (weighted)",
-        title_size        = NULL,
-        show.legend       = TRUE,
-        name              = "main/final_version/mrgid_exposure_weighted_by_cell_area2"
-      )
-    )
     # -----
   
   ## ---- FORMAT DATA: population data
@@ -667,60 +698,64 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
     
     # --- Check map -----
-    eez_shp_data_mrgid_pop <- eez_shp |>
-      left_join(pop_mrgid, by = "MRGID") |> #c("ISO_SOV1" = "iso_code")
-      sf::st_transform(crs = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
-    
-    data_2_map_mrgid_pop <- try_format_data2map(
-      list(
-        data = eez_shp_data_mrgid_pop,
-        PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+    if(runCheck){
+      eez_shp_data_mrgid_pop <- eez_shp |>
+        left_join(pop_mrgid, by = "MRGID") |> #c("ISO_SOV1" = "iso_code")
+        sf::st_transform(crs = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+      
+      data_2_map_mrgid_pop <- try_format_data2map(
+        list(
+          data = eez_shp_data_mrgid_pop,
+          PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+        )
       )
-    )
-    
-    # - For the total population in LECZ
-    data_2_map_mrgid_popTOT <- data_2_map_mrgid_pop
-    data_2_map_mrgid_popTOT$data <- data_2_map_mrgid_popTOT$data |>  
-      rename(layer = population)  
-    
-    
-    tmp <- data_2_map_mrgid_popTOT$data |>  sf::st_drop_geometry()
-    
-    map <- try_univariate_map(
-      list(
-        data_map          = data_2_map_mrgid_popTOT,
-        eez               = NULL,
-        color_scale       = viridis::turbo(10, direction = 1),
-        midpoint          = NULL,
-        second.var        = NULL,
-        # vals_colors_scale = NULL,
-        title_color       = "Population in LECZ",
-        title_size        = NULL,
-        show.legend       = TRUE,
-        name              = "main/final_version/mrgid_population_in_LECZ3"
+      
+      # - For the total population in LECZ
+      data_2_map_mrgid_popTOT <- data_2_map_mrgid_pop
+      data_2_map_mrgid_popTOT$data <- data_2_map_mrgid_popTOT$data |>  
+        rename(layer = population)  
+      
+      
+      tmp <- data_2_map_mrgid_popTOT$data |>  sf::st_drop_geometry()
+      
+      map <- try_univariate_map(
+        list(
+          data_map          = data_2_map_mrgid_popTOT,
+          eez               = NULL,
+          color_scale       = viridis::turbo(10, direction = 1),
+          midpoint          = NULL,
+          second.var        = NULL,
+          # vals_colors_scale = NULL,
+          title_color       = "Population in LECZ",
+          title_size        = NULL,
+          show.legend       = TRUE,
+          name              = "main/final_version/mrgid_population_in_LECZ3"
+        )
       )
-    )
-    
-    # - For the total population in LECZ
-    data_2_map_mrgid_popPERC <- data_2_map_mrgid_pop
-    data_2_map_mrgid_popPERC$data <- data_2_map_mrgid_popPERC$data |>  rename(layer = perc_in_lecz)
-    
-    tmp2 <- data_2_map_mrgid_popPERC$data |>  sf::st_drop_geometry()
-    
-    map <- try_univariate_map(
-      list(
-        data_map          = data_2_map_mrgid_popPERC,
-        eez               = NULL,
-        color_scale       = viridis::turbo(10, direction = 1),
-        midpoint          = NULL,
-        second.var        = NULL,
-        # vals_colors_scale = NULL,
-        title_color       = "% of pop in LECZ",
-        title_size        = NULL,
-        show.legend       = TRUE,
-        name              = "main/final_version/mrgid_population_in_LECZ_perc"
+      
+      # - For the total population in LECZ
+      data_2_map_mrgid_popPERC <- data_2_map_mrgid_pop
+      data_2_map_mrgid_popPERC$data <- data_2_map_mrgid_popPERC$data |>  rename(layer = perc_in_lecz)
+      
+      tmp2 <- data_2_map_mrgid_popPERC$data |>  sf::st_drop_geometry()
+      
+      map <- try_univariate_map(
+        list(
+          data_map          = data_2_map_mrgid_popPERC,
+          eez               = NULL,
+          color_scale       = viridis::turbo(10, direction = 1),
+          midpoint          = NULL,
+          second.var        = NULL,
+          # vals_colors_scale = NULL,
+          title_color       = "% of pop in LECZ",
+          title_size        = NULL,
+          show.legend       = TRUE,
+          name              = "main/final_version/mrgid_population_in_LECZ_perc"
+        )
       )
-    )
+    }
+    
+    
     # ----- 
   
     
@@ -732,32 +767,35 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     ungroup()
     
     # --- Check map -----
-    eez_shp_data_mrgid_expo <- eez_shp |>
-      left_join(exposure_mrgid, by = "MRGID") |> #c("ISO_SOV1" = "iso_code")
-      sf::st_transform(crs = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs") |> 
-      rename(layer = exposure_perc)
-    
-    data_2_map_mrgid_expo <- try_format_data2map(
-      list(
-        data = eez_shp_data_mrgid_expo,
-        PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+    if(runCheck){
+      eez_shp_data_mrgid_expo <- eez_shp |>
+        left_join(exposure_mrgid, by = "MRGID") |> #c("ISO_SOV1" = "iso_code")
+        sf::st_transform(crs = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs") |> 
+        rename(layer = exposure_perc)
+      
+      data_2_map_mrgid_expo <- try_format_data2map(
+        list(
+          data = eez_shp_data_mrgid_expo,
+          PROJ = "+proj=robin +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+        )
       )
-    )
-    
-    map <- try_univariate_map(
-      list(
-        data_map          = data_2_map_mrgid_expo,
-        eez               = NULL,
-        color_scale       = viridis::turbo(10, direction = 1),
-        midpoint          = NULL,
-        second.var        = NULL,
-        # vals_colors_scale = NULL,
-        title_color       = "Exposure * % pop in LECZ",
-        title_size        = NULL,
-        show.legend       = TRUE,
-        name              = "main/final_version/exposure_TIMES_perc_pop"
+      
+      map <- try_univariate_map(
+        list(
+          data_map          = data_2_map_mrgid_expo,
+          eez               = NULL,
+          color_scale       = viridis::turbo(10, direction = 1),
+          midpoint          = NULL,
+          second.var        = NULL,
+          # vals_colors_scale = NULL,
+          title_color       = "Exposure * % pop in LECZ",
+          title_size        = NULL,
+          show.legend       = TRUE,
+          name              = "main/final_version/exposure_TIMES_perc_pop"
+        )
       )
-    )
+    }
+    
     
     # -----
     
@@ -765,11 +803,19 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
   ## ---- FORMAT DATA: Bivariate color scale
     
     # --- Create the bivariate color scale
+    # bivariate_color_scale <- color_bivariate_map(nquantiles  = 10,
+    #                                              upperleft   = "#05A3FC", # rgb(130,0,80, maxColorValue = 255),
+    #                                              upperright  = "#9D9F9F", # rgb(255,230,15, maxColorValue = 255),
+    #                                              bottomleft  = "#9D9F9F",
+    #                                              bottomright = "#F60497", # rgb(0,150,235, maxColorValue = 255)
+    #                                              ylab        = "CO2 emission (cum)",
+    #                                              xlab        = "n_weighted_papers")
+
     bivariate_color_scale <- color_bivariate_map(nquantiles  = 10, 
-                                                 upperleft   = "#05A3FC", # rgb(130,0,80, maxColorValue = 255), 
+                                                 upperleft   = "#F60497", # rgb(130,0,80, maxColorValue = 255), 
                                                  upperright  = "#9D9F9F", # rgb(255,230,15, maxColorValue = 255),
                                                  bottomleft  = "#9D9F9F",
-                                                 bottomright = "#F60497", # rgb(0,150,235, maxColorValue = 255)  
+                                                 bottomright = "#05A3FC", # rgb(0,150,235, maxColorValue = 255)  
                                                  ylab        = "CO2 emission (cum)",
                                                  xlab        = "n_weighted_papers")
     
@@ -782,25 +828,28 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     
 
     # - Checks -----
-    # Number of papers
-    tmp <- adap_miti_geoP_paper_mrgid |> 
-      dplyr::select(TERRITORY1, Count_ORO_ada, Count_ORO_adap_miti) |> 
-      distinct() ; sum(tmp$Count_ORO_ada) # must be must be 2897
-    
-    tmp2 <- expo_adaPubs_mrgid |> 
-      dplyr::select(TERRITORY1,  Count_ORO_ada, Count_ORO_adap_miti) |> 
-      distinct() ; sum(tmp2$Count_ORO_ada) 
-    # Equal 2867 (instead of 2867) because 30 papers remove with the filter(!is.na(exposure_perc)).
-    
-    # Check of the 30 papers
-    where_na <- adap_miti_geoP_paper_mrgid |> 
-      dplyr::select(-TERRITORY1, -Country, -iso_code, -iso_NA2, -country_id, -perc_mit) |> 
-      full_join(exposure_mrgid, by = "MRGID") |> 
-      filter(is.na(exposure_perc)) |>
-      ungroup() |>  
-      dplyr::select(TERRITORY1,  Count_ORO_ada, Count_ORO_adap_miti) |> 
-      distinct() |> 
-      filter(! TERRITORY1 %in% expo_adaPubs_mrgid$TERRITORY1); sum(where_na$Count_ORO_ada)
+    if(runCheck){
+      # Number of papers
+      tmp <- adap_miti_geoP_paper_mrgid |> 
+        dplyr::select(TERRITORY1, Count_ORO_ada, Count_ORO_adap_miti) |> 
+        distinct() ; sum(tmp$Count_ORO_ada) # must be must be 2897
+      
+      tmp2 <- expo_adaPubs_mrgid |> 
+        dplyr::select(TERRITORY1,  Count_ORO_ada, Count_ORO_adap_miti) |> 
+        distinct() ; sum(tmp2$Count_ORO_ada) 
+      # Equal 2867 (instead of 2867) because 30 papers remove with the filter(!is.na(exposure_perc)).
+      
+      # Check of the 30 papers
+      where_na <- adap_miti_geoP_paper_mrgid |> 
+        dplyr::select(-TERRITORY1, -Country, -iso_code, -iso_NA2, -country_id, -perc_mit) |> 
+        full_join(exposure_mrgid, by = "MRGID") |> 
+        filter(is.na(exposure_perc)) |>
+        ungroup() |>  
+        dplyr::select(TERRITORY1,  Count_ORO_ada, Count_ORO_adap_miti) |> 
+        distinct() |> 
+        filter(! TERRITORY1 %in% expo_adaPubs_mrgid$TERRITORY1); sum(where_na$Count_ORO_ada)
+      
+    }
     
     # ---- 
     
@@ -808,8 +857,8 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
     expo_adaPubs_mrgid_for_scale_stats <- expo_adaPubs_mrgid |>
       filter(Count_ORO_adap_miti != 0)
     
-      # Save data for MODELLING
-      save(expo_adaPubs_mrgid_for_scale_stats, file = here::here("data", "expo_adaPubs_mrgid_for_scale_stats.RData"))
+      # # Save data for MODELLING
+      # save(expo_adaPubs_mrgid_for_scale_stats, file = here::here("data", "expo_adaPubs_mrgid_for_scale_stats.RData"))
 
     
     data_bivar_n_article_expo_mrgid <- format_data_bivariate_map(data        = expo_adaPubs_mrgid_for_scale_stats,
@@ -836,14 +885,17 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
       rename(Country.x = TERRITORY1.x)
     
     # - Checks -----
-    # Number of papers
-    tmp <- eez_shp_mrgid |> 
-      sf::st_drop_geometry() |> 
-      dplyr::select(Country.x, Count_ORO_ada, Count_ORO_adap_miti) |> 
-      distinct() 
-    
-    sum(tmp$Count_ORO_ada, na.rm = T) # must be 2867
-    # ---- 
+    if(runCheck){
+      # Number of papers
+      tmp <- eez_shp_mrgid |> 
+        sf::st_drop_geometry() |> 
+        dplyr::select(Country.x, Count_ORO_ada, Count_ORO_adap_miti) |> 
+        distinct() 
+      
+      sum(tmp$Count_ORO_ada, na.rm = T) # must be 2867
+      # ---- 
+      
+    }
     
   ## ---- MAP DATA
   panelB <- bivariate_map(data_map   = data_2_map_mrgid,
@@ -853,7 +905,8 @@ dbcon <- RSQLite::dbConnect(RSQLite::SQLite(), file.path(sqliteDir, latestVersio
                           xlab       = "Coastal risk",
                           ylab       = "# ada. paper (GeoP)",
                           name       = "main/final_version/AdaPaperGeop_COUNT_expo_territory_Geop_newscale") 
-  
+  save(panelB, file="fig6panelB_revscale.RData")
+  saveRDS(panelB, file="fig6panelB_revscale.rds")
   ## ---- MODELLING risk and adaptation papers
   ## ---- You can load this data file
   load(here::here("data", "expo_adaPubs_mrgid_for_scale_stats.RData"))
@@ -1178,12 +1231,12 @@ figure5 <- cowplot::ggdraw() +
   cowplot::draw_plot(panelA, x = 0.0, y = 0.56, width = 1.0, height = 0.5) +
   cowplot::draw_plot(panelB, x = 0.0, y = 0.20, width = 1.0, height = 0.5) +
   cowplot::draw_plot_label(label = c("(a)", "(b)"),
-                           size = 15,
+                           size = 20,
                            x = c(0, 0),
                            y = c(0.97, 0.60)) 
 
-ggplot2::ggsave(plot = figure5, here::here("figures", "main", "maps_bivar_MitiEmi_AdaExpo_COUNT_vf_newscale.pdf"), width = 15, height = 15, device = "pdf")
-ggplot2::ggsave(plot = figure5, here::here("figures", "main", "maps_bivar_MitiEmi_AdaExpo_COUNT_vf_newscale.png"), width = 15, height = 15, device = "png",dpi = 600)
+ggplot2::ggsave(plot = figure5, here::here("figures", "main", "maps_bivar_MitiEmi_AdaExpo_COUNT_vf_revnewscale.pdf"), width = 15, height = 15, device = "pdf")
+ggplot2::ggsave(plot = figure5, here::here("figures", "main", "maps_bivar_MitiEmi_AdaExpo_COUNT_vf_revnewscale.png"), width = 15, height = 15, device = "png",dpi = 600)
 
 
 ### -----

@@ -1013,6 +1013,21 @@ oroMatchesProp_IPCC <- oroMatchesSums %>%
          prop_IPCC_ORO = n_mean/sum(oroMatchesSums$n_mean, na.rm=T)) %>%
   select(oro_type, prop_IPCC,prop_IPCC_ORO, order, colour, oro_branch)
 
+
+# Summarise the percentage of mitigation vs adaptation
+sum(oroMatchesProp_IPCC$prop_IPCC_ORO[oroMatchesProp_IPCC$oro_branch == "Mitigation"])*100 # 11.56337 %
+sum(oroMatchesProp_IPCC$prop_IPCC_ORO[grep("Societ|Natural", oroMatchesProp_IPCC$oro_branch)])*100 # 88.43663 %
+
+# And by ORO branch
+oroMatchesProp_IPCC %>%
+  group_by(oro_branch) %>%
+  summarise(perc_ORO = sum(prop_IPCC_ORO)*100)
+#   oro_branch          perc_ORO
+#   <fct>                  <dbl>
+# 1 Mitigation              11.6
+# 2 Natural resilience      20.8
+# 3 Societal adaptation     67.6
+
 oroMatchesProp_IPCC <- rbind( # add in a row for other topics
   oroMatchesProp_IPCC %>%
     mutate(order = as.numeric(order)),
