@@ -227,8 +227,8 @@ legendLabels$legendLabelF1[which(legendLabels$label == "Other")] <- "Other"
 fig3_ggp <- ggplot(typeMethodDf, aes(x=order, y=method_percent))+
   # plot bars number of model predictions
   geom_col(position = "stack", aes(fill = method_type))+
-  geom_text(data = oroTotals, aes(x=order,label = oroTotal), y=105, size=3, col="black", inherit.aes = FALSE)+ 
-  geom_text(data = percentEmpirical, aes(x=order,label = paste(percentEmpirical,"%")), 
+  geom_text(data = oroTotals, aes(x=order,label = scales::number(oroTotal, big.mark = ",")), y=105, size=3, col="black", inherit.aes = FALSE)+ 
+  geom_text(data = percentEmpirical, aes(x=order,label = paste0(percentEmpirical,"%")), 
             y=115, size=3, col="darkgreen", inherit.aes = FALSE)+ 
   
   # Add vertical lines to separate branches
