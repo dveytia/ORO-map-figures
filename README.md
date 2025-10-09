@@ -1,5 +1,6 @@
 # ORO-map-figures
-Final figures for the systematic map on ocean-related-options
+
+Figures and analyses to accompany the scientific article "A machine learning-based evidence map of ocean-related options for climate change mitigation and adaptation" (2025, npj Ocean Sustainability, doi: 10.1038/s44183-025-00159-w).
 
 This project is organized into the following directories:
 - analyses: for scripts to run analyses or produce figures
@@ -9,3 +10,4 @@ This project is organized into the following directories:
 - R: .R scripts to source/run functions within the analyses scripts
 
 In order to run the script, the .sqlite file containing the necessarily datatables needs to be downloaded from the repository: https://zenodo.org/records/13349908, and the file placed in the relative directory /data/sqlite-databases/
+
